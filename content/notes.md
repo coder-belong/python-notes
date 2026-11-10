@@ -102,6 +102,27 @@ first, rest = full.split(" ", 1)    # 只切 1 刀 → ['林', '必 龙']
 print(first, "|", rest)             # 林 | 必 龙
 ```
 
+`join` 是 `split` 的反操作，`replace` 替换：
+
+```python
+print("-".join(["a", "b", "c"]))       # a-b-c    用 - 把列表拼起来（元素必须是字符串）
+print(", ".join(str(n) for n in [1, 2]))   # 1, 2   数字要先转成字符串
+print("a.b.c".replace(".", "/"))       # a/b/c
+```
+
+**切片 `[开始:结束:步长]`**：取一段，包含开始、不包含结束。字符串、列表都能用。
+
+```python
+s = "abcdef"
+print(s[1:3])     # bc      下标 1、2
+print(s[:2])      # ab      从头开始
+print(s[2:])      # cdef    到结尾
+print(s[-2:])     # ef      最后两个
+print(s[::2])     # ace     每隔一个取
+print(s[::-1])    # fedcba  反过来
+print(len(s))     # 6       长度
+```
+
 **数字**：
 
 ```python
@@ -327,6 +348,44 @@ print(greet(**info))      # Tom 18   ** 把字典拆成关键字参数
 ```
 
 **文件开头的 `from __future__ import annotations`**：让类型标注推迟解析，这样标注里可以用到「后面才定义的类」。加不加对运行结果基本没影响，很多项目习惯每个文件都写；它必须是文件里的第一条代码。
+
+**`lambda`：一行的小函数**，常用来给 `sorted` / `max` 指定「按什么比」：
+
+```python
+double = lambda x: x * 2          # 等价于 def double(x): return x * 2
+print(double(3))                  # 6
+
+users = [{"name": "Tom", "age": 20}, {"name": "Amy", "age": 18}]
+print(sorted(users, key=lambda u: u["age"]))                # 按年龄从小到大
+print(sorted(users, key=lambda u: u["age"], reverse=True))  # 从大到小
+print(max(users, key=lambda u: u["age"])["name"])           # Tom   年龄最大的人
+print(sorted(["bb", "a", "ccc"], key=len))                  # ['a', 'bb', 'ccc']  key 也可以直接传函数
+```
+
+`key` 是一个函数：对每个元素调用一次，按它的返回值来排序。`lambda` 只适合一行能写完的；复杂的老老实实用 `def`。
+
+**装饰器 `@`**：函数本身也是一个值，可以当参数传。装饰器就是「接收一个函数，返回包了一层的新函数」，用来给函数加功能而不改它的代码。
+
+```python
+import time
+
+def timer(func):                     # 接收原函数
+    def wrapper(*args, **kwargs):    # 包一层：原样接收所有参数
+        start = time.time()
+        result = func(*args, **kwargs)   # 调用原函数
+        print(f"{func.__name__} 用了 {time.time() - start:.3f} 秒")
+        return result
+    return wrapper                   # 返回包好的新函数
+
+@timer                               # 等价于 slow_add = timer(slow_add)
+def slow_add(a: int, b: int) -> int:
+    time.sleep(0.1)
+    return a + b
+
+print(slow_add(1, 2))   # 先打印「slow_add 用了 0.10x 秒」，再输出 3
+```
+
+能看懂 `@timer` 就是 `slow_add = timer(slow_add)` 就够了。后面的 `@app.get("/tasks")`、`@dataclass`、`@pytest.fixture` 都是装饰器：自己很少写，主要是会用。
 
 ## 6. 模块和导入
 
@@ -574,6 +633,39 @@ with open("data/user.json", encoding="utf-8") as fp:   # with 结束时自动关
     for line in fp:
         print(line.rstrip())
 ```
+
+**`with` 是什么**：进入时拿到资源，离开代码块时自动收尾。中途出错也会收尾，不用自己写 `try / finally`。文件、数据库连接、锁都这么用。
+
+```python
+with open("a.txt", "w", encoding="utf-8") as fp:
+    fp.write("hi")
+# 走到这里文件已经关了，等价于：
+fp = open("a.txt", "w", encoding="utf-8")
+try:
+    fp.write("hi")
+finally:
+    fp.close()
+```
+
+**`yield`：生成器**。函数里出现 `yield`，调用它不会马上执行，而是得到一个生成器；每次 `for` 取值时跑到下一个 `yield`，交出一个值后暂停。好处是一次只处理一个，不用把所有结果都放进列表。
+
+```python
+def read_lines(path: str):
+    with open(path, encoding="utf-8") as fp:
+        for line in fp:
+            yield line.rstrip()       # 交出一行，暂停，等下次再取
+
+for line in read_lines("a.txt"):      # 一行一行地取，大文件也不占内存
+    print(line)
+
+def count_up(n: int):
+    for i in range(n):
+        yield i
+
+print(list(count_up(3)))              # [0, 1, 2]   list() 一次取完
+```
+
+第 19 节的数据库会话、第 21 节的 pytest fixture 都用 `yield` 写「先准备 → 交出去用 → 用完收尾」，原理就是这里的「暂停再继续」。
 
 ## 11. 日志、环境变量、时间
 
