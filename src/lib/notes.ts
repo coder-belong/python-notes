@@ -1,0 +1,119 @@
+import "server-only";
+
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
+import hljs from "highlight.js";
+import { Marked, type Token, type Tokens, type TokensList } from "marked";
+
+export type Section = {
+  id: string;
+  title: string;
+  part: string | null;
+  partIntroHtml: string | null; // 一个部分的第一节才有：「# 第X部分」标题下面那段导语
+  html: string;
+};
+export type Notes = { title: string; introHtml: string; sections: Section[] };
+
+const NOTES_PATH = path.join(process.cwd(), "content", "notes.md");
+
+/** 标题 → 锚点 id：保留中文、字母、数字，其余变成连字符。 */
+export function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/<[^>]+>/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function createMarked(): Marked {
+  const marked = new Marked();
+  marked.use({
+    gfm: true,
+    renderer: {
+      // 代码块：构建时就用 highlight.js 上好色，页面上不再需要高亮脚本
+      code({ text, lang }) {
+        const language = lang && hljs.getLanguage(lang) ? lang : "plaintext";
+        const html = hljs.highlight(text, { language }).value;
+        return `<pre><code class="hljs language-${language}">${html}</code></pre>\n`;
+      },
+      // 小标题带上锚点，方便以后链接
+      heading({ tokens, depth }) {
+        const text = this.parser.parseInline(tokens);
+        return `<h${depth} id="${slugify(text)}">${text}</h${depth}>\n`;
+      },
+      // 外链新窗口打开
+      link({ href, title, tokens }) {
+        const text = this.parser.parseInline(tokens);
+        const external = /^https?:\/\//.test(href);
+        const t = title ? ` title="${title}"` : "";
+        return `<a href="${href}"${t}${external ? ' target="_blank" rel="noreferrer"' : ""}>${text}</a>`;
+      },
+    },
+  });
+  return marked;
+}
+
+/** 读 content/notes.md：第一个一级标题是书名，「# 第X部分」是分组，每个二级标题是一节。 */
+export function loadNotes(): Notes {
+  const source = readFileSync(NOTES_PATH, "utf-8");
+  const marked = createMarked();
+  const tokens = marked.lexer(source);
+
+  const render = (list: Token[]) => {
+    const group = list as TokensList;
+    group.links = tokens.links;
+    return marked.parser(group);
+  };
+
+  let title = "Python 入门笔记";
+  let part: string | null = null;
+  const intro: Token[] = [];
+  let partIntro: Token[] | null = null; // 刚进入一个新部分、还没遇到第一节时的内容
+  const sections: Section[] = [];
+  let current: { title: string; part: string | null; partIntro: Token[] | null; tokens: Token[] } | null = null;
+
+  const flush = () => {
+    if (current) {
+      sections.push({
+        id: slugify(current.title),
+        title: current.title,
+        part: current.part,
+        partIntroHtml: current.partIntro?.length ? render(current.partIntro) : null,
+        html: render(current.tokens),
+      });
+    }
+  };
+
+  let seenTitle = false;
+  for (const token of tokens) {
+    if (token.type === "hr") continue; // 分隔线由节与节之间的间距代替
+    if (token.type === "heading") {
+      const h = token as Tokens.Heading;
+      if (h.depth === 1) {
+        if (!seenTitle) {
+          title = h.text;
+          seenTitle = true;
+        } else {
+          flush();
+          current = null;
+          part = h.text;
+          partIntro = [];
+        }
+        continue;
+      }
+      if (h.depth === 2) {
+        flush();
+        current = { title: h.text, part, partIntro, tokens: [] };
+        partIntro = null;
+        continue;
+      }
+    }
+    if (current) current.tokens.push(token);
+    else if (partIntro) partIntro.push(token);
+    else intro.push(token);
+  }
+  flush();
+
+  return { title, introHtml: render(intro), sections };
+}
