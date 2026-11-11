@@ -32,7 +32,7 @@
 - [ ] HTTP、RESTful API：状态码、方法、URL 设计
 - [x] FastAPI（第 13、14 节）
 - [x] 请求与响应（第 15、16 节）
-- [x] 路由、依赖注入（第 19、20 节；APIRouter 拆文件在第 22 节练习题里）
+- [x] 路由、依赖注入（第 19、20 节；**APIRouter 拆文件还没写**）
 - [ ] Middleware 中间件
 - [ ] JWT 身份认证（含密码哈希）
 - [x] SQLAlchemy ORM（第 17、18 节）

@@ -1,9 +1,9 @@
-# Python 入门笔记（手敲版）
+# Python 入门笔记
 
 从基础语法一路学到用 FastAPI 写接口、连数据库、写测试。
 
 - **第一部分：Python 基础**（第 1–12 节）：只讲常用的写法，不常用的先跳过。
-- **第二部分：FastAPI + SQLAlchemy**（第 13–22 节）：从零做一个 todo 接口项目。
+- **第二部分：FastAPI + SQLAlchemy**（第 13–21 节）：从零做一个 todo 接口项目。
 
 每节的代码都建议自己敲一遍、跑一遍。代码在 Python 3.12 上跑通过，注释里写的是实际输出。
 
@@ -1251,7 +1251,7 @@ create_engine(DATABASE_URL)             连上数据库
 - `mapped_column(...)`：数据库里这一列的定义。
 - `default=_now`：插入时没给值，就调用 `_now()`。注意传的是函数本身，不加括号；写成 `default=datetime.now(UTC)` 会在程序启动时就算好一个固定时间，所有数据都一样。
 - `onupdate=_now`：这一行被修改、提交时，自动调用 `_now()` 更新这一列。`updated_at` 就靠它：新建时和创建时间基本一样（各调一次 `_now()`，可能差几微秒），之后每次改动都会刷新。
-- **表结构改了要删库重建**：`create_all` 只会建不存在的表，不会给已有的表加列。已经跑过旧版本的话，先删掉 `todo.db` 再启动，否则会报 `no such column: tasks.updated_at`。正式项目用 alembic 处理这种改动（第 22 节）。
+- **表结构改了要删库重建**：`create_all` 只会建不存在的表，不会给已有的表加列。已经跑过旧版本的话，先删掉 `todo.db` 再启动，否则会报 `no such column: tasks.updated_at`。正式项目用 alembic 处理这种改动。
 
 ## 18. Session：在接口里增删改查
 
@@ -1616,29 +1616,3 @@ python -m pytest -q -k 404     # 只跑名字里带 404 的测试
 - **`@pytest.fixture`**：测试的准备工作。测试函数参数里写了 `client`，pytest 就先跑同名的 fixture，把 `yield` 出来的东西传进去；测试结束后执行 `yield` 后面的收尾。
 - **`app.dependency_overrides`**：测试时把某个依赖换掉，这里把真数据库换成内存库，跑完不留垃圾。
 - 内存库 `sqlite://` 要配 `StaticPool`，否则每个连接拿到的都是一个新的空库，会报 `no such table`。
-
-## 22. 接下来
-
-**数据库迁移（alembic，了解即可）**：练习时用 `create_all` 建表，但它只会建新表，不会改已有的表（比如加一列）。正式项目用 alembic 管理表结构的变化：
-
-```bash
-uv pip install alembic
-alembic init migrations                              # 生成配置和 migrations 目录
-alembic revision --autogenerate -m "add tasks"       # 对比模型和数据库，生成迁移脚本
-alembic upgrade head                                 # 执行到最新
-alembic downgrade -1                                 # 回退一步
-```
-
-**项目变大以后怎么拆**：
-
-- 接口按业务拆到多个文件：`app/api/tasks.py` 里用 `router = APIRouter(prefix="/tasks")`，`main.py` 里 `app.include_router(router)`。
-- 业务逻辑放到 `app/domain/tasks.py`，接口函数只负责取参数、调用逻辑、返回结果。
-
-**练习题**：
-
-1. **标记完成的冲突**：在 `errors.py` 加 `task_already_done()`，返回 `fail(409, "这个任务已经完成了")`；让 `PATCH /tasks/{id}/done` 在任务已完成时抛出它，并写一个测试。
-2. **改标题**：加 `PUT /tasks/{id}/title`，请求体 `{"title": "..."}`。去掉首尾空格后为空返回 400「标题不能为空」；和别的未完成任务重名返回 409；成功返回 `success(msg="修改成功")`。
-3. **分页**：给 `GET /tasks` 加 `page` 参数（从 1 开始），用 `.offset((page - 1) * limit)` 实现；`total` 要按筛选条件算，不是全表总数。
-4. **返回全部校验错误**：把第 16 节 `handle_validation` 改成把所有错误放进 `data`：`[{"field": "title", "msg": "..."}, ...]`，`msg` 固定写「参数不对」。
-5. **拆文件**：把接口挪到 `app/api/tasks.py`，用 `APIRouter`。
-6. **测试全绿**：给上面每个新接口写至少一个成功、一个失败的测试，`pytest` 全部通过。
