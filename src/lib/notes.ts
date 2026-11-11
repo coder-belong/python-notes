@@ -21,6 +21,9 @@ export type RoadmapStage = { title: string; items: { done: boolean; html: string
 const NOTES_PATH = path.join(process.cwd(), "content", "notes.md");
 const ROADMAP_PATH = path.join(process.cwd(), "ROADMAP.md");
 
+/** 节标题末尾的固定 id：`## 5. 函数 {#functions}`。 */
+const FIXED_ID = /\s*\{#([A-Za-z0-9-]+)\}\s*$/;
+
 /** 标题 → 锚点 id：保留中文、字母、数字，其余变成连字符。 */
 export function slugify(text: string): string {
   return text
@@ -75,12 +78,13 @@ export function loadNotes(): Notes {
   const intro: Token[] = [];
   let partIntro: Token[] | null = null; // 刚进入一个新部分、还没遇到第一节时的内容
   const sections: Section[] = [];
-  let current: { title: string; part: string | null; partIntro: Token[] | null; tokens: Token[] } | null = null;
+  let current: { id: string; title: string; part: string | null; partIntro: Token[] | null; tokens: Token[] } | null =
+    null;
 
   const flush = () => {
     if (current) {
       sections.push({
-        id: slugify(current.title),
+        id: current.id,
         title: current.title,
         part: current.part,
         partIntroHtml: current.partIntro?.length ? render(current.partIntro) : null,
@@ -108,7 +112,10 @@ export function loadNotes(): Notes {
       }
       if (h.depth === 2) {
         flush();
-        current = { title: h.text, part, partIntro, tokens: [] };
+        // 每节的 id 写死在标题后面，改标题、改编号都不影响学习记录；没写就按标题生成
+        const m = h.text.match(FIXED_ID);
+        const sectionTitle = m ? h.text.slice(0, m.index).trim() : h.text;
+        current = { id: m ? m[1] : slugify(sectionTitle), title: sectionTitle, part, partIntro, tokens: [] };
         partIntro = null;
         continue;
       }

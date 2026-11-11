@@ -1,5 +1,7 @@
 /** 学习记录：存在浏览器 localStorage 里（只在这台电脑的这个浏览器）。 */
 
+import { LEGACY_IDS, migrateKeys } from "./legacy-ids";
+
 export type StudyData = {
   version: 1;
   days: Record<string, number>; // 日期（本地）→ 当天学习秒数
@@ -22,8 +24,8 @@ export function loadData(): StudyData {
     return {
       version: 1,
       days: parsed.days ?? {},
-      sections: parsed.sections ?? {},
-      done: parsed.done ?? {},
+      sections: migrateKeys(parsed.sections ?? {}),
+      done: migrateKeys(parsed.done ?? {}),
       pomodoros: parsed.pomodoros ?? {},
     };
   } catch {
@@ -46,7 +48,9 @@ const READING_KEY = "python-notes:reading";
 export function loadReading(): Reading | null {
   try {
     const raw = localStorage.getItem(READING_KEY);
-    return raw ? (JSON.parse(raw) as Reading) : null;
+    if (!raw) return null;
+    const r = JSON.parse(raw) as Reading;
+    return { ...r, id: LEGACY_IDS[r.id] ?? r.id };
   } catch {
     return null;
   }
