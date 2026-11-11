@@ -3,8 +3,8 @@
 从基础语法一路学到用 FastAPI 写接口、连数据库、写测试。
 
 - **阶段一：Python 语言基础**（第 1–12 节）：只讲常用的写法，不常用的先跳过。
-- **阶段二：Python 进阶与工程化**（第 13–15 节）：类型注解、日志和配置、异步。
-- **阶段三：Python 后端开发**（第 16–24 节）：用 FastAPI + SQLAlchemy 从零做一个 todo 接口项目。
+- **阶段二：Python 进阶与工程化**（第 13–19 节）：类型注解、依赖管理、调试、异步、发 HTTP 请求、并发。
+- **阶段三：Python 后端开发**（第 20–28 节）：用 FastAPI + SQLAlchemy 从零做一个 todo 接口项目。
 
 每节的代码都建议自己敲一遍、跑一遍。代码在 Python 3.12 上跑通过，注释里写的是实际输出。
 
@@ -467,7 +467,7 @@ print(total)                                   # 333332833333500000
 
 作为函数唯一的参数时，外面那层括号可以省掉，所以写成 `sum(n * n for n in ...)`。
 
-第 22 节的数据库会话、第 24 节的 pytest fixture 都用 `yield` 写「先准备 → 交出去用 → 用完收尾」，原理就是这里的「暂停再继续」。
+第 26 节的数据库会话、第 28 节的 pytest fixture 都用 `yield` 写「先准备 → 交出去用 → 用完收尾」，原理就是这里的「暂停再继续」。
 
 ### 装饰器：给函数包一层
 
@@ -703,7 +703,7 @@ for a in [Dog("旺财", "柴犬"), Robot()]:
 
 - 继承适合「是一种」的关系：狗是一种动物。
 - 只是想复用几个函数，不一定要继承：写成普通函数，或者把另一个对象存成属性（组合）更简单。
-- 最常见的继承是框架要求的：`class BalanceError(Exception)`（第 11 节）、`class TaskCreate(BaseModel)`（pydantic，第 18 节）、`class Task(Base)`（SQLAlchemy，第 20 节）。
+- 最常见的继承是框架要求的：`class BalanceError(Exception)`（第 11 节）、`class TaskCreate(BaseModel)`（pydantic，第 22 节）、`class Task(Base)`（SQLAlchemy，第 24 节）。
 
 ## 10. dataclass：只存数据的类 {#dataclass}
 
@@ -733,7 +733,7 @@ print(t == Task("写笔记", tags=["学习"]))   # True  按字段比较
 | 场景 | 用什么 |
 |---|---|
 | 程序内部传递的数据 | `@dataclass` |
-| 接口收到的请求、返回的响应（要校验） | pydantic 的 `BaseModel`（第 18 节） |
+| 接口收到的请求、返回的响应（要校验） | pydantic 的 `BaseModel`（第 22 节） |
 | 有复杂逻辑的类、异常类 | 普通 class，自己写 `__init__` |
 
 ## 11. 异常 {#exceptions}
@@ -873,7 +873,7 @@ finally:
 
 # 阶段二：Python 进阶与工程化
 
-把前面散在各节的类型注解集中讲清楚，再加上写项目离不开的日志、配置和异步。
+写真实项目离不开的工程能力：类型注解、依赖管理、日志和配置、调试、异步、调别人的接口、并发模型。
 
 ## 13. 类型注解：给变量和函数标类型 {#type-hints}
 
@@ -985,11 +985,112 @@ print(double("ab"))     # abab   标的是 int，传字符串照样运行
 ```
 
 - 想在**运行前**发现这类错：编辑器（Pylance）会直接标红；命令行可以用 `mypy` 或 `pyright` 检查整个项目。
-- 想在**运行时**真的校验数据（比如接口收到的 JSON）：用 pydantic（第 18 节），它按注解检查、转换类型，不对就报错。
+- 想在**运行时**真的校验数据（比如接口收到的 JSON）：用 pydantic（第 22 节），它按注解检查、转换类型，不对就报错。
 
 **写到什么程度**：函数的参数和返回值都写；变量一眼能看出类型的就不写；一时写不出来的类型先用 `Any`（`from typing import Any`），别卡在类型上。
 
-## 14. 日志、环境变量、时间 {#logging-env-time}
+## 14. 项目和依赖：uv、pip、pyproject.toml {#tooling}
+
+第 0 节用 `uv venv` 建了虚拟环境、用 `uv pip install` 装包，够做练习。正式项目还要解决两件事：**别人拿到代码，怎么装出一模一样的环境**；**代码风格怎么统一**。
+
+### pip 和 uv
+
+`pip` 是 Python 自带的装包工具；`uv` 是新出的替代品，快很多，还顺带管 Python 版本和虚拟环境。`uv pip ...` 的用法和 `pip ...` 基本一样，两个都要能看懂：
+
+| 做什么 | pip | uv |
+|---|---|---|
+| 建虚拟环境 | `python -m venv .venv` | `uv venv` |
+| 装包 | `pip install httpx` | `uv pip install httpx` |
+| 装指定版本 | `pip install "httpx==0.28.1"` | `uv pip install "httpx==0.28.1"` |
+| 卸载 | `pip uninstall httpx` | `uv pip uninstall httpx` |
+| 看装了哪些 | `pip list` | `uv pip list` |
+| 导出依赖清单 | `pip freeze > requirements.txt` | `uv pip freeze > requirements.txt` |
+| 按清单安装 | `pip install -r requirements.txt` | `uv pip install -r requirements.txt` |
+
+版本号的写法：`==0.28.1` 只要这个版本；`>=0.28` 这个版本或更新；不写就装最新的。
+
+### 两种记依赖的方式
+
+**requirements.txt**：老办法，一行一个包。`pip freeze` 导出的是当前环境里**所有**包（包括依赖的依赖），分不清哪些是你直接要用的。很多老项目还在用，看到会用就行。
+
+```
+fastapi==0.115.0
+sqlalchemy==2.0.36
+pydantic==2.9.2
+...
+```
+
+**pyproject.toml + uv.lock**：现在的标准做法。
+
+```bash
+uv init --app todo-api        # 新建项目：生成 pyproject.toml 等文件
+cd todo-api
+uv add fastapi sqlalchemy     # 装包，同时写进 pyproject.toml 的 dependencies
+uv add --dev pytest ruff      # 只有开发时用的工具：写进 dev 分组，线上不装
+uv remove sqlalchemy          # 卸载，同时从 pyproject.toml 删掉
+uv run python main.py         # 用项目的虚拟环境运行，不用先 source 激活
+uv sync                       # 别人拿到代码后：按 uv.lock 装出一模一样的环境
+```
+
+`uv add` 之后的 `pyproject.toml`（省略了几行 `uv init` 自动生成的）：
+
+```toml
+[project]
+name = "todo-api"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [          # 项目直接用到的包：只写你自己 add 的
+    "fastapi>=0.115",
+    "sqlalchemy>=2.0",
+]
+
+[dependency-groups]
+dev = [                   # 开发时才用：测试、格式化
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.ruff]               # 各种工具的配置也写在这个文件里
+line-length = 100
+```
+
+- `pyproject.toml`：你**直接**要用的包和大致版本范围，手写也行，一般用 `uv add` 维护。
+- `uv.lock`：`uv` 自动生成，记着**所有**包（含间接依赖）装的精确版本。不要手改，但**要提交到 git**，这样谁 `uv sync` 装出来的都一样。
+- `.venv/` 不提交：别人用 `uv sync` 自己装。
+
+### Ruff：格式化和检查
+
+Ruff 一个工具干两件事：**格式化**（统一缩进、空格、引号、换行）和**检查**（没用到的 import、未定义的变量这类问题）。
+
+```bash
+uv run ruff format .          # 把当前目录所有 .py 文件格式化
+uv run ruff check .           # 检查问题
+uv run ruff check . --fix     # 能自动修的直接修掉
+```
+
+格式化前：
+
+```python
+import os
+def f( x ):
+    y=1
+    return x
+```
+
+`ruff format` 之后：
+
+```python
+import os
+
+
+def f(x):
+    y = 1
+    return x
+```
+
+`ruff check` 会指出 `os` 导入了没用（F401），`--fix` 会直接删掉那行。第 0 节已经在编辑器里配了「保存时自动格式化」，平时不用手动跑；提交代码前跑一次 `ruff check` 就行。
+
+## 15. 日志、环境变量、时间 {#logging-env-time}
 
 ```python
 import logging
@@ -1023,7 +1124,140 @@ print(now - timedelta(days=3))              # 3 天前
 | `warning` | 不正常但还能继续 |
 | `error` | 出错了 |
 
-## 15. async / await {#async}
+## 16. 调试：看懂报错、打断点 {#debugging}
+
+写代码大部分时间不是在写，而是在找「为什么不对」。这一节讲三件事：看懂报错、用 `print` 快速看值、打断点一步一步跑。
+
+### 看懂报错（traceback）
+
+```python
+# debug_demo.py
+def parse_age(text: str) -> int:
+    return int(text)
+
+
+def load_user(row: dict) -> dict:
+    return {"name": row["name"], "age": parse_age(row["age"])}
+
+
+load_user({"name": "Tom", "age": "十八"})
+```
+
+运行 `python debug_demo.py`：
+
+```
+Traceback (most recent call last):
+  File "debug_demo.py", line 9, in <module>
+    load_user({"name": "Tom", "age": "十八"})
+  File "debug_demo.py", line 6, in load_user
+    return {"name": row["name"], "age": parse_age(row["age"])}
+                                        ^^^^^^^^^^^^^^^^^^^^^
+  File "debug_demo.py", line 2, in parse_age
+    return int(text)
+           ^^^^^^^^^
+ValueError: invalid literal for int() with base 10: '十八'
+```
+
+**从最后一行往上看**：
+
+1. **最后一行**是错误类型和原因：`ValueError`，`int()` 转不了 `'十八'`。大部分时候看这一行就知道怎么回事。
+2. **往上一段**是出错的位置：`debug_demo.py` 第 2 行，`parse_age` 函数里，`^^^` 标出了具体是哪段代码。
+3. **再往上**是一路调用过来的路径：第 9 行调了 `load_user`，第 6 行调了 `parse_age`。`most recent call last` 的意思就是「越往下越是最后调用的」。
+
+报错里经常夹着很多第三方库的文件路径（比如 `site-packages/fastapi/...`），**先找自己写的文件**，问题一般出在那里。
+
+### print 调试：`f"{x=}"`
+
+最快的办法还是打印。f-string 里在变量后面加个 `=`，会把名字和值一起打出来，不用自己写标签：
+
+```python
+x = 3
+items = [1, 2]
+print(f"{x=}, {items=}, {len(items)=}")   # x=3, items=[1, 2], len(items)=2
+```
+
+找完问题记得删掉；要长期保留的输出用 `logging`（第 15 节）。
+
+### 断点：程序停下来，一步一步看
+
+在想停下的地方写一行 `breakpoint()`，运行到这里程序会暂停，进入调试器（pdb），可以查看变量、一行一行往下走：
+
+```python
+# pdb_demo.py
+def total_price(items: list[dict]) -> float:
+    total = 0
+    for item in items:
+        breakpoint()                      # 程序停在这里，进入调试
+        total += item["price"] * item["qty"]
+    return total
+
+
+print(total_price([{"price": 9.9, "qty": 2}, {"price": 5, "qty": 1}]))
+```
+
+运行 `python pdb_demo.py`，在 `(Pdb)` 后面输入命令：
+
+```
+> pdb_demo.py(5)total_price()
+-> total += item["price"] * item["qty"]       ← 下一行要执行的代码
+(Pdb) p item                                   ← 看变量
+{'price': 9.9, 'qty': 2}
+(Pdb) p total
+0
+(Pdb) n                                        ← 执行一行
+> pdb_demo.py(3)total_price()
+-> for item in items:
+(Pdb) p total
+19.8
+(Pdb) c                                        ← 继续跑，到下一个断点再停
+> pdb_demo.py(5)total_price()
+-> total += item["price"] * item["qty"]
+(Pdb) p item, total
+({'price': 5, 'qty': 1}, 19.8)
+(Pdb) c
+24.8
+```
+
+常用命令：
+
+| 命令 | 作用 |
+|---|---|
+| `p 表达式` | 打印变量或表达式的值，比如 `p item["price"] * 2` |
+| `n`（next） | 执行当前这一行，遇到函数调用不进去 |
+| `s`（step） | 执行当前这一行，遇到函数调用就进到函数里面 |
+| `c`（continue） | 继续运行，直到下一个断点或者程序结束 |
+| `l`（list） | 显示当前位置附近的代码 |
+| `w`（where） | 显示调用路径：是从哪一路调过来的 |
+| `q`（quit） | 直接退出程序（会打印一段 `BdbQuit`，正常） |
+
+### 编辑器里打断点（平时更常用）
+
+Cursor / VS Code 装好 Python 插件后：
+
+1. 在行号左边点一下，出现红点，就是断点（不用改代码写 `breakpoint()`）；
+2. 按 F5，选「Python Debugger: Current File」运行；
+3. 停下以后，左边能看到所有变量的值，鼠标停在变量上也能看；顶部的按钮对应上面的 `n` / `s` / `c`。
+
+调试 FastAPI 接口：在项目里建 `.vscode/launch.json`，用调试模式启动 uvicorn，然后在接口函数里打断点，用 `/docs` 发请求，程序就会停在断点上：
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "FastAPI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--port", "8000"]
+    }
+  ]
+}
+```
+
+**怎么选**：报错了先看 traceback；想快速看一个值用 `print(f"{x=}")`；逻辑绕、要看很多变量就打断点。
+
+## 17. async / await {#async}
 
 `async def` 定义的是**协程函数**：遇到要等待的操作（网络请求、sleep）时，可以先让出去执行别的任务，等好了再回来。
 
@@ -1076,10 +1310,418 @@ coro.close()         # 不 close 的话会警告：coroutine 'hello' was never a
 
 - 整个程序只在最外层调用一次 `asyncio.run(main())`；在 async 函数里面要用 `await`，不能再调用 `asyncio.run`（会报错，因为事件循环已经在跑了）。
 - 用 FastAPI 不需要写 `asyncio.run`：uvicorn 启动时已经建好了事件循环，你写的 `async def` 接口由它来调用。
-
-- `await` 只能写在 `async def` 里面。
 - 在 async 函数里**不要用 `time.sleep()`**，它会卡住整个程序；要用 `await asyncio.sleep()`。
 - 写 FastAPI 接口时，普通的 `def` 就够用（FastAPI 会放到线程池里跑），入门阶段不必纠结。
+
+### create_task：先放到后台跑
+
+`await` 一个协程会一直等它做完。想让它在后台先跑着、自己接着干别的，用 `asyncio.create_task`，需要结果时再 `await`：
+
+```python
+import asyncio
+
+
+async def download(name: str) -> str:
+    await asyncio.sleep(1)
+    return f"{name} 下载完了"
+
+
+async def main() -> None:
+    task = asyncio.create_task(download("a.zip"))   # 马上开始跑，不等
+    print("先干点别的")
+    result = await task                              # 现在才等它的结果
+    print(result)
+
+
+asyncio.run(main())
+# 先干点别的
+# a.zip 下载完了
+```
+
+`gather` 其实就是帮你把多个协程都 `create_task`，再一起等。
+
+### 超时：`asyncio.timeout`
+
+调接口、调大模型都可能卡住，一定要设超时：
+
+```python
+import asyncio
+
+
+async def slow() -> str:
+    await asyncio.sleep(3)
+    return "好了"
+
+
+async def main() -> None:
+    try:
+        async with asyncio.timeout(1):     # 里面的代码超过 1 秒就取消
+            print(await slow())
+    except TimeoutError:
+        print("超过 1 秒，不等了")
+
+
+asyncio.run(main())    # 超过 1 秒，不等了
+```
+
+`asyncio.timeout` 是 Python 3.11 加的；老代码里常见的 `await asyncio.wait_for(slow(), timeout=1)` 是同一个意思。
+
+### 取消任务
+
+用户关掉页面、点了「停止生成」，后台还在跑的任务要能停下来。`task.cancel()` 会在任务当前 `await` 的地方抛出 `CancelledError`：
+
+```python
+import asyncio
+
+
+async def worker() -> None:
+    try:
+        while True:
+            print("干活中")
+            await asyncio.sleep(0.4)
+    except asyncio.CancelledError:
+        print("被取消了，收尾")       # 关连接、存进度之类的清理放这里
+        raise                        # 清理完要接着抛出去，不能把取消吞掉
+
+
+async def main() -> None:
+    task = asyncio.create_task(worker())
+    await asyncio.sleep(1)
+    task.cancel()                    # 发出取消
+    try:
+        await task                   # 等它真的停下
+    except asyncio.CancelledError:
+        print("已经停了")
+
+
+asyncio.run(main())
+# 干活中
+# 干活中
+# 干活中
+# 被取消了，收尾
+# 已经停了
+```
+
+超时其实就是「到点自动 cancel」，所以超时和取消走的是同一套机制。
+
+### 限制同时跑几个：Semaphore
+
+`gather` 一下子开 100 个请求，对方服务器可能直接把你限流。用 `Semaphore`（信号量）控制最多同时跑几个：
+
+```python
+import asyncio
+import time
+
+
+async def fetch(i: int, sem: asyncio.Semaphore) -> int:
+    async with sem:                  # 拿到名额才进去，最多 3 个同时在里面
+        await asyncio.sleep(1)
+        return i
+
+
+async def main() -> None:
+    sem = asyncio.Semaphore(3)
+    start = time.perf_counter()
+    results = await asyncio.gather(*(fetch(i, sem) for i in range(9)))
+    print(results)                                     # [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    print(f"用时 {time.perf_counter() - start:.1f}s")    # 用时 3.0s：9 个任务，每次 3 个
+
+
+asyncio.run(main())
+```
+
+### 其中一个出错了怎么办
+
+`gather` 里有一个任务抛错，`await gather(...)` 就会抛出这个错，其他任务的结果也拿不到。加上 `return_exceptions=True`，错误会和正常结果一起放进列表，自己挨个判断：
+
+```python
+import asyncio
+
+
+async def job(n: int) -> int:
+    if n == 2:
+        raise ValueError("2 号失败")
+    return n * 10
+
+
+async def main() -> None:
+    results = await asyncio.gather(job(1), job(2), job(3), return_exceptions=True)
+    for r in results:
+        if isinstance(r, Exception):
+            print("失败：", r)
+        else:
+            print("成功：", r)
+
+
+asyncio.run(main())
+# 成功： 10
+# 失败： 2 号失败
+# 成功： 30
+```
+
+## 18. 用 httpx 发 HTTP 请求 {#httpx}
+
+后端也经常要去调别人的接口：第三方服务、内部其他服务，以及阶段四要调的大模型 API。Python 里用 `httpx`（`uv pip install httpx`）。老项目里常见的 `requests` 用法几乎一样，但它不支持 async；FastAPI 测试用的 `TestClient` 底层也是 httpx。
+
+下面的例子用 [httpbin.org](https://httpbin.org)：一个专门给人练习发请求的网站，会把你发过去的东西原样返回。
+
+### GET：查询参数、读 JSON
+
+```python
+import httpx
+
+r = httpx.get("https://httpbin.org/get", params={"q": "python", "page": 1}, timeout=10)
+print(r.status_code)          # 200
+print(r.url)                  # https://httpbin.org/get?q=python&page=1   params 自动拼进网址
+data = r.json()               # 响应体按 JSON 解析成 dict
+print(data["args"])           # {'page': '1', 'q': 'python'}
+```
+
+### POST：发 JSON、带请求头
+
+```python
+r = httpx.post(
+    "https://httpbin.org/post",
+    json={"title": "写笔记", "done": False},        # 自动转成 JSON，并加上 Content-Type
+    headers={"Authorization": "Bearer my-token"},  # 带 token 之类的请求头
+    timeout=10,
+)
+print(r.json()["json"])                            # {'done': False, 'title': '写笔记'}
+print(r.json()["headers"]["Authorization"])        # Bearer my-token
+```
+
+### 状态码不对，httpx 不会自己报错
+
+拿到 404、500 时，`httpx.get` 照样正常返回，要自己检查。最省事的是 `raise_for_status()`：不是 2xx 就抛出 `HTTPStatusError`。
+
+```python
+r = httpx.get("https://httpbin.org/status/404", timeout=10)
+print(r.status_code)          # 404   不会因为 404 报错
+
+try:
+    r.raise_for_status()
+except httpx.HTTPStatusError as e:
+    print("请求失败：", e.response.status_code)   # 请求失败： 404
+```
+
+### 超时
+
+**一定要写 `timeout`**。httpx 默认 5 秒；调大模型这种慢接口要按需要调大，但不能不设，否则对方卡住，你的程序也跟着一直等。
+
+```python
+try:
+    httpx.get("https://httpbin.org/delay/3", timeout=1)   # 这个地址 3 秒后才返回
+except httpx.TimeoutException:
+    print("超过 1 秒，超时了")
+```
+
+### Client：同一个服务调多次
+
+每次 `httpx.get` 都要重新建连接。同一个服务要调很多次时，建一个 `Client` 复用连接，公共的地址、请求头、超时也只写一次：
+
+```python
+with httpx.Client(base_url="https://httpbin.org", headers={"Authorization": "Bearer my-token"}, timeout=10) as client:
+    r1 = client.get("/get")                       # 实际请求 https://httpbin.org/get
+    r2 = client.post("/post", json={"a": 1})
+    print(r1.status_code, r2.status_code)         # 200 200
+```
+
+### 异步：AsyncClient + gather 同时发
+
+在 async 代码里（比如 FastAPI 的 `async def` 接口），要用 `AsyncClient`，前面加 `await`。配合第 17 节的 `gather`，可以同时发好几个请求：
+
+```python
+import asyncio
+import time
+
+import httpx
+
+
+async def main() -> None:
+    async with httpx.AsyncClient(base_url="https://httpbin.org", timeout=10) as client:
+        start = time.perf_counter()
+        for _ in range(3):                                # 一个一个发：等完一个再发下一个
+            await client.get("/delay/1")
+        print(f"一个一个发：{time.perf_counter() - start:.1f}s")
+
+        start = time.perf_counter()
+        responses = await asyncio.gather(*(client.get("/delay/1") for _ in range(3)))
+        print([r.status_code for r in responses])
+        print(f"同时发：{time.perf_counter() - start:.1f}s")
+
+
+asyncio.run(main())
+# 一个一个发：4.5s
+# [200, 200, 200]
+# 同时发：1.8s
+```
+
+`/delay/1` 每个请求都要等 1 秒，再加上网络来回的时间。一个一个发是 3 份时间加起来；同时发是 3 个一起等，总时间接近一个请求的时间。具体秒数看网络，差距是一样的。
+
+在 `async def` 里不要用同步的 `httpx.get`：它等待的时候会卡住整个事件循环，和第 17 节说的 `time.sleep` 是一样的问题。
+
+### 失败重试
+
+网络抖动、对方临时出错（5xx）、被限流（429），过一会儿再试往往就好了。但 4xx（参数错、没权限）是请求本身有问题，重试多少次都一样，不该重试。
+
+```python
+import time
+
+import httpx
+
+
+def get_with_retry(url: str, retries: int = 3) -> httpx.Response:
+    for attempt in range(1, retries + 1):
+        try:
+            r = httpx.get(url, timeout=5)
+            if r.status_code < 500 and r.status_code != 429:   # 成功，或者重试也没用的错误
+                return r
+            print(f"第 {attempt} 次：{r.status_code}")
+        except httpx.TransportError as e:                       # 超时、连不上
+            print(f"第 {attempt} 次：{type(e).__name__}")
+        if attempt < retries:
+            time.sleep(2 ** (attempt - 1))                      # 等 1 秒、2 秒……越来越久
+    raise RuntimeError(f"重试 {retries} 次都失败了：{url}")
+
+
+try:
+    get_with_retry("https://httpbin.org/status/503")
+except RuntimeError as e:
+    print(e)
+# 第 1 次：503
+# 第 2 次：503
+# 第 3 次：503
+# 重试 3 次都失败了：https://httpbin.org/status/503
+```
+
+- **等待时间越来越长**（1、2、4 秒）叫指数退避：对方已经忙不过来了，大家还一起狂刷只会更糟。
+- **次数要有上限**：一直失败就放弃，把错误报出来。
+- 实际项目里可以用 `tenacity` 这类库，用装饰器写重试，原理和上面一样。
+
+## 19. 线程、进程、协程和 GIL {#concurrency}
+
+「同时做好几件事」在 Python 里有三种办法。面试常问它们的区别，写代码时也要知道该用哪个。
+
+### 三者的区别
+
+| | 进程 | 线程 | 协程（async） |
+|---|---|---|---|
+| 是什么 | 一个独立运行的程序，有自己的内存 | 进程里的一条执行线路，同一个进程的线程共享内存 | 一个线程里的很多个任务，靠 `await` 主动让出 |
+| 谁来切换 | 操作系统 | 操作系统（随时可能切走） | 自己：只在 `await` 的地方切换 |
+| 开销 | 大（几十 MB 内存，启动慢） | 中 | 很小（开几万个都没问题） |
+| 能不能多核一起算 | 能 | **不能**（因为 GIL，见下面） | 不能（只有一个线程） |
+| 适合 | 大量计算 | 等待：网络、文件、数据库 | 大量等待：成百上千个网络请求 |
+
+### GIL：为什么 Python 多线程不能一起算
+
+GIL（全局解释器锁）是 CPython（就是我们平时用的 Python）里的一把锁：**同一时刻只有一个线程在执行 Python 代码**。所以开再多线程，纯计算的部分也是轮流跑，不会更快。
+
+但线程在**等待**的时候（等网络、等磁盘、`time.sleep`）会把锁放开，别的线程可以接着跑。所以：
+
+- **等待为主（IO 密集）**：多线程有用，等的时间能重叠起来。
+- **计算为主（CPU 密集）**：多线程没用，要用多进程：每个进程有自己的 GIL，可以真正用上多个 CPU 核。
+
+实际跑一下就知道了（这段要存成文件运行）：
+
+```python
+# cpu_demo.py
+import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+
+
+def count(n: int) -> int:          # 纯计算：从 0 加到 n
+    total = 0
+    for i in range(n):
+        total += i
+    return total
+
+
+def timed(label: str, run) -> None:
+    start = time.perf_counter()
+    run()
+    print(f"{label}：{time.perf_counter() - start:.1f}s")
+
+
+if __name__ == "__main__":          # 用多进程时必须写这一行
+    jobs = [20_000_000] * 4
+
+    timed("一个一个算", lambda: [count(n) for n in jobs])
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        timed("4 个线程", lambda: list(pool.map(count, jobs)))
+    with ProcessPoolExecutor(max_workers=4) as pool:
+        timed("4 个进程", lambda: list(pool.map(count, jobs)))
+```
+
+```
+一个一个算：1.2s
+4 个线程：1.1s       ← 和一个一个算差不多：GIL 让线程只能轮流算
+4 个进程：0.3s       ← 4 个核一起算，快了 4 倍
+```
+
+（具体秒数看电脑，比例差不多。）多进程必须写 `if __name__ == "__main__":`：新进程启动时会重新导入这个文件，不加这个判断，每个新进程又会去开新进程。
+
+### 等待为主：线程池
+
+同样是 5 个「等 1 秒」的任务，用线程池一起等，总共 1 秒：
+
+```python
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+
+def wait_io(i: int) -> int:
+    time.sleep(1)                   # 模拟等网络、等数据库
+    return i
+
+
+start = time.perf_counter()
+with ThreadPoolExecutor(max_workers=5) as pool:
+    results = list(pool.map(wait_io, range(5)))
+print(results)                                     # [0, 1, 2, 3, 4]
+print(f"用时 {time.perf_counter() - start:.1f}s")    # 用时 1.0s，不是 5 秒
+```
+
+`pool.map(函数, 列表)` 把列表里每个值交给一个线程去调用这个函数，结果按原来的顺序返回。
+
+### async 里要调用同步的慢函数：`asyncio.to_thread`
+
+有些库只有同步版本（比如某些 SDK、文件处理），直接在 `async def` 里调用会卡住事件循环。用 `asyncio.to_thread` 把它放到线程里跑，`await` 等结果：
+
+```python
+import asyncio
+import time
+
+
+def slow_sync(name: str) -> str:    # 一个只有同步版本的慢函数
+    time.sleep(1)
+    return f"{name} 完成"
+
+
+async def main() -> None:
+    start = time.perf_counter()
+    results = await asyncio.gather(
+        asyncio.to_thread(slow_sync, "A"),
+        asyncio.to_thread(slow_sync, "B"),
+    )
+    print(results)                                     # ['A 完成', 'B 完成']
+    print(f"用时 {time.perf_counter() - start:.1f}s")    # 用时 1.0s
+
+
+asyncio.run(main())
+```
+
+### 怎么选
+
+| 场景 | 用什么 |
+|---|---|
+| 写 FastAPI 接口，用的库支持 async（httpx、异步数据库驱动） | `async def` + `await` |
+| 写 FastAPI 接口，用的库只有同步版本 | 普通 `def`，FastAPI 自动放到线程池里跑 |
+| async 代码里临时要调一个同步的慢函数 | `asyncio.to_thread` |
+| 脚本里要同时发一批请求、读一批文件 | 线程池，或者 async + `gather` |
+| 大量计算：图片处理、数据分析 | 多进程（`ProcessPoolExecutor`） |
+| 很重、很慢的后台任务（比如生成视频） | 交给单独的任务队列去跑，接口立刻返回（阶段六） |
+
+> Python 3.13 起有一个实验性的「无 GIL」版本，以后线程也许能多核一起算，但现在大部分项目和库还是按有 GIL 来写的。
 
 ---
 
@@ -1087,7 +1729,7 @@ coro.close()         # 不 close 的话会警告：coroutine 'hello' was never a
 
 做一个 todo 接口项目：用 FastAPI 写接口，SQLAlchemy 把数据存进 SQLite，pytest 写测试。
 
-## 16. 项目准备 {#project-setup}
+## 20. 项目准备 {#project-setup}
 
 ```bash
 mkdir -p todo-api/app todo-api/tests && cd todo-api
@@ -1105,7 +1747,7 @@ uv pip install fastapi "uvicorn[standard]" sqlalchemy pytest httpx python-dotenv
 | sqlalchemy | 用 Python 类操作数据库 |
 | pytest | 跑测试 |
 | httpx | 测试里的 `TestClient` 要用它 |
-| python-dotenv | 启动时读取 `.env` 文件里的配置（第 20 节） |
+| python-dotenv | 启动时读取 `.env` 文件里的配置（第 24 节） |
 
 `"uvicorn[standard]"` 要加引号，否则 zsh 会把方括号当通配符。
 
@@ -1125,7 +1767,7 @@ todo-api/
     └── test_tasks.py
 ```
 
-## 17. 第一个接口 {#first-api}
+## 21. 第一个接口 {#first-api}
 
 ```python
 # app/hello.py
@@ -1191,7 +1833,7 @@ uvicorn app.hello:app --reload
 - RESTful：路径用名词复数表示资源，动作用 HTTP 方法表示，不写 `/getUser`、`/users/list` 这种。
 - 固定路径要写在 `{参数}` 路径前面，比如 `/users/me` 要写在 `/users/{user_id}` 前面，否则 `me` 会被当成 `user_id`。
 
-## 18. pydantic：请求体和响应格式 {#pydantic}
+## 22. pydantic：请求体和响应格式 {#pydantic}
 
 继承 `BaseModel`，写好字段和类型，pydantic 会自动生成 `__init__`，并做**校验和类型转换**：
 
@@ -1212,7 +1854,7 @@ class TaskCreate(BaseModel):
 
 class TaskOut(BaseModel):
     """返回给前端的一条任务。"""
-    model_config = ConfigDict(from_attributes=True)   # 允许直接从对象的属性读值（第 23 节用）
+    model_config = ConfigDict(from_attributes=True)   # 允许直接从对象的属性读值（第 27 节用）
 
     id: int
     title: str
@@ -1233,7 +1875,7 @@ TaskCreate(title="")                # ❌ ValidationError：至少 1 个字符
 TaskCreate(title="a").model_dump()  # {'title': 'a', 'note': None}  转成 dict
 ```
 
-**`from_attributes=True`**：`TaskOut` 加了这个配置后，可以用 `TaskOut.model_validate(对象)` 直接从一个对象上按字段名读取同名属性来创建，不用一个个字段手写 `TaskOut(id=task.id, title=task.title, ...)`。第 23 节就用它把数据库里的 `Task` 转成返回给前端的 `TaskOut`。
+**`from_attributes=True`**：`TaskOut` 加了这个配置后，可以用 `TaskOut.model_validate(对象)` 直接从一个对象上按字段名读取同名属性来创建，不用一个个字段手写 `TaskOut(id=task.id, title=task.title, ...)`。第 27 节就用它把数据库里的 `Task` 转成返回给前端的 `TaskOut`。
 
 在接口里，参数类型写成 `TaskCreate`，FastAPI 就从请求体读 JSON、校验，不通过自动返回 422，函数根本不会执行：
 
@@ -1262,7 +1904,7 @@ class TaskFilter(BaseModel):
 | `ge` / `le` | 数字 大于等于 / 小于等于 |
 | `description` | 文档里的说明 |
 
-## 19. 统一响应格式和错误处理 {#errors}
+## 23. 统一响应格式和错误处理 {#errors}
 
 **约定**：HTTP 状态码照实返回；响应体统一是 `{code, msg, data}`。
 
@@ -1320,7 +1962,7 @@ def install(app: FastAPI) -> None:
 
 - **`success(data, msg)`**：成功时把数据包一层。`success(task)` 得到 `{"code": 200, "msg": "ok", "data": task}`；`success(msg="删除成功")` 得到 `{"code": 200, "msg": "删除成功", "data": null}`。
 - **`fail(status, msg)`**：生成一个错误，前面要加 `raise` 才会抛出去：`raise fail(409, "已经有同名任务了")`。
-- **为什么失败用 `raise` 而不是 `return`**：`raise` 会让函数立刻停下，而且不管嵌套几层都能直接抛到 FastAPI。比如第 23 节的 `load_task()` 是被接口调用的普通函数，它在里面 `raise task_not_found()`，接口不用再判断一次返回值。
+- **为什么失败用 `raise` 而不是 `return`**：`raise` 会让函数立刻停下，而且不管嵌套几层都能直接抛到 FastAPI。比如第 27 节的 `load_task()` 是被接口调用的普通函数，它在里面 `raise task_not_found()`，接口不用再判断一次返回值。
 - **`install()`**：启动时向 FastAPI 登记「遇到 `ApiError`，就调用 `handle_api_error` 生成 `{code: -1, msg, data: null}`」。`ApiError` 是 `fail()` 背后真正被抛出的异常类，接口里不用直接写它。
 
 **出错时代码怎么走**（以 `GET /tasks/99` 为例）：
@@ -1469,7 +2111,7 @@ def boom() -> dict:
 | `DELETE /tasks/1` | 405 | `{"code": -1, "msg": "这个接口不支持这种请求方式", "data": null}` |
 | `GET /boom` | 500 | `{"code": -1, "msg": "服务出错了，请稍后再试", "data": null}` |
 
-参数校验失败用 422 还是 400，团队统一就行，很多项目用 400。如果改成 400，第 24 节测试里 `test_empty_title_rejected` 的 422 也要跟着改。
+参数校验失败用 422 还是 400，团队统一就行，很多项目用 400。如果改成 400，第 28 节测试里 `test_empty_title_rejected` 的 422 也要跟着改。
 
 **常用状态码**：
 
@@ -1483,7 +2125,7 @@ def boom() -> dict:
 | 422 | 参数校验没过（FastAPI 自动返回） |
 | 500 | 服务器出错 |
 
-## 20. SQLAlchemy：连数据库、用类定义表 {#sqlalchemy}
+## 24. SQLAlchemy：连数据库、用类定义表 {#sqlalchemy}
 
 **一个类 = 一张表，一个对象 = 一行，一个属性 = 一列。**
 
@@ -1574,7 +2216,7 @@ create_engine(DATABASE_URL)             连上数据库
 - `onupdate=_now`：这一行被修改、提交时，自动调用 `_now()` 更新这一列。`updated_at` 就靠它：新建时和创建时间基本一样（各调一次 `_now()`，可能差几微秒），之后每次改动都会刷新。
 - **表结构改了要删库重建**：`create_all` 只会建不存在的表，不会给已有的表加列。已经跑过旧版本的话，先删掉 `todo.db` 再启动，否则会报 `no such column: tasks.updated_at`。正式项目用 alembic 处理这种改动。
 
-## 21. Session：在接口里增删改查 {#session}
+## 25. Session：在接口里增删改查 {#session}
 
 **Session** 是你和数据库之间的一次「会话」：在里面查、加、改、删数据，它会记住你改了什么，等你 `commit()` 时一次性写进数据库。
 
@@ -1706,9 +2348,9 @@ uvicorn crud_demo:app --reload
 
 想看 SQLAlchemy 实际发了什么 SQL：在 `db.py` 里改成 `create_engine(DATABASE_URL, echo=True)`，终端会打印每一条 SQL。你会看到 `add` 和改属性时什么都没发，`commit` 时才出现 `INSERT` / `UPDATE` / `DELETE`。
 
-**发现问题了吗**：每个接口都在重复 `with SessionLocal() as session:`、查不到就 `raise fail(404, ...)`。下一节用依赖注入把「开会话」交给 FastAPI，第 23 节再把「查不到就 404」抽成 `load_task()`。
+**发现问题了吗**：每个接口都在重复 `with SessionLocal() as session:`、查不到就 `raise fail(404, ...)`。下一节用依赖注入把「开会话」交给 FastAPI，第 27 节再把「查不到就 404」抽成 `load_task()`。
 
-## 22. 依赖注入：接口里拿到数据库会话 {#dependency-injection}
+## 26. 依赖注入：接口里拿到数据库会话 {#dependency-injection}
 
 每个接口都需要一个 Session，但不想每个接口都重复写「创建、提交、出错回滚、关闭」。把这套流程写成一个函数，接口参数里声明「我要一个 Session」，FastAPI 每次请求都会调用它，把结果传进来。这就是**依赖注入**。
 
@@ -1751,7 +2393,7 @@ def get_task(task_id: int, session: Db) -> dict:
 - **`Annotated[Session, Depends(db_session)]`**：「类型是 Session，值由 `db_session` 提供」。
 - **写接口里自己 `session.commit()`**：② 可能在响应已经发出去之后才执行，万一提交失败，前端会以为成功了。所以写数据的接口在返回前自己提交。
 
-## 23. 完整的 todo 接口 {#todo-api}
+## 27. 完整的 todo 接口 {#todo-api}
 
 | 方法 | 路径 | 作用 | 成功时 |
 |---|---|---|---|
@@ -1830,7 +2472,7 @@ def delete_task(task_id: int, session: Db) -> dict:
     return success(msg="删除成功")
 ```
 
-- **`TaskOut.model_validate(task)`**：把数据库里的 `Task` 对象转成返回给前端的 `TaskOut`（第 18 节加了 `from_attributes=True` 才能这样用）。
+- **`TaskOut.model_validate(task)`**：把数据库里的 `Task` 对象转成返回给前端的 `TaskOut`（第 22 节加了 `from_attributes=True` 才能这样用）。
 - **为什么不能直接 `success(task)`**：`Task` 是 SQLAlchemy 的数据库对象，FastAPI 不知道怎么把它转成 JSON，会报错返回 500。转成 `TaskOut` 还有一个好处：只输出 `TaskOut` 里定义的字段，以后表里加了不该给前端看的列，也不会被带出去。
 
 启动：`uvicorn app.main:app --reload`，到 `/docs` 里点着试，或者用 curl：
@@ -1842,7 +2484,7 @@ curl -X PATCH http://127.0.0.1:8000/tasks/1/done
 curl -i http://127.0.0.1:8000/tasks/99      # -i 显示状态码：404 + {"code": -1, "msg": "没有这个任务", "data": null}
 ```
 
-## 24. pytest：给接口写测试 {#pytest}
+## 28. pytest：给接口写测试 {#pytest}
 
 `TestClient` 不用启动服务，就能在代码里对 app 发请求。pytest 自动找 `test_` 开头的文件和函数来跑。
 

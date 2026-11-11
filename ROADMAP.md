@@ -16,29 +16,29 @@
 
 ## 阶段二：Python 进阶与工程化（第 3～4 周）
 
-- [ ] pip、uv、虚拟环境：第 0 节有 uv 和虚拟环境的基本用法，**可以补 pip 对比、常用命令**
-- [ ] requirements.txt / pyproject.toml（次要：uv 已经覆盖了大部分）
+- [x] pip、uv、虚拟环境（第 0、14 节）
+- [x] requirements.txt / pyproject.toml（第 14 节）
 - [x] 类型注解 Type Hints（第 13 节）
-- [x] Pydantic 数据校验（第 18 节，放在阶段三的 todo 项目里讲）
-- [ ] asyncio 异步编程：第 15 节有 async / await 基础，**可以补 `gather`、并发请求、超时**
-- [x] 日志管理（第 14 节）
-- [x] 单元测试 pytest（第 24 节，放在阶段三的 todo 项目里讲）
-- [ ] 用 httpx 发 HTTP 请求：同步 / 异步、超时、重试（阶段四调模型 API 要用）
-- [ ] 调试：断点、`pdb`，代替满屏 `print`
-- [ ] 线程、进程、协程的区别，GIL
-- [ ] Git、代码规范（Ruff 只顺带提过）（次要：Git 平时一直在用）
+- [x] Pydantic 数据校验（第 22 节，放在阶段三的 todo 项目里讲）
+- [x] asyncio 异步编程：gather、create_task、超时、取消、限制并发（第 17 节）
+- [x] 日志管理（第 15 节）
+- [x] 单元测试 pytest（第 28 节，放在阶段三的 todo 项目里讲）
+- [x] 用 httpx 发 HTTP 请求：同步 / 异步、超时、重试（第 18 节）
+- [x] 调试：看懂报错、断点、`pdb`（第 16 节）
+- [x] 线程、进程、协程的区别，GIL（第 19 节）
+- [ ] Git、代码规范：Ruff 在第 14 节（次要：Git 平时一直在用）
 
 ## 阶段三：Python 后端开发（第 5～6 周）
 
 - [ ] HTTP、RESTful API：状态码、方法、URL 设计
-- [x] FastAPI（第 16、17 节）
-- [x] 请求与响应（第 18、19 节）
-- [x] 路由、依赖注入（第 22、23 节；**APIRouter 拆文件还没写**）
+- [x] FastAPI（第 20、21 节）
+- [x] 请求与响应（第 22、23 节）
+- [x] 路由、依赖注入（第 26、27 节；**APIRouter 拆文件还没写**）
 - [ ] Middleware 中间件
 - [ ] JWT 身份认证（含密码哈希）
 - [ ] 鉴权概念：Cookie、Session、JWT 的区别，RBAC 角色权限
 - [ ] CORS 跨域：前后端分开部署一定会遇到
-- [x] SQLAlchemy ORM（第 20、21 节）
+- [x] SQLAlchemy ORM（第 24、25 节）
 - [ ] SQL 基础：表设计、索引、分页、事务、关联查询（只会 ORM 不够）
 - [ ] SQLAlchemy 表关系：一对多、多对多
 - [ ] MySQL / PostgreSQL：现在用 SQLite，**补换数据库的连接方式和 alembic 迁移实操**
