@@ -1,6 +1,7 @@
 import type { Notes } from "@/lib/notes";
 import type { Reading } from "@/lib/study-store";
 
+import Heatmap from "./Heatmap";
 import type { Group } from "./NotesApp";
 
 type Props = {
@@ -8,10 +9,11 @@ type Props = {
   groups: Group[];
   done: Record<string, boolean>;
   reading: Reading | null;
+  studyDays: Record<string, number>;
 };
 
-/** 首页：继续学习、各部分进度、12 周学习路线。 */
-export default function Home({ notes, groups, done, reading }: Props) {
+/** 首页：继续学习、学习热力图、各部分进度、12 周学习路线。 */
+export default function Home({ notes, groups, done, reading, studyDays }: Props) {
   const { sections, roadmap } = notes;
   const doneCount = sections.filter((s) => done[s.id]).length;
   const last = reading && sections.find((s) => s.id === reading.id);
@@ -36,6 +38,9 @@ export default function Home({ notes, groups, done, reading }: Props) {
         </span>
         <span className="resume-go">→</span>
       </a>
+
+      <h2 className="home-h">学习热力图</h2>
+      <Heatmap days={studyDays} />
 
       <h2 className="home-h">笔记目录</h2>
       <div className="part-cards">

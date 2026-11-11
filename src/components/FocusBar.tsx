@@ -1,0 +1,164 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+const FOCUS_SECONDS = 25 * 60;
+const BREAK_SECONDS = 5 * 60;
+
+type Phase = "focus" | "break";
+
+type Props = {
+  /** 今天已经完成几个番茄钟。 */
+  today: number;
+  /** 专注满 25 分钟时调用：记一个番茄。 */
+  onComplete: () => void;
+  onExit: () => void;
+};
+
+/** 时间到了响两声（不用音频文件，浏览器直接合成）。 */
+function chime() {
+  try {
+    const ctx = new AudioContext();
+    [0, 0.25].forEach((at, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = i === 0 ? 880 : 1175;
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + at);
+      gain.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + 0.5);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(ctx.currentTime + at);
+      osc.stop(ctx.currentTime + at + 0.55);
+    });
+    window.setTimeout(() => ctx.close(), 1200);
+  } catch {
+    // 没声音也不影响
+  }
+}
+
+const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+/**
+ * 专注模式底部的番茄钟：进入专注模式就开始 25 分钟倒计时，到点响铃、记一个番茄，
+ * 自动进入 5 分钟休息；休息完再响一次，等你点开始下一个。
+ */
+export default function FocusBar({ today, onComplete, onExit }: Props) {
+  const [phase, setPhase] = useState<Phase>("focus");
+  const [left, setLeft] = useState(FOCUS_SECONDS);
+  const [running, setRunning] = useState(true);
+  const leftRef = useRef(left);
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    leftRef.current = left;
+  }, [left]);
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  // 倒计时：按结束时刻算剩余时间，切到别的标签页（定时器变慢）也不会走慢
+  useEffect(() => {
+    if (!running) return;
+    const endsAt = Date.now() + leftRef.current * 1000;
+    const timer = window.setInterval(() => {
+      const remain = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
+      setLeft(remain);
+      if (remain > 0) return;
+      window.clearInterval(timer);
+      chime();
+      if (phase === "focus") {
+        onCompleteRef.current();
+        setPhase("break");
+        setLeft(BREAK_SECONDS);
+        leftRef.current = BREAK_SECONDS;
+      } else {
+        setPhase("focus");
+        setLeft(FOCUS_SECONDS);
+        leftRef.current = FOCUS_SECONDS;
+        setRunning(false);
+      }
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [running, phase]);
+
+  const total = phase === "focus" ? FOCUS_SECONDS : BREAK_SECONDS;
+  const progress = 1 - left / total;
+
+  const restart = () => {
+    setLeft(total);
+    leftRef.current = total;
+    setRunning(false);
+  };
+
+  const skipBreak = () => {
+    setPhase("focus");
+    setLeft(FOCUS_SECONDS);
+    leftRef.current = FOCUS_SECONDS;
+    setRunning(true);
+  };
+
+  return (
+    <div className={`focus-bar ${phase}`} role="timer" aria-label="番茄钟">
+      <span className="focus-ring" style={{ "--p": progress } as React.CSSProperties}>
+        {phase === "focus" ? "🍅" : "☕"}
+      </span>
+      <span className="focus-phase">{phase === "focus" ? "专注" : "休息一下"}</span>
+      <span className="focus-time">{mmss(left)}</span>
+
+      <button type="button" onClick={() => setRunning((r) => !r)} title={running ? "暂停" : "开始"}>
+        {running ? <PauseIcon /> : <PlayIcon />}
+      </button>
+      <button type="button" onClick={restart} title="重新开始这一轮">
+        <RestartIcon />
+      </button>
+      {phase === "break" && (
+        <button type="button" className="focus-text-btn" onClick={skipBreak}>
+          跳过休息
+        </button>
+      )}
+
+      <span className="focus-count" title="今天完成的番茄钟">
+        今天 🍅 × {today}
+      </span>
+      <button type="button" className="focus-exit" onClick={onExit} title="退出专注模式（Esc）">
+        退出专注
+      </button>
+    </div>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+      <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+      <rect x="6" y="5" width="4" height="14" rx="1" />
+      <rect x="14" y="5" width="4" height="14" rx="1" />
+    </svg>
+  );
+}
+
+function RestartIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <path d="M3 4v5h5" />
+    </svg>
+  );
+}

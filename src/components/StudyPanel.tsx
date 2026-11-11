@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import Heatmap from "./Heatmap";
+
 import type { Section } from "@/lib/notes";
 import { dayKey, formatClock, formatDuration, lastDays, streak } from "@/lib/study-store";
 import type { useStudy } from "@/lib/use-study";
@@ -95,6 +97,10 @@ export default function StudyPanel({ study, sections, onClose }: Props) {
             <span>已学完</span>
           </div>
         </div>
+
+        <h4>学习热力图</h4>
+        <Heatmap days={data.days} weeks={26} />
+        <p className="hint">今天完成了 {data.pomodoros[dayKey()] ?? 0} 个番茄钟（专注模式里专注满 25 分钟算一个）</p>
 
         <h4>最近 7 天</h4>
         <div className="week" aria-label="最近 7 天学习时长">

@@ -5,12 +5,13 @@ export type StudyData = {
   days: Record<string, number>; // 日期（本地）→ 当天学习秒数
   sections: Record<string, number>; // 小节 id → 累计秒数
   done: Record<string, boolean>; // 小节 id → 是否勾了「学完了」
+  pomodoros: Record<string, number>; // 日期 → 当天完成了几个番茄钟（专注模式）
 };
 
 const KEY = "python-notes:study";
 
 export function emptyData(): StudyData {
-  return { version: 1, days: {}, sections: {}, done: {} };
+  return { version: 1, days: {}, sections: {}, done: {}, pomodoros: {} };
 }
 
 export function loadData(): StudyData {
@@ -23,6 +24,7 @@ export function loadData(): StudyData {
       days: parsed.days ?? {},
       sections: parsed.sections ?? {},
       done: parsed.done ?? {},
+      pomodoros: parsed.pomodoros ?? {},
     };
   } catch {
     return emptyData();

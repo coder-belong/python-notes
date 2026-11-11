@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Notes, Section } from "@/lib/notes";
-import { loadReading, saveReading, type Reading } from "@/lib/study-store";
+import { dayKey, loadReading, saveReading, type Reading } from "@/lib/study-store";
 import { useStudy } from "@/lib/use-study";
 
 import DisplaySettings from "./DisplaySettings";
+import FocusBar from "./FocusBar";
 import Home from "./Home";
 import SideResizer from "./SideResizer";
 import ThemeToggle from "./ThemeToggle";
@@ -27,6 +28,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   const [route, setRoute] = useState<string | null | undefined>(undefined);
   const [navOpen, setNavOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [focus, setFocus] = useState(false);
   const [openParts, setOpenParts] = useState<Set<string>>(new Set());
   const [reading, setReading] = useState<Reading | null>(null);
   const restoreY = useRef<number | null>(null);
@@ -105,6 +107,15 @@ export default function NotesApp({ notes }: { notes: Notes }) {
     const onKey = (e: KeyboardEvent) => {
       if (statsOpen || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if ((e.target as HTMLElement).closest("input, textarea, [contenteditable]")) return;
+      // F 进入 / 退出专注模式，Esc 退出
+      if (e.key === "f" || e.key === "F") {
+        setFocus((v) => !v);
+        return;
+      }
+      if (e.key === "Escape") {
+        setFocus(false);
+        return;
+      }
       const to = e.key === "ArrowLeft" ? prev : e.key === "ArrowRight" ? next : null;
       if (to) location.hash = to.id;
     };
@@ -112,6 +123,10 @@ export default function NotesApp({ notes }: { notes: Notes }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [prev, next, statsOpen]);
 
+  // 专注模式：给 <html> 加个 class，CSS 负责收起侧栏、正文居中
+  useEffect(() => {
+    document.documentElement.classList.toggle("focus-mode", focus);
+  }, [focus]);
 
   // 给代码块加「复制」按钮（每次换节，正文换了就重新加）
   useEffect(() => {
@@ -209,7 +224,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
       <main>
         <div className="content">
           {route === null && (
-            <Home notes={notes} groups={groups} done={study.data.done} reading={reading} />
+            <Home notes={notes} groups={groups} done={study.data.done} reading={reading} studyDays={study.data.days} />
           )}
 
           {section && (
@@ -221,6 +236,12 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                 <span className="crumb-count">
                   第 {index + 1} / {sections.length} 节
                 </span>
+                {!focus && (
+                  <button type="button" className="focus-btn" onClick={() => setFocus(true)} title="专注模式（F）">
+                    <FocusIcon />
+                    专注
+                  </button>
+                )}
               </div>
               {section.partIntroHtml && (
                 <div className="part-intro" dangerouslySetInnerHTML={{ __html: section.partIntroHtml }} />
@@ -271,13 +292,38 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                   </a>
                 )}
               </nav>
-              <p className="hint pager-hint">键盘 ← → 也能切换上一节 / 下一节</p>
+              <p className="hint pager-hint">键盘 ← → 切换上一节 / 下一节，F 进入专注模式</p>
             </article>
           )}
         </div>
       </main>
 
+      {focus && (
+        <FocusBar
+          today={study.data.pomodoros[dayKey()] ?? 0}
+          onComplete={study.addPomodoro}
+          onExit={() => setFocus(false)}
+        />
+      )}
       {statsOpen && <StudyPanel study={study} sections={sections} onClose={() => setStatsOpen(false)} />}
     </>
+  );
+}
+
+function FocusIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
   );
 }

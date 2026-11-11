@@ -105,6 +105,16 @@ export function useStudy(currentSection: string | null) {
     [flush],
   );
 
+  /** 专注模式里完成一个番茄钟：记到今天。 */
+  const addPomodoro = useCallback(() => {
+    const prev = dataRef.current;
+    const today = dayKey();
+    const updated = { ...prev, pomodoros: { ...prev.pomodoros, [today]: (prev.pomodoros[today] ?? 0) + 1 } };
+    dataRef.current = updated;
+    setData(updated);
+    flush();
+  }, [flush]);
+
   const reset = useCallback(() => {
     const fresh = emptyData();
     dataRef.current = fresh;
@@ -113,5 +123,5 @@ export function useStudy(currentSection: string | null) {
     flush();
   }, [flush]);
 
-  return { data, loaded, sessionSeconds, status, toggleDone, reset };
+  return { data, loaded, sessionSeconds, status, toggleDone, addPomodoro, reset };
 }

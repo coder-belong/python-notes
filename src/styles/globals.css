@@ -1217,3 +1217,263 @@ h2.page-title {
     display: none;
   }
 }
+
+/* ---------- 学习热力图 ---------- */
+.heatmap {
+  --cell: 11px;
+  --hm-0: var(--line);
+  --hm-1: color-mix(in srgb, var(--done) 30%, var(--bg));
+  --hm-2: color-mix(in srgb, var(--done) 55%, var(--bg));
+  --hm-3: color-mix(in srgb, var(--done) 80%, var(--bg));
+  --hm-4: var(--done);
+}
+
+.heatmap-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.heatmap-grid {
+  display: grid;
+  gap: 3px;
+  width: max-content;
+}
+
+.heatmap-grid i {
+  display: block;
+  width: var(--cell);
+  height: var(--cell);
+  border-radius: 2px;
+}
+
+.heatmap-grid i.future {
+  visibility: hidden;
+}
+
+.heatmap-grid i.today {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.heatmap-month,
+.heatmap-day {
+  font-size: 10px;
+  line-height: var(--cell);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* 月份文字比一格宽，让它往右溢出到后面几格上 */
+.heatmap-month {
+  width: var(--cell);
+  overflow: visible;
+}
+
+.heatmap-day {
+  padding-right: 4px;
+}
+
+.lv0 {
+  background: var(--hm-0);
+}
+
+.lv1 {
+  background: var(--hm-1);
+}
+
+.lv2 {
+  background: var(--hm-2);
+}
+
+.lv3 {
+  background: var(--hm-3);
+}
+
+.lv4 {
+  background: var(--hm-4);
+}
+
+.heatmap-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.heatmap-foot b {
+  color: var(--text);
+}
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.heatmap-legend i {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.home .heatmap {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+/* ---------- 专注模式 ---------- */
+.focus-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.focus-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+aside {
+  transition: transform 0.3s ease;
+}
+
+main {
+  transition: margin-left 0.3s ease;
+}
+
+body.resizing main,
+body.resizing aside {
+  transition: none;
+}
+
+/* 收起侧栏、拖拽条和目录按钮，正文居中 */
+.focus-mode aside {
+  transform: translateX(-100%);
+}
+
+.focus-mode .side-resizer,
+.focus-mode .menu-btn {
+  display: none;
+}
+
+.focus-mode main {
+  margin-left: 0;
+  padding-bottom: 140px;
+}
+
+.focus-mode .crumb {
+  opacity: 0.5;
+}
+
+/* 底部悬浮的番茄钟 */
+.focus-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  font-size: 13px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  animation: focus-bar-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes focus-bar-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+}
+
+/* 番茄外面一圈是这一轮的进度 */
+.focus-ring {
+  --p: 0;
+  --ring: #e5534b;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background:
+    radial-gradient(var(--panel) 58%, transparent 60%),
+    conic-gradient(var(--ring) calc(var(--p) * 360deg), var(--line) 0);
+  font-size: 15px;
+}
+
+.focus-bar.break .focus-ring {
+  --ring: var(--done);
+}
+
+.focus-phase {
+  color: var(--muted);
+}
+
+.focus-time {
+  min-width: 3.2em;
+  font: 600 18px/1 "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.focus-bar button {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.focus-bar button:hover {
+  background: var(--accent-soft);
+}
+
+.focus-count {
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.focus-bar .focus-exit {
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.focus-bar .focus-exit:hover {
+  color: var(--text);
+}
+
+@media (max-width: 640px) {
+  .focus-phase,
+  .focus-count {
+    display: none;
+  }
+}
