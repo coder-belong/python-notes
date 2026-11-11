@@ -37,6 +37,27 @@ export function saveData(data: StudyData): void {
   }
 }
 
+/** 上次读到哪一节、滚到哪：下次打开可以接着读。 */
+export type Reading = { id: string; y: number };
+const READING_KEY = "python-notes:reading";
+
+export function loadReading(): Reading | null {
+  try {
+    const raw = localStorage.getItem(READING_KEY);
+    return raw ? (JSON.parse(raw) as Reading) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveReading(reading: Reading): void {
+  try {
+    localStorage.setItem(READING_KEY, JSON.stringify(reading));
+  } catch {
+    // 同上：存不了就算了
+  }
+}
+
 /** 本地日期 YYYY-MM-DD（不用 toISOString，那是 UTC，晚上 8 点前后会跨天）。 */
 export function dayKey(d: Date = new Date()): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");

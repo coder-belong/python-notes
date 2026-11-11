@@ -3,8 +3,10 @@ import path from "node:path";
 
 import type { Metadata } from "next";
 
+import { PREFS_BOOT_SCRIPT } from "@/lib/prefs";
+
+// 标签页标题不写在这里：由 NotesApp 按当前节渲染 <title>（写在这里的话打包后会把它盖掉）
 export const metadata: Metadata = {
-  title: "Python 入门笔记",
   description: "基础语法 → FastAPI 写接口 → SQLAlchemy 连数据库 → pytest 测试",
 };
 
@@ -15,8 +17,10 @@ const css = readFileSync(path.join(process.cwd(), "src", "styles", "globals.css"
 // 不用 next/font：字体文件同样走 /_next/ 路径，单文件里加载不到，直接用系统字体
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="zh-CN">
+    // suppressHydrationWarning：<head> 里的脚本会在 React 接管前给 <html> 加上主题和字号
+    <html lang="zh-CN" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: PREFS_BOOT_SCRIPT }} />
         <style dangerouslySetInnerHTML={{ __html: css }} />
       </head>
       <body>{children}</body>

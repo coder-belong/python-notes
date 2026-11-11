@@ -13,9 +13,13 @@ export type Section = {
   partIntroHtml: string | null; // 一个部分的第一节才有：「# 第X部分」标题下面那段导语
   html: string;
 };
-export type Notes = { title: string; introHtml: string; sections: Section[] };
+export type Notes = { title: string; introHtml: string; sections: Section[]; roadmap: RoadmapStage[] };
+
+/** 学习路线（ROADMAP.md）里的一个阶段：每一项带「笔记里写没写」。 */
+export type RoadmapStage = { title: string; items: { done: boolean; html: string }[] };
 
 const NOTES_PATH = path.join(process.cwd(), "content", "notes.md");
+const ROADMAP_PATH = path.join(process.cwd(), "ROADMAP.md");
 
 /** 标题 → 锚点 id：保留中文、字母、数字，其余变成连字符。 */
 export function slugify(text: string): string {
@@ -115,5 +119,27 @@ export function loadNotes(): Notes {
   }
   flush();
 
-  return { title, introHtml: render(intro), sections };
+  return { title, introHtml: render(intro), sections, roadmap: loadRoadmap(marked) };
+}
+
+/** 读 ROADMAP.md：只取「## 阶段…」下面的勾选清单，放到首页的学习路线里。 */
+function loadRoadmap(marked: Marked): RoadmapStage[] {
+  const tokens = marked.lexer(readFileSync(ROADMAP_PATH, "utf-8"));
+  const stages: RoadmapStage[] = [];
+  let current: RoadmapStage | null = null;
+  for (const token of tokens) {
+    if (token.type === "heading" && (token as Tokens.Heading).depth === 2) {
+      const text = (token as Tokens.Heading).text;
+      current = text.startsWith("阶段") ? { title: text, items: [] } : null;
+      if (current) stages.push(current);
+      continue;
+    }
+    if (current && token.type === "list") {
+      for (const item of (token as Tokens.List).items) {
+        const text = item.tokens.find((t) => t.type === "text");
+        current.items.push({ done: !!item.checked, html: marked.parseInline(text?.raw ?? item.text) as string });
+      }
+    }
+  }
+  return stages;
 }
