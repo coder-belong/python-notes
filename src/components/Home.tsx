@@ -77,7 +77,7 @@ export default function Home({ notes, groups, done, reading, studyDays }: Props)
       {roadmap.length > 0 && (
         <>
           <h2 className="home-h">学习路线</h2>
-          <p className="hint">12 周、6 个阶段。打勾的是笔记里已经写了的，没勾的是后面要补的内容。</p>
+          <p className="hint">打勾的是笔记里已经写了的，没勾的是后面要补的内容；标「次要」的了解即可，时间紧可以先跳过。</p>
           <div className="stages">
             {roadmap.map((stage, i) => {
               const written = stage.items.filter((it) => it.done).length;
@@ -93,9 +93,15 @@ export default function Home({ notes, groups, done, reading, studyDays }: Props)
                   </summary>
                   <ul>
                     {stage.items.map((it, j) => (
-                      <li key={j} className={it.done ? "done" : ""}>
+                      <li key={j} className={[it.done ? "done" : "", it.minor ? "minor" : ""].join(" ")}>
                         <span className="check">{it.done ? "✓" : ""}</span>
-                        <span dangerouslySetInnerHTML={{ __html: it.html }} />
+                        <span>
+                          <span dangerouslySetInnerHTML={{ __html: it.html }} />
+                          {it.minor && <span className="minor-tag">次要</span>}
+                          {it.minorNote && (
+                            <span className="minor-note" dangerouslySetInnerHTML={{ __html: it.minorNote }} />
+                          )}
+                        </span>
                       </li>
                     ))}
                   </ul>

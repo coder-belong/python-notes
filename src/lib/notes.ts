@@ -16,7 +16,14 @@ export type Section = {
 export type Notes = { title: string; introHtml: string; sections: Section[]; roadmap: RoadmapStage[] };
 
 /** 学习路线（ROADMAP.md）里的一个阶段：每一项带「笔记里写没写」。 */
-export type RoadmapStage = { title: string; items: { done: boolean; html: string }[] };
+export type RoadmapItem = {
+  done: boolean;
+  html: string;
+  /** 标了「（次要）」或「（次要：说明）」的项：首页显示成淡色加「次要」标签，说明放在后面。 */
+  minor: boolean;
+  minorNote: string | null;
+};
+export type RoadmapStage = { title: string; items: RoadmapItem[] };
 
 const NOTES_PATH = path.join(process.cwd(), "content", "notes.md");
 const ROADMAP_PATH = path.join(process.cwd(), "ROADMAP.md");
@@ -129,6 +136,9 @@ export function loadNotes(): Notes {
   return { title, introHtml: render(intro), sections, roadmap: loadRoadmap(marked) };
 }
 
+/** 行末的「（次要）」/「（次要：说明）」标记。 */
+const MINOR = /（次要(?:：([^）]*))?）\s*$/;
+
 /** 读 ROADMAP.md：只取「## 阶段…」下面的勾选清单，放到首页的学习路线里。 */
 function loadRoadmap(marked: Marked): RoadmapStage[] {
   const tokens = marked.lexer(readFileSync(ROADMAP_PATH, "utf-8"));
@@ -143,8 +153,15 @@ function loadRoadmap(marked: Marked): RoadmapStage[] {
     }
     if (current && token.type === "list") {
       for (const item of (token as Tokens.List).items) {
-        const text = item.tokens.find((t) => t.type === "text");
-        current.items.push({ done: !!item.checked, html: marked.parseInline(text?.raw ?? item.text) as string });
+        const raw = item.tokens.find((t) => t.type === "text")?.raw ?? item.text;
+        const minor = raw.match(MINOR);
+        const body = minor ? raw.slice(0, minor.index).trim() : raw;
+        current.items.push({
+          done: !!item.checked,
+          html: marked.parseInline(body) as string,
+          minor: !!minor,
+          minorNote: minor?.[1] ? (marked.parseInline(minor[1]) as string) : null,
+        });
       }
     }
   }

@@ -1199,6 +1199,28 @@ h2.page-title {
   text-align: center;
 }
 
+.stage li.minor {
+  opacity: 0.62;
+}
+
+.minor-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--muted);
+  vertical-align: 1px;
+}
+
+.minor-note {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .stage li.done .check {
   background: var(--done);
   border-color: var(--done);
