@@ -71,6 +71,56 @@
   box-sizing: border-box;
 }
 
+/* ---------- 滚动条：细、圆角、轨道透明 ---------- */
+:root {
+  --scroll: color-mix(in srgb, var(--muted) 35%, transparent);
+  --scroll-hover: color-mix(in srgb, var(--muted) 65%, transparent);
+}
+
+/* Chrome / Edge / Firefox 用标准属性 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll) transparent;
+}
+
+/* Safari 用 ::-webkit-scrollbar（Chrome 设了上面的标准属性后会忽略这些） */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scroll) content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scroll-hover);
+}
+
+/* 侧栏的滚动条平时藏起来，鼠标移进侧栏才出现 */
+aside {
+  scrollbar-color: transparent transparent;
+}
+
+aside:hover {
+  scrollbar-color: var(--scroll) transparent;
+}
+
+aside::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+
+aside:hover::-webkit-scrollbar-thumb {
+  background-color: var(--scroll);
+}
+
 html {
   scroll-behavior: smooth;
   scroll-padding-top: 16px;
