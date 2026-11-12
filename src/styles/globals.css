@@ -2443,117 +2443,107 @@ body.resizing aside {
   }
 }
 
-/* ---------- 更新日志 ---------- */
+/* ---------- 更新日志（参考 Ant Design 更新日志的排版） ---------- */
 .changelog-modal {
-  width: min(480px, 100%);
-  padding: 22px 24px 10px;
+  width: min(640px, 100%);
+  padding: 22px 26px 6px;
 }
 
 .changelog-modal .modal-head {
-  margin-bottom: 6px;
+  align-items: flex-start;
+  margin-bottom: 4px;
 }
 
-/* 标题下面的图例：每种类型一个颜色 */
-.changelog-legend {
-  display: flex;
-  gap: 14px;
-  margin-bottom: 8px;
-  font-size: 12px;
+.changelog-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
   color: var(--muted);
 }
 
-.changelog-legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.changelog-version {
+  padding: 20px 0 14px;
+  border-bottom: 1px solid var(--line);
 }
 
-.changelog i,
-.changelog-legend i {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
+.changelog-version:last-child {
+  border-bottom: none;
 }
 
-.changelog i.feat,
-.changelog-legend i.feat {
-  background: var(--accent);
-}
-
-.changelog i.improve,
-.changelog-legend i.improve {
-  background: var(--done);
-}
-
-.changelog i.notes,
-.changelog-legend i.notes {
-  background: #8b5cf6;
-}
-
-.changelog i.fix,
-.changelog-legend i.fix {
-  background: var(--warn);
-}
-
-/* 每天一块：左边日期，右边列表；天与天之间一条细线 */
-.changelog-day {
-  display: grid;
-  grid-template-columns: 92px 1fr;
-  gap: 12px;
-  padding: 16px 0;
-  border-top: 1px solid var(--line);
-}
-
-.changelog-date {
+/* 版本号大字，日期和「最新」跟在后面 */
+.changelog-version header {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-top: 1px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
-.changelog-date b {
+.changelog-version h4 {
+  margin: 0;
+  font: 700 20px/1.2 "SF Mono", Menlo, Consolas, monospace;
+  letter-spacing: -0.02em;
+}
+
+.changelog-version time {
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.changelog-latest {
+  align-self: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.changelog-summary {
+  margin: 8px 0 4px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* 分组：🆕 新功能 / 💄 改进 / 📝 笔记 / 🐞 修复 */
+.changelog-group h5 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 6px;
   font-size: 13px;
   font-weight: 600;
-}
-
-.changelog-date span {
-  font-size: 12px;
   color: var(--muted);
 }
 
-.changelog-day ul {
+.changelog-group ul {
   margin: 0;
-  padding: 0;
-  list-style: none;
+  padding: 0 0 0 18px;
 }
 
-.changelog-day li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.changelog-group li {
   margin: 0;
   padding: 3px 0;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.7;
+  color: var(--muted);
 }
 
-.changelog-day code {
+.changelog-group li::marker {
+  color: var(--line);
+}
+
+/* 加粗的小标题用正文色，后面的说明用浅一点的颜色 */
+.changelog-group li b {
+  margin-right: 6px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.changelog-group code {
   padding: 0 5px;
   border-radius: 4px;
   background: var(--code-bg);
   font-size: 0.9em;
-}
-
-@media (max-width: 520px) {
-  .changelog-day {
-    grid-template-columns: 1fr;
-    gap: 6px;
-  }
-
-  .changelog-date {
-    flex-direction: row;
-    gap: 8px;
-  }
+  color: var(--text);
 }
