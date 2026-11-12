@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { Ambient, AMBIENT_KINDS, loadAmbient, saveAmbient, type AmbientPrefs } from "@/lib/ambient";
+
 const FOCUS_SECONDS = 25 * 60;
 const BREAK_SECONDS = 5 * 60;
 
@@ -103,6 +105,31 @@ export default function FocusBar({ today, onComplete, onExit, fullscreen, onTogg
     setRunning(true);
   };
 
+  // 白噪音：专注计时走着的时候才响，暂停、休息时自动停
+  const ambientRef = useRef<Ambient | null>(null);
+  const [ambient, setAmbient] = useState<AmbientPrefs>({ kind: "off", volume: 0.5 });
+  useEffect(() => {
+    ambientRef.current = new Ambient();
+    // 上次选的声音存在 localStorage，只能挂载后读
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAmbient(loadAmbient());
+    return () => ambientRef.current?.dispose();
+  }, []);
+  const playing = phase === "focus" && running;
+  useEffect(() => {
+    ambientRef.current?.play(playing ? ambient.kind : "off", ambient.volume);
+  }, [playing, ambient]);
+
+  const changeAmbient = (next: AmbientPrefs) => {
+    setAmbient(next);
+    saveAmbient(next);
+  };
+  const nextKind = () => {
+    const i = AMBIENT_KINDS.findIndex((k) => k.kind === ambient.kind);
+    changeAmbient({ ...ambient, kind: AMBIENT_KINDS[(i + 1) % AMBIENT_KINDS.length].kind });
+  };
+  const ambientLabel = AMBIENT_KINDS.find((k) => k.kind === ambient.kind)?.label ?? "关闭";
+
   const open = phase === "break" || !running;
 
   return (
@@ -129,6 +156,29 @@ export default function FocusBar({ today, onComplete, onExit, fullscreen, onTogg
         <span className="focus-count" title="今天完成的番茄钟">
           今天 🍅 × {today}
         </span>
+        <span className="focus-ambient">
+          <button
+            type="button"
+            className={ambient.kind === "off" ? "" : "on"}
+            onClick={nextKind}
+            title="白噪音：点一下换一种（关闭 / 雨声 / 海浪 / 白噪音）"
+          >
+            <SoundIcon off={ambient.kind === "off"} />
+            <span>{ambientLabel}</span>
+          </button>
+          {ambient.kind !== "off" && (
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={ambient.volume}
+              onChange={(e) => changeAmbient({ ...ambient, volume: Number(e.target.value) })}
+              aria-label="白噪音音量"
+              title="音量"
+            />
+          )}
+        </span>
         {fullscreen !== null && (
           <button type="button" onClick={onToggleFullscreen} title={fullscreen ? "退出全屏" : "全屏"}>
             <FullscreenIcon exit={fullscreen} />
@@ -139,6 +189,25 @@ export default function FocusBar({ today, onComplete, onExit, fullscreen, onTogg
         </button>
       </div>
     </div>
+  );
+}
+
+function SoundIcon({ off }: { off: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 9v6h4l5 4V5L8 9H4z" />
+      {off ? <path d="M17 9l4 6M21 9l-4 6" /> : <path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" />}
+    </svg>
   );
 }
 

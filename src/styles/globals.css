@@ -1867,6 +1867,28 @@ body.resizing aside {
   background: var(--accent-soft);
 }
 
+.focus-ambient {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.focus-bar .focus-ambient button {
+  display: inline-flex;
+  gap: 5px;
+  color: var(--muted);
+}
+
+.focus-bar .focus-ambient button.on {
+  color: var(--accent);
+}
+
+.focus-ambient input[type="range"] {
+  width: 64px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .focus-count {
   padding-left: 10px;
   border-left: 1px solid var(--line);
