@@ -111,3 +111,21 @@ export function formatClock(seconds: number): string {
   const s = seconds % 60;
   return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
 }
+
+/** 最长连续学习天数（每天至少学 1 分钟才算）。 */
+export function longestStreak(days: Record<string, number>): number {
+  const studied = Object.keys(days)
+    .filter((k) => days[k] >= 60)
+    .sort();
+  let best = 0;
+  let run = 0;
+  let prev: Date | null = null;
+  for (const k of studied) {
+    const d = new Date(`${k}T00:00:00`);
+    const next = prev && new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 1);
+    run = next && dayKey(next) === k ? run + 1 : 1;
+    best = Math.max(best, run);
+    prev = d;
+  }
+  return best;
+}

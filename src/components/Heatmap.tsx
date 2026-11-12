@@ -27,8 +27,12 @@ export default function Heatmap({ days, weeks = 53 }: Props) {
 
   // 放不下时可以横向滚动，默认滚到最右边（最近的日子）
   useEffect(() => {
-    const el = scroller.current;
-    if (el) el.scrollLeft = el.scrollWidth;
+    // 等格子按宽度排好再滚，否则量到的宽度还不对
+    const id = requestAnimationFrame(() => {
+      const el = scroller.current;
+      if (el) el.scrollLeft = el.scrollWidth;
+    });
+    return () => cancelAnimationFrame(id);
   }, []);
 
   const today = new Date();
@@ -62,7 +66,7 @@ export default function Heatmap({ days, weeks = 53 }: Props) {
   return (
     <div className="heatmap">
       <div className="heatmap-scroll" ref={scroller}>
-        <div className="heatmap-grid" style={{ gridTemplateColumns: `auto repeat(${weeks}, var(--cell))` }}>
+        <div className="heatmap-grid" style={{ gridTemplateColumns: `auto repeat(${weeks}, minmax(var(--cell), 1fr))` }}>
           <span />
           {months.map((m, i) => (
             <span key={i} className="heatmap-month">

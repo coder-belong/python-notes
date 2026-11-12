@@ -666,55 +666,144 @@ body.resizing {
   cursor: pointer;
 }
 
+/* 标题旁边的状态：学习中 / 已暂停 · 本次计时 */
 .study-now {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--bg);
-  font-size: 14px;
+  margin: 0 auto 0 14px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  font-size: 13px;
   color: var(--warn);
 }
 
 .study-now.studying {
+  background: color-mix(in srgb, var(--done) 12%, transparent);
   color: var(--done);
 }
 
 .study-now .clock {
-  margin-left: auto;
-  font: 600 15px/1 "SF Mono", Menlo, Consolas, monospace;
+  padding-left: 8px;
+  border-left: 1px solid currentColor;
+  font: 600 13px/1 "SF Mono", Menlo, Consolas, monospace;
   color: var(--text);
 }
 
-.study-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.study-grid div {
-  display: flex;
-  flex-direction: column;
-  padding: 8px 10px;
-  border-radius: 8px;
+/* 学习统计弹窗：底色用页面底色，里面一块块卡片用面板色 */
+.stats-modal {
+  width: min(880px, 100%);
+  padding: 22px 24px 18px;
   background: var(--bg);
 }
 
-.study-grid b {
-  font-size: 15px;
+.stats-modal .modal-head {
+  margin-bottom: 16px;
 }
 
-.study-grid span {
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.stat-card b {
+  font-size: 24px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card b small {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.stat-sub {
   font-size: 12px;
   color: var(--muted);
 }
 
+/* 「今天」那张卡片用主题色强调 */
+.stat-card.accent {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #8b5cf6));
+  color: #fff;
+}
+
+.stat-card.accent .stat-label,
+.stat-card.accent .stat-sub {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.stat-progress {
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.stat-progress i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--done);
+}
+
+.stats-box {
+  margin-top: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.stats-modal h4 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.stats-box-note {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.stats-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.stats-cols .stats-box {
+  min-width: 0;
+}
+
+/* 最近 7 天的柱子：只画有学的部分，底下一条基线 */
 .week {
   display: flex;
-  gap: 8px;
-  height: 110px;
+  gap: 10px;
+  height: 150px;
 }
 
 .week-col {
@@ -722,41 +811,51 @@ body.resizing {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .week-col em {
+  height: 14px;
   font-style: normal;
   font-size: 11px;
-  color: var(--muted);
-  height: 14px;
   line-height: 14px;
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 .week-bar {
   flex: 1;
-  width: 100%;
   display: flex;
   align-items: flex-end;
-  background: var(--bg);
-  border-radius: 4px;
-  overflow: hidden;
+  width: 100%;
+  max-width: 34px;
+  border-bottom: 2px solid var(--line);
 }
 
 .week-bar i {
   display: block;
   width: 100%;
-  min-height: 2px;
+  border-radius: 6px 6px 0 0;
+  background: color-mix(in srgb, var(--accent) 45%, var(--panel));
+}
+
+.week-col.today .week-bar i {
   background: var(--accent);
-  border-radius: 4px 4px 0 0;
 }
 
 .week-col span {
   font-size: 12px;
-  color: var(--muted);
   line-height: 1;
+  color: var(--muted);
 }
 
+.week-col.today span,
+.week-col.today em {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 每节用时：一行标题 + 时长，下面一条细进度 */
 .sec-list {
   list-style: none;
   margin: 0;
@@ -765,40 +864,76 @@ body.resizing {
 
 .sec-list li {
   display: grid;
-  grid-template-columns: 1fr 90px 64px;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 10px;
-  margin: 4px 0;
+  gap: 4px 10px;
+  margin: 0 0 10px;
   font-size: 13px;
 }
 
 .sec-list a {
+  display: flex;
+  min-width: 0;
   color: var(--text);
   text-decoration: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .sec-list a:hover {
   color: var(--accent);
 }
 
+.sec-list-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sec-list-time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .sec-list-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--bg);
+  grid-column: 1 / -1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
   overflow: hidden;
 }
 
 .sec-list-bar i {
   display: block;
   height: 100%;
+  border-radius: 2px;
   background: var(--accent);
 }
 
-.sec-list-time {
-  text-align: right;
+.link-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.stats-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stats-foot .link-btn {
+  flex: none;
   color: var(--muted);
 }
 
@@ -808,20 +943,27 @@ body.resizing {
   color: var(--muted);
 }
 
-.reset {
-  margin-top: 6px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-@media (max-width: 520px) {
-  .study-grid {
+@media (max-width: 720px) {
+  .stat-cards {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stats-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-modal .modal-head {
+    flex-wrap: wrap;
+  }
+
+  /* 标题占满一行把关闭按钮推到右边，计时状态换到下一行 */
+  .stats-modal .modal-head h3 {
+    flex: 1;
+  }
+
+  .study-now {
+    order: 3;
+    margin: 10px 0 0;
   }
 }
 
@@ -1406,19 +1548,20 @@ h2.page-title {
 
 .heatmap-scroll {
   overflow-x: auto;
-  padding-bottom: 4px;
+  padding: 3px 3px 4px 0; /* 给「今天」那一格的描边留出位置，不被裁掉 */
 }
 
 .heatmap-grid {
   display: grid;
+  align-items: center;
   gap: 3px;
-  width: max-content;
+  min-width: max-content; /* 放得下就撑满宽度，格子跟着变大；放不下就横向滚动 */
 }
 
 .heatmap-grid i {
   display: block;
-  width: var(--cell);
-  height: var(--cell);
+  width: 100%;
+  aspect-ratio: 1;
   border-radius: 2px;
 }
 
@@ -1441,7 +1584,7 @@ h2.page-title {
 
 /* 月份文字比一格宽，让它往右溢出到后面几格上 */
 .heatmap-month {
-  width: var(--cell);
+  width: 0;
   overflow: visible;
 }
 
