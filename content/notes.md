@@ -272,15 +272,21 @@ ages = [18, 20]
 print(dict(zip(names, ages)))            # {'Tom': 18, 'Jerry': 20}
 
 # 每个人一个字典：字典列表（接口返回数据最常用）
-users = [{"name": n, "age": a} for n, a in zip(names, ages)]
+users = []
+for name, age in zip(names, ages):
+    users.append({"name": name, "age": age})
 print(users)                             # [{'name': 'Tom', 'age': 18}, {'name': 'Jerry', 'age': 20}]
 
-# 再带上从 1 开始的序号；(n, a) 要加括号，因为 zip 给出的每一项是一对值
-users = [{"id": i, "name": n, "age": a} for i, (n, a) in enumerate(zip(names, ages), start=1)]
+# 再带上从 1 开始的序号：enumerate 的 start 参数
+users = []
+for i, name in enumerate(names, start=1):
+    users.append({"id": i, "name": name, "age": ages[i - 1]})
 print(users[1])                          # {'id': 2, 'name': 'Jerry', 'age': 20}
 ```
 
-要组装成对象，见第 1.10 节的 dataclass：`[User(n, a) for n, a in zip(names, ages)]`。
+第一种循环可以缩成一行：`users = [{"name": name, "age": age} for name, age in zip(names, ages)]`，这种写法叫推导式，下一节专门讲。
+
+要组装成对象，见第 1.10 节的 dataclass：`[User(name, age) for name, age in zip(names, ages)]`。
 
 ## 1.4 推导式：一行生成列表 / 字典 {#comprehensions}
 
