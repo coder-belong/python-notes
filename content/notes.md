@@ -483,6 +483,7 @@ print(total)                                   # 333332833333500000
 import time
 
 def timer(func):                     # 接收原函数
+    # 先省掉一行方便看结构；实际写要在这里加 @wraps(func)，见下面的 log_call
     def wrapper(*args, **kwargs):    # 包一层：原样接收所有参数
         start = time.time()
         result = func(*args, **kwargs)   # 调用原函数
@@ -523,6 +524,9 @@ def add(a: int, b: int) -> int:
 print(add(1, 2))        # 先打印「调用 add(1, 2)」，再输出 3
 print(add.__name__)     # add   不加 @wraps 的话这里是 wrapper
 ```
+
+- **为什么 `timer` 不加也能打印出 `slow_add`**：`wrapper` 里用的是 `func.__name__`，`func` 就是原函数，名字一直是对的。`@wraps` 修的是**外面**看到的那个函数：`slow_add` 这个名字装饰后指向的是 `wrapper`。
+- **不加会怎样**：函数照样能调用；但日志、报错栈里显示的是 `wrapper`，`help()` 和编辑器提示看不到参数。最要紧的是 FastAPI 靠读函数签名决定从请求里取哪些参数，不加 `@wraps` 它只能读到 `(*args, **kwargs)`，接口参数会对不上。所以写装饰器一律加上。
 
 **带参数的装饰器**：`@app.get("/tasks")` 多了一对括号，意思是先调用 `app.get("/tasks")`，它返回一个装饰器，再用这个装饰器去包下面的函数。等价于：
 
