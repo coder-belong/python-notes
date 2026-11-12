@@ -55,7 +55,7 @@
 
 ## 数据存在哪
 
-全部存在浏览器的 localStorage 里，没有后端：
+都存在浏览器的 localStorage 里；登录后学习记录还会同步到账号上（见下面「账号和同步」）：
 
 | key | 内容 |
 |---|---|
@@ -63,8 +63,37 @@
 | `python-notes:reading` | 上次读到的节和滚动位置 |
 | `python-notes:prefs` | 主题、字号 |
 | `python-notes:side-w` | 侧栏宽度 |
+| `python-notes:auth` | 登录后的 token 和用户名 |
+| `python-notes:sync` | 还没同步到账号上的学习记录 |
 
 只在这台电脑的这个浏览器有效：换浏览器、清浏览器数据都会没有。双击打开的 HTML（`file://`）和 `npm run dev` 的 localhost 也是两份独立的记录。
+
+## 账号和同步（backend/）
+
+侧栏「登录 / 注册」：注册成功直接登录。登录后学习时长、「学完了」、番茄数每分钟同步到账号上，勾「学完了」和切走页面时马上同步；家里、公司登录同一个账号，看到的是同一份进度。阅读位置、主题、字号还是只存在本机。
+
+- 同步发的是增量（又学了多少秒），后端在账号上累加，两台电脑的时长不会互相覆盖；每批带 `batch_id`，重发只算一次。
+- 第一次在某台电脑上登录时，这台电脑原有的记录会整个加到账号上。
+- 没登录时照常记在本机；登录后再补传。
+
+后端是 `backend/` 里的 FastAPI + SQLAlchemy，部署在 Vercel（单独一个项目，根目录选 `backend`），数据库用 Neon 的 Postgres。本地开发：
+
+```bash
+cd backend
+uv sync
+uv run uvicorn app.main:app --reload --port 8000
+```
+
+本地不配置也能跑：数据库用 `backend/dev.db`（SQLite）。`npm run dev` 打开的页面会连本机的 8000 端口，其他情况（线上、双击打开的 HTML）连线上的后端。
+
+| 接口 | 作用 |
+|---|---|
+| `POST /auth/register` | 注册，直接返回 token |
+| `POST /auth/login` | 登录，返回 token |
+| `GET /auth/me` | 当前登录的是谁 |
+| `POST /sync` | 发增量、拿回账号的全部学习记录 |
+
+线上要配的环境变量：`JWT_SECRET`（签 token 的密钥，一串随机字符）、`DATABASE_URL`（接 Neon 后自动有）。
 
 ## Markdown 的写法约定
 
@@ -86,16 +115,26 @@ src/app/page.tsx                构建时读 notes.md，交给 NotesApp
 src/lib/notes.ts                Markdown → 按「部分 / 节」拆好的 HTML（代码高亮在这里做），读 ROADMAP
 src/lib/study-store.ts          学习记录、阅读位置的读写和格式化
 src/lib/legacy-ids.ts           旧版按标题生成的 id → 固定 id，打开页面时自动迁移学习记录
-src/lib/use-study.ts            学习计时、「学完了」、番茄数
+src/lib/use-study.ts            学习计时、「学完了」、番茄数，登录后的同步
+src/lib/account.ts              调后端接口、登录信息和待同步记录的读写
 src/lib/prefs.ts                主题、字号的读写
 src/components/NotesApp.tsx     页面：按 # 切节、侧栏目录、上一节 / 下一节、快捷键、专注模式开关
 src/components/Home.tsx         首页
 src/components/Heatmap.tsx      学习热力图
 src/components/StudyPanel.tsx   学习统计入口和弹窗
+src/components/AccountPanel.tsx 账号入口和登录 / 注册弹窗
 src/components/FocusBar.tsx     专注模式底部的番茄钟
 src/components/ThemeToggle.tsx  浅色 / 深色切换按钮和动画
 src/components/DisplaySettings.tsx  字号调节
 src/components/SideResizer.tsx  拖动调侧栏宽度
 src/styles/globals.css          样式（构建时直接写进页面）
 scripts/single-html.mjs         把 out/ 打成一个 HTML
+backend/index.py                Vercel 的入口
+backend/app/main.py             接口：注册、登录、同步
+backend/app/models.py           表：用户、每天时长、每节时长和「学完了」、同步批次
+backend/app/security.py         密码哈希、JWT、「当前登录用户」依赖
+backend/app/schemas.py          请求体校验
+backend/app/errors.py           统一响应格式 {code, msg, data}
+backend/app/db.py               连数据库（本地 SQLite，线上 Postgres）
+backend/app/config.py           读环境变量
 ```

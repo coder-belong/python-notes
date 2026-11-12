@@ -529,6 +529,52 @@ body.resizing {
   }
 }
 
+/* ---------- 账号：侧栏入口 ---------- */
+.account-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 8px);
+  margin: 0 4px 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.account-entry:hover {
+  border-color: var(--accent);
+}
+
+.account-entry.in {
+  color: var(--text);
+}
+
+.account-entry svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.account-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-status {
+  margin-left: auto;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.account-entry.error .account-status {
+  color: var(--warn);
+}
+
 /* ---------- 学习统计：弹窗 ---------- */
 .modal-backdrop {
   position: fixed;
@@ -1563,4 +1609,132 @@ body.resizing aside {
   .focus-count {
     display: none;
   }
+}
+
+/* ---------- 账号：登录 / 注册弹窗 ---------- */
+.account-modal {
+  width: min(400px, 100%);
+}
+
+.account-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.account-tabs button {
+  flex: 1;
+  padding: 6px 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.account-tabs button.active {
+  background: var(--panel);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.account-form label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.account-form label span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+}
+
+.account-form input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.account-form input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.account-error {
+  margin: -4px 0 10px;
+  color: #d1453b;
+  font-size: 13px;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--accent);
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn.primary:hover {
+  filter: brightness(1.08);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.btn.wide {
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.account-hello {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.account-sync {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.account-sync.ok {
+  color: var(--done);
+}
+
+.account-sync.error {
+  color: var(--warn);
+}
+
+.account-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
 }

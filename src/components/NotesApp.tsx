@@ -6,6 +6,7 @@ import type { Notes, Section } from "@/lib/notes";
 import { dayKey, loadReading, saveReading, type Reading } from "@/lib/study-store";
 import { useStudy } from "@/lib/use-study";
 
+import AccountPanel, { AccountEntry } from "./AccountPanel";
 import DisplaySettings from "./DisplaySettings";
 import FocusBar from "./FocusBar";
 import Home from "./Home";
@@ -28,6 +29,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   const [route, setRoute] = useState<string | null | undefined>(undefined);
   const [navOpen, setNavOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [focus, setFocus] = useState(false);
   const [openParts, setOpenParts] = useState<Set<string>>(new Set());
   const [reading, setReading] = useState<Reading | null>(null);
@@ -180,6 +182,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
           <ThemeToggle />
         </div>
         <StudyEntry study={study} onOpen={() => setStatsOpen(true)} />
+        <AccountEntry study={study} onOpen={() => setAccountOpen(true)} />
         <DisplaySettings />
         <nav>
           <a href="#" className={`nav-home ${route === null ? "active" : ""}`}>
@@ -307,6 +310,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
         />
       )}
       {statsOpen && <StudyPanel study={study} sections={sections} onClose={() => setStatsOpen(false)} />}
+      {accountOpen && <AccountPanel study={study} onClose={() => setAccountOpen(false)} />}
     </>
   );
 }

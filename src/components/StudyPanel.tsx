@@ -140,11 +140,14 @@ export default function StudyPanel({ study, sections, onClose }: Props) {
         )}
 
         <p className="hint">
-          页面在前台、并且 90 秒内有滚动 / 鼠标 / 键盘操作时才计时。记录只保存在这个浏览器里。
+          页面在前台、并且 90 秒内有滚动 / 鼠标 / 键盘操作时才计时。
+          {study.account ? `记录同步在账号「${study.account.username}」上。` : "没登录时记录只保存在这个浏览器里。"}
         </p>
-        <button type="button" className="reset" onClick={onReset}>
-          清空记录
-        </button>
+        {!study.account && (
+          <button type="button" className="reset" onClick={onReset}>
+            清空记录
+          </button>
+        )}
       </div>
     </div>
   );
