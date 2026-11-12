@@ -1,0 +1,22 @@
+[project]
+name = "python-notes-api"
+version = "0.1.0"
+description = "Python 入门笔记的后端：注册、登录、同步学习进度"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "pyjwt>=2.9",
+    "pwdlib[argon2]>=0.2",
+    "python-dotenv>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "uvicorn[standard]>=0.30",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 110

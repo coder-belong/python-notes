@@ -42,3 +42,4 @@ next-env.d.ts
 
 # 构建产物
 /dist/
+!backend/.env.example
