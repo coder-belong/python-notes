@@ -23,18 +23,9 @@ export type Notes = {
   changelog: ChangelogDay[];
 };
 
-/** 更新日志（content/changelog.md）里的一个版本：版本号、日期、一句话概要，下面一条条更新。 */
-export type ChangelogEntry = {
-  tag: string | null; // 新功能 / 改进 / 笔记 / 修复
-  title: string | null; // 「**登录注册**：……」里加粗的那几个字
-  html: string; // 冒号后面的说明（没有加粗标题时是整条）
-};
-export type ChangelogDay = {
-  version: string | null;
-  date: string;
-  summaryHtml: string | null;
-  entries: ChangelogEntry[];
-};
+/** 更新日志（content/changelog.md）里的一天：一条一条的更新，每条带类型。 */
+export type ChangelogEntry = { tag: string | null; html: string };
+export type ChangelogDay = { date: string; entries: ChangelogEntry[] };
 
 /** 学习路线（ROADMAP.md）里的一个阶段：每一项带「笔记里写没写」。 */
 export type RoadmapItem = {
@@ -197,38 +188,24 @@ function loadRoadmap(marked: Marked): RoadmapStage[] {
 
 /** 每条更新开头的类型：【新功能】【改进】【笔记】【修复】。 */
 const CHANGELOG_TAG = /^【([^】]+)】\s*/;
-/** 版本标题：「v0.3.0 · 2026-11-12」，版本号可以不写。 */
-const CHANGELOG_HEAD = /^(?:(v[\w.-]+)\s*·\s*)?(\d{4}-\d{2}-\d{2})\s*$/;
-/** 条目开头加粗的小标题：「**登录注册**：说明」。 */
-const CHANGELOG_TITLE = /^\*\*(.+?)\*\*\s*[：:]\s*/;
 
-/** 读 content/changelog.md：每个「## 版本 · 日期」是一个版本，紧跟的一段是概要，下面的列表是这次的更新。 */
+/** 读 content/changelog.md：每个「## 日期」是一天，下面的列表是这天的更新。 */
 function loadChangelog(marked: Marked): ChangelogDay[] {
   const tokens = marked.lexer(readFileSync(CHANGELOG_PATH, "utf-8"));
   const days: ChangelogDay[] = [];
   for (const token of tokens) {
     if (token.type === "heading" && (token as Tokens.Heading).depth === 2) {
-      const text = (token as Tokens.Heading).text.trim();
-      const m = text.match(CHANGELOG_HEAD);
-      days.push({ version: m?.[1] ?? null, date: m ? m[2] : text, summaryHtml: null, entries: [] });
+      days.push({ date: (token as Tokens.Heading).text.trim(), entries: [] });
       continue;
     }
     const day = days[days.length - 1];
-    if (!day) continue;
-    if (token.type === "paragraph" && day.entries.length === 0) {
-      day.summaryHtml = marked.parseInline((token as Tokens.Paragraph).text) as string;
-    }
-    if (token.type === "list") {
+    if (day && token.type === "list") {
       for (const item of (token as Tokens.List).items) {
-        let raw = item.text.trim();
+        const raw = item.text.trim();
         const tag = raw.match(CHANGELOG_TAG);
-        if (tag) raw = raw.slice(tag[0].length);
-        const title = raw.match(CHANGELOG_TITLE);
-        if (title) raw = raw.slice(title[0].length);
         day.entries.push({
           tag: tag ? tag[1] : null,
-          title: title ? (marked.parseInline(title[1]) as string) : null,
-          html: marked.parseInline(raw) as string,
+          html: marked.parseInline(tag ? raw.slice(tag[0].length) : raw) as string,
         });
       }
     }
