@@ -242,6 +242,27 @@ a, b = 1, 2
 a, b = b, a           # 交换两个变量
 ```
 
+**拆包**：把列表、元组、字符串这类序列里的值，按位置一次赋给几个变量。不止元组能拆，函数返回多个值、`for` 循环里的 `for k, v in ...` 都是它。
+
+```python
+name, age = "Tom,18".split(",")   # split 先得到 ['Tom', '18']，再拆给两个变量
+print(name, age)                  # Tom 18   注意 age 是字符串 '18'，要算数得 int(age)
+
+first, *rest = [1, 2, 3, 4]       # 带 * 的接住剩下所有值，得到一个列表
+print(first, rest)                # 1 [2, 3, 4]
+
+_, age = ["Tom", 18]              # 用不到的值习惯用 _ 占位
+```
+
+左右个数必须一样多，否则直接报错。处理用户输入、文件这种拿不准有几段的数据时要小心：
+
+```python
+name, age = "Tom,18,北京".split(",")   # ValueError: too many values to unpack (expected 2)
+name, age = "Tom".split(",")           # ValueError: not enough values to unpack (expected 2, got 1)
+
+name, rest = "Tom,18,北京".split(",", 1)   # 只在第一个逗号处切：'Tom'、'18,北京'
+```
+
 **集合 set**：不重复。
 
 ```python
