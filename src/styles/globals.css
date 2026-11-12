@@ -152,7 +152,9 @@ aside {
   display: block;
   font-weight: 700;
   font-size: 17px;
-  padding: 0 10px 12px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px 0 10px;
   color: var(--text);
   text-decoration: none;
   overflow: hidden;
@@ -296,18 +298,104 @@ aside {
 }
 
 /* ---------- 显示设置：主题、字号 ---------- */
+/* 标题右边的一排图标按钮：字号、账号、主题，和 .theme-toggle 一样大 */
+.icon-btn {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.icon-btn:hover,
+.icon-btn.active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.font-btn {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
 .display-settings {
-  display: flex;
-  gap: 8px;
-  margin: 0 4px 8px;
+  position: relative;
+}
+
+/* 点 Aa 弹出的字号调节 */
+.display-settings .font-step {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: -60px;
+  z-index: 5;
+  width: 190px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+
+.account-btn {
+  color: var(--accent);
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 头像右下角的小点：绿色已同步，橙色同步失败，同步中闪一下 */
+.sync-dot {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.account-btn.ok .sync-dot {
+  background: var(--done);
+}
+
+.account-btn.error .sync-dot {
+  background: var(--warn);
+}
+
+.account-btn.syncing .sync-dot {
+  background: var(--accent);
+  animation: blink 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes blink {
+  to {
+    opacity: 0.3;
+  }
 }
 
 /* ---------- 浅色 / 深色切换按钮：太阳 ⇄ 月亮变形 ---------- */
 .brand-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 0 12px;
+  gap: 2px;
+  padding: 0 0 6px;
 }
 
 .brand-row .brand {
@@ -388,9 +476,6 @@ aside {
   }
 }
 
-.font-step {
-  flex: 1;
-}
 
 .font-step {
   display: flex;
@@ -483,11 +568,11 @@ body.resizing {
   align-items: center;
   gap: 8px;
   width: calc(100% - 8px);
-  margin: 0 4px 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg);
+  margin: 0 4px 6px;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
   color: var(--text);
   font: inherit;
   font-size: 13px;
@@ -496,12 +581,16 @@ body.resizing {
 }
 
 .study-entry:hover {
-  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
-.study-entry-today {
+.study-entry-more {
   margin-left: auto;
   color: var(--muted);
+}
+
+.study-entry:hover .study-entry-more {
+  color: var(--accent);
 }
 
 .pulse {
@@ -527,52 +616,6 @@ body.resizing {
   100% {
     box-shadow: 0 0 0 0 transparent;
   }
-}
-
-/* ---------- 账号：侧栏入口 ---------- */
-.account-entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: calc(100% - 8px);
-  margin: 0 4px 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--muted);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.account-entry:hover {
-  border-color: var(--accent);
-}
-
-.account-entry.in {
-  color: var(--text);
-}
-
-.account-entry svg {
-  flex: none;
-  color: var(--accent);
-}
-
-.account-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.account-status {
-  margin-left: auto;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.account-entry.error .account-status {
-  color: var(--warn);
 }
 
 /* ---------- 学习统计：弹窗 ---------- */

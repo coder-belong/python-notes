@@ -22,10 +22,10 @@ const WEEKDAY = ["日", "一", "二", "三", "四", "五", "六"];
 export function StudyEntry({ study, onOpen }: { study: Study; onOpen: () => void }) {
   const today = study.data.days[dayKey()] ?? 0;
   return (
-    <button type="button" className={`study-entry ${study.status}`} onClick={onOpen}>
+    <button type="button" className={`study-entry ${study.status}`} onClick={onOpen} title="查看学习统计">
       <span className="pulse" />
-      <span>学习统计</span>
-      <span className="study-entry-today">今天 {formatDuration(today)}</span>
+      <span>今天 {formatDuration(today)}</span>
+      <span className="study-entry-more">学习统计 ›</span>
     </button>
   );
 }

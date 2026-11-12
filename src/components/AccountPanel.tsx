@@ -12,26 +12,35 @@ function timeText(at?: number): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** 侧边栏里的账号入口：没登录提示登录，登录了显示用户名和同步状态。 */
+/** 侧栏顶部的账号按钮：没登录是人像图标；登录后显示用户名的第一个字，右下角小点表示同步状态。 */
 export function AccountEntry({ study, onOpen }: { study: Study; onOpen: () => void }) {
   const { account, sync } = study;
-  const status = !account
-    ? "登录后多台电脑同步进度"
-    : sync.state === "syncing"
-      ? "同步中…"
+  const status =
+    sync.state === "syncing"
+      ? "同步中"
       : sync.state === "error"
         ? "同步失败"
         : sync.state === "ok"
           ? `已同步 ${timeText(sync.at)}`
           : "";
+  const label = account ? `${account.username}${status ? ` · ${status}` : ""}` : "登录 / 注册：登录后多台电脑同步进度";
   return (
-    <button type="button" className={`account-entry ${account ? "in" : ""} ${sync.state}`} onClick={onOpen}>
-      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-        <circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" strokeWidth="2" />
-        <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-      <span className="account-name">{account ? account.username : "登录 / 注册"}</span>
-      <span className="account-status">{status}</span>
+    <button
+      type="button"
+      className={`icon-btn account-btn ${account ? "in" : ""} ${sync.state}`}
+      onClick={onOpen}
+      aria-label={label}
+      title={label}
+    >
+      {account ? (
+        <span className="avatar">{Array.from(account.username)[0]}</span>
+      ) : (
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" strokeWidth="2" />
+          <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      )}
+      {account && <span className="sync-dot" />}
     </button>
   );
 }

@@ -179,11 +179,11 @@ export default function NotesApp({ notes }: { notes: Notes }) {
           <a className="brand" href="#">
             {notes.title}
           </a>
+          <DisplaySettings />
+          <AccountEntry study={study} onOpen={() => setAccountOpen(true)} />
           <ThemeToggle />
         </div>
         <StudyEntry study={study} onOpen={() => setStatsOpen(true)} />
-        <AccountEntry study={study} onOpen={() => setAccountOpen(true)} />
-        <DisplaySettings />
         <nav>
           <a href="#" className={`nav-home ${route === null ? "active" : ""}`}>
             首页 · 学习路线

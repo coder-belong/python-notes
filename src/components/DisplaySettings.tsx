@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   applyPrefs,
@@ -18,9 +18,26 @@ const SIZE_LABEL: Record<number, string> = {
   20: "特大",
 };
 
-/** 侧栏里的正文字号调节（浅色 / 深色切换在 ThemeToggle）。 */
+/** 侧栏顶部的「Aa」按钮：点开调正文字号（浅色 / 深色切换在 ThemeToggle）。 */
 export default function DisplaySettings() {
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  // 点外面或按 Esc 收起
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   // 读保存的设置（<head> 里的脚本已经套上了，这里只是让按钮显示对）
   useEffect(() => {
@@ -39,28 +56,40 @@ export default function DisplaySettings() {
   const i = FONT_SIZES.indexOf(prefs.fontSize as (typeof FONT_SIZES)[number]);
 
   return (
-    <div className="display-settings">
-      <div className="font-step" aria-label="正文字号">
-        <button
-          type="button"
-          disabled={i <= 0}
-          onClick={() => update({ fontSize: FONT_SIZES[i - 1] })}
-          aria-label="字号调小"
-          title="字号调小"
-        >
-          A−
-        </button>
-        <span title="正文字号">{SIZE_LABEL[prefs.fontSize]}</span>
-        <button
-          type="button"
-          disabled={i >= FONT_SIZES.length - 1}
-          onClick={() => update({ fontSize: FONT_SIZES[i + 1] })}
-          aria-label="字号调大"
-          title="字号调大"
-        >
-          A+
-        </button>
-      </div>
+    <div className="display-settings" ref={boxRef}>
+      <button
+        type="button"
+        className={`icon-btn font-btn ${open ? "active" : ""}`}
+        onClick={() => setOpen((v) => !v)}
+        aria-label="正文字号"
+        aria-expanded={open}
+        title="正文字号"
+      >
+        Aa
+      </button>
+      {open && (
+        <div className="font-step" aria-label="正文字号">
+          <button
+            type="button"
+            disabled={i <= 0}
+            onClick={() => update({ fontSize: FONT_SIZES[i - 1] })}
+            aria-label="字号调小"
+            title="字号调小"
+          >
+            A−
+          </button>
+          <span title="正文字号">{SIZE_LABEL[prefs.fontSize]}</span>
+          <button
+            type="button"
+            disabled={i >= FONT_SIZES.length - 1}
+            onClick={() => update({ fontSize: FONT_SIZES[i + 1] })}
+            aria-label="字号调大"
+            title="字号调大"
+          >
+            A+
+          </button>
+        </div>
+      )}
     </div>
   );
 }
