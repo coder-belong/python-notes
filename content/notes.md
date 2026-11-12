@@ -797,6 +797,44 @@ print(to_int("abc"))    # 转换失败： invalid literal for int() with base 10
 | `FileNotFoundError` | 文件不存在 |
 | `ZeroDivisionError` | 除以 0 |
 
+**接住不同的错误**：`try` 后面可以跟多个 `except`，每种错误分开处理；几种错误处理方式一样时，用元组写在一个 `except` 里。
+
+```python
+def parse(d: dict, key: str) -> int | str:
+    try:
+        return 100 // int(d[key])
+    except KeyError:                               # 字典里没这个键
+        return "没有这个键"
+    except (ValueError, ZeroDivisionError) as e:   # 元组：这两种都到这里
+        return f"值不对：{type(e).__name__}"
+
+
+data = {"a": "abc", "b": "0", "c": "5"}
+print(parse(data, "x"))   # 没有这个键
+print(parse(data, "a"))   # 值不对：ValueError          int("abc") 出错
+print(parse(data, "b"))   # 值不对：ZeroDivisionError   100 // 0 出错
+print(parse(data, "c"))   # 20
+```
+
+- **从上往下匹配，只进第一个对上的** `except`，后面的不再看。
+- **具体的写前面，宽泛的写后面**。`Exception` 能接住几乎所有错误，放在最前面的话，后面的 `except` 永远轮不到；要兜底就放最后。
+- **别一个 `except Exception` 把所有错误都吞掉**：真有 bug 时你不会知道。只接住预料到、知道怎么处理的错误；真要兜底，至少把错误打印出来或记进日志。
+- 还有个不常用的 `else`：`try` 里没出错才执行。
+
+```python
+text = "42"
+try:
+    n = int(text)
+except ValueError:
+    print("不是数字")
+else:
+    print("转换成功：", n)    # 没出错才走到这里
+finally:
+    print("一定执行")
+# 转换成功： 42
+# 一定执行
+```
+
 **主动抛错 `raise`**：执行到 `raise`，当前函数立刻停下，后面的代码都不执行（和 `return` 一样）。区别是停下之后去哪里：
 
 - `return`：函数到这里结束，带着结果回到调用它的那一行，**调用方**接着往下执行。
