@@ -24,7 +24,7 @@ function dateParts(date: string): { day: string; rel: string } {
   return { day: `${year}${d.getMonth() + 1} 月 ${d.getDate()} 日`, rel };
 }
 
-/** 更新日志弹窗：左边日期，右边一句一条，前面用彩色标签标出类型。内容来自 content/changelog.md。 */
+/** 更新日志弹窗：左边日期，右边一句一条；类型用小圆点颜色区分。内容来自 content/changelog.md。 */
 export default function ChangelogPanel({ days, onClose }: { days: ChangelogDay[]; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -41,6 +41,17 @@ export default function ChangelogPanel({ days, onClose }: { days: ChangelogDay[]
             ×
           </button>
         </div>
+        <div className="changelog-legend">
+          {Object.entries(TAG_CLASS)
+            .filter(([name]) => days.some((d) => d.entries.some((e) => e.tag === name)))
+            .map(([name, cls]) => (
+              <span key={name}>
+                <i className={cls} />
+                {name}
+              </span>
+            ))}
+        </div>
+
         <div className="changelog">
           {days.map((day) => {
             const { day: label, rel } = dateParts(day.date);
@@ -52,8 +63,8 @@ export default function ChangelogPanel({ days, onClose }: { days: ChangelogDay[]
                 </div>
                 <ul>
                   {day.entries.map((e, j) => (
-                    <li key={j}>
-                      {e.tag && <span className={`changelog-tag ${TAG_CLASS[e.tag] ?? ""}`}>{e.tag}</span>}
+                    <li key={j} title={e.tag ?? undefined}>
+                      <i className={e.tag ? (TAG_CLASS[e.tag] ?? "") : ""} />
                       <span dangerouslySetInnerHTML={{ __html: e.html }} />
                     </li>
                   ))}
