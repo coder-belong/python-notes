@@ -95,11 +95,13 @@ export function useStudy(currentSection: string | null) {
   /**
    * 同步一次：把还没发的增量发给后端，拿回账号的全部记录。
    * keepalive：关页面时用，发出去就不管回复了；没确认的那批下次打开会用同一个 batch_id 重发。
+   * 返回这次同步是否成功（正在同步时再点，算成功：那一次会把最新数据带回来）。
    */
   const syncNow = useCallback(
-    async (keepalive = false) => {
+    async (keepalive = false): Promise<boolean> => {
       const acc = accountRef.current;
-      if (!acc || syncingRef.current) return;
+      if (!acc) return false;
+      if (syncingRef.current) return true;
       const st = syncRef.current;
       // 这台电脑第一次登录：本机原有的记录整个当成增量传上去（之后的增量都已经算在里面了）
       if (!st.claimed) {
@@ -115,20 +117,21 @@ export function useStudy(currentSection: string | null) {
 
       if (keepalive) {
         if (!isEmpty(batch)) api("/sync", batch, acc.token, true).catch(() => {});
-        return;
+        return true;
       }
 
       syncingRef.current = true;
       setSync((s) => ({ ...s, state: "syncing" }));
       try {
         const server = await api<Delta>("/sync", batch, acc.token);
-        if (accountRef.current !== acc) return; // 请求期间退出了登录
+        if (accountRef.current !== acc) return false; // 请求期间退出了登录
         st.inflight = null;
         const merged = applyPending(server, st.pending);
         dataRef.current = merged;
         setData(merged);
         flush();
         setSync({ state: "ok", at: Date.now() });
+        return true;
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) {
           setLoggedIn(null); // token 过期或无效：退出登录，记录留在本机，下次登录接着传
@@ -136,6 +139,7 @@ export function useStudy(currentSection: string | null) {
         } else {
           setSync({ state: "error", at: Date.now(), msg: e instanceof Error ? e.message : "同步失败" });
         }
+        return false;
       } finally {
         syncingRef.current = false;
       }

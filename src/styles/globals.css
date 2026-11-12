@@ -2104,8 +2104,34 @@ body.resizing aside {
   animation: spin 0.7s linear infinite;
 }
 
-.btn.spinning .btn-icon {
+.sync-btn.syncing .btn-icon {
   animation: spin 0.9s linear infinite;
+}
+
+/* 同步完：按钮变绿 / 变橙停 2 秒，再变回「立即同步」；按钮内容变化时不让宽度跳 */
+.sync-btn:disabled {
+  opacity: 1;
+}
+
+.sync-btn.done {
+  background: var(--done);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--done) 30%, transparent);
+}
+
+.sync-btn.failed {
+  background: var(--warn);
+  box-shadow: none;
+}
+
+.sync-btn.done .btn-icon,
+.sync-btn.failed .btn-icon {
+  animation: pop 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+@keyframes pop {
+  from {
+    transform: scale(0.4);
+  }
 }
 
 @keyframes spin {

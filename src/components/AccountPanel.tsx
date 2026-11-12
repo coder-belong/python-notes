@@ -9,6 +9,7 @@ type Study = ReturnType<typeof useStudy>;
 
 function timeText(at?: number): string {
   if (!at) return "";
+  if (Date.now() - at < 60_000) return "刚刚";
   const d = new Date(at);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
@@ -109,6 +110,8 @@ export default function AccountPanel({ study, onClose }: { study: Study; onClose
   const [error, setError] = useState("");
   const [shaking, setShaking] = useState(false); // 出错时让输入区抖一下
   const [busy, setBusy] = useState(false);
+  // 「立即同步」按钮自己的状态：本机连本机太快，转一下就结束，看不出点没点到，所以至少转 0.6 秒，再显示 2 秒结果
+  const [manual, setManual] = useState<"idle" | "syncing" | "done" | "failed">("idle");
   const { account, sync, data } = study;
 
   useEffect(() => {
@@ -116,6 +119,13 @@ export default function AccountPanel({ study, onClose }: { study: Study; onClose
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const syncByHand = async () => {
+    setManual("syncing");
+    const [ok] = await Promise.all([study.syncNow(), new Promise((r) => setTimeout(r, 600))]);
+    setManual(ok ? "done" : "failed");
+    setTimeout(() => setManual("idle"), 2000);
+  };
 
   const switchMode = (m: "login" | "register") => {
     setMode(m);
@@ -188,12 +198,13 @@ export default function AccountPanel({ study, onClose }: { study: Study; onClose
             <div className="account-actions">
               <button
                 type="button"
-                className={`btn primary ${sync.state === "syncing" ? "spinning" : ""}`}
-                onClick={() => void study.syncNow()}
-                disabled={sync.state === "syncing"}
+                className={`btn primary sync-btn ${manual}`}
+                onClick={() => void syncByHand()}
+                disabled={manual !== "idle"}
+                aria-live="polite"
               >
-                <i className="btn-icon">{ICON.sync}</i>
-                立即同步
+                <i className="btn-icon">{manual === "done" ? ICON.check : manual === "failed" ? ICON.alert : ICON.sync}</i>
+                {manual === "syncing" ? "同步中…" : manual === "done" ? "已同步" : manual === "failed" ? "同步失败" : "立即同步"}
               </button>
               <button type="button" className="btn ghost" onClick={study.signOut}>
                 <i className="btn-icon">{ICON.logout}</i>
