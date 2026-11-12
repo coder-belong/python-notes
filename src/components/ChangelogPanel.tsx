@@ -13,18 +13,18 @@ const TAG_CLASS: Record<string, string> = {
   修复: "fix",
 };
 
-/** 2026-11-12 → 「11 月 12 日 · 今天」。 */
-function dateLabel(date: string): string {
+/** 2026-11-12 → { day: "11 月 12 日", rel: "今天" }。 */
+function dateParts(date: string): { day: string; rel: string } {
   const d = new Date(`${date}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return date;
+  if (Number.isNaN(d.getTime())) return { day: date, rel: "" };
   const now = new Date();
   const yesterday = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
-  const rel = date === dayKey(now) ? " · 今天" : date === yesterday ? " · 昨天" : "";
+  const rel = date === dayKey(now) ? "今天" : date === yesterday ? "昨天" : "";
   const year = d.getFullYear() === now.getFullYear() ? "" : `${d.getFullYear()} 年 `;
-  return `${year}${d.getMonth() + 1} 月 ${d.getDate()} 日${rel}`;
+  return { day: `${year}${d.getMonth() + 1} 月 ${d.getDate()} 日`, rel };
 }
 
-/** 更新日志弹窗：按天倒序，一条一条带类型标签。内容来自 content/changelog.md。 */
+/** 更新日志弹窗：左边日期，右边一句一条；类型用小圆点颜色区分。内容来自 content/changelog.md。 */
 export default function ChangelogPanel({ days, onClose }: { days: ChangelogDay[]; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -36,34 +36,43 @@ export default function ChangelogPanel({ days, onClose }: { days: ChangelogDay[]
     <div className="modal-backdrop pinned" onClick={onClose}>
       <div className="modal changelog-modal" role="dialog" aria-label="更新日志" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <div>
-            <h3>更新日志</h3>
-            <p className="changelog-sub">这个笔记站最近改了什么</p>
-          </div>
+          <h3>更新日志</h3>
           <button type="button" className="modal-close" onClick={onClose} aria-label="关闭">
             ×
           </button>
         </div>
+        <div className="changelog-legend">
+          {Object.entries(TAG_CLASS)
+            .filter(([name]) => days.some((d) => d.entries.some((e) => e.tag === name)))
+            .map(([name, cls]) => (
+              <span key={name}>
+                <i className={cls} />
+                {name}
+              </span>
+            ))}
+        </div>
 
-        <ol className="changelog">
-          {days.map((day, i) => (
-            <li key={day.date} className="changelog-day">
-              <div className="changelog-date">
-                <span className="changelog-dot" />
-                {dateLabel(day.date)}
-                {i === 0 && <span className="changelog-latest">最新</span>}
-              </div>
-              <ul>
-                {day.entries.map((e, j) => (
-                  <li key={j}>
-                    {e.tag && <span className={`changelog-tag ${TAG_CLASS[e.tag] ?? ""}`}>{e.tag}</span>}
-                    <span dangerouslySetInnerHTML={{ __html: e.html }} />
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ol>
+        <div className="changelog">
+          {days.map((day) => {
+            const { day: label, rel } = dateParts(day.date);
+            return (
+              <section key={day.date} className="changelog-day">
+                <div className="changelog-date">
+                  <b>{label}</b>
+                  {rel && <span>{rel}</span>}
+                </div>
+                <ul>
+                  {day.entries.map((e, j) => (
+                    <li key={j} title={e.tag ?? undefined}>
+                      <i className={e.tag ? (TAG_CLASS[e.tag] ?? "") : ""} />
+                      <span dangerouslySetInnerHTML={{ __html: e.html }} />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

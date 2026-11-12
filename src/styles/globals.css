@@ -2445,80 +2445,82 @@ body.resizing aside {
 
 /* ---------- 更新日志 ---------- */
 .changelog-modal {
-  width: min(600px, 100%);
-  padding: 22px 24px 8px;
+  width: min(480px, 100%);
+  padding: 22px 24px 10px;
 }
 
 .changelog-modal .modal-head {
-  align-items: flex-start;
-  margin-bottom: 18px;
+  margin-bottom: 6px;
 }
 
-.changelog-sub {
-  margin: 4px 0 0;
-  font-size: 13px;
+/* 标题下面的图例：每种类型一个颜色 */
+.changelog-legend {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 8px;
+  font-size: 12px;
   color: var(--muted);
 }
 
-.changelog {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.changelog-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
-/* 左边一条竖线把每天串起来 */
+.changelog i,
+.changelog-legend i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.changelog i.feat,
+.changelog-legend i.feat {
+  background: var(--accent);
+}
+
+.changelog i.improve,
+.changelog-legend i.improve {
+  background: var(--done);
+}
+
+.changelog i.notes,
+.changelog-legend i.notes {
+  background: #8b5cf6;
+}
+
+.changelog i.fix,
+.changelog-legend i.fix {
+  background: var(--warn);
+}
+
+/* 每天一块：左边日期，右边列表；天与天之间一条细线 */
 .changelog-day {
-  position: relative;
-  margin: 0;
-  padding: 0 0 18px 22px;
-}
-
-.changelog-day::before {
-  content: "";
-  position: absolute;
-  top: 8px;
-  bottom: -8px;
-  left: 4px;
-  width: 2px;
-  background: var(--line);
-}
-
-.changelog-day:last-child::before {
-  display: none;
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 12px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
 }
 
 .changelog-date {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 14px;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 1px;
+}
+
+.changelog-date b {
+  font-size: 13px;
   font-weight: 600;
 }
 
-.changelog-dot {
-  position: absolute;
-  top: 5px;
-  left: 0;
-  width: 10px;
-  height: 10px;
-  border: 2px solid var(--accent-strong);
-  border-radius: 50%;
-  background: var(--panel);
-}
-
-.changelog-day:first-child .changelog-dot {
-  background: var(--accent-strong);
-  box-shadow: 0 0 0 4px var(--accent-soft);
-}
-
-.changelog-latest {
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 500;
+.changelog-date span {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .changelog-day ul {
@@ -2527,44 +2529,14 @@ body.resizing aside {
   list-style: none;
 }
 
-.changelog-day ul li {
+.changelog-day li {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   margin: 0;
-  padding: 5px 0;
-  font-size: 13.5px;
+  padding: 3px 0;
+  font-size: 14px;
   line-height: 1.6;
-}
-
-.changelog-tag {
-  flex: none;
-  padding: 0 7px;
-  border-radius: 5px;
-  font-size: 11.5px;
-  line-height: 20px;
-  background: var(--bg);
-  color: var(--muted);
-}
-
-.changelog-tag.feat {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.changelog-tag.improve {
-  background: color-mix(in srgb, var(--done) 14%, transparent);
-  color: var(--done);
-}
-
-.changelog-tag.notes {
-  background: color-mix(in srgb, #8b5cf6 14%, transparent);
-  color: #8b5cf6;
-}
-
-.changelog-tag.fix {
-  background: color-mix(in srgb, var(--warn) 14%, transparent);
-  color: var(--warn);
 }
 
 .changelog-day code {
@@ -2572,4 +2544,16 @@ body.resizing aside {
   border-radius: 4px;
   background: var(--code-bg);
   font-size: 0.9em;
+}
+
+@media (max-width: 520px) {
+  .changelog-day {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .changelog-date {
+    flex-direction: row;
+    gap: 8px;
+  }
 }
