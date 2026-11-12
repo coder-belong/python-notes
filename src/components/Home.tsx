@@ -62,7 +62,10 @@ export default function Home({ notes, groups, done, reading, studyDays }: Props)
                 {g.items.map((s) => (
                   <li key={s.id} className={done[s.id] ? "done" : ""}>
                     <span className="dot" />
-                    <a href={`#${s.id}`}>{s.title}</a>
+                    <a href={`#${s.id}`}>
+                      {s.num && <span className="sec-num">{s.num}</span>}
+                      {s.name}
+                    </a>
                   </li>
                 ))}
               </ul>

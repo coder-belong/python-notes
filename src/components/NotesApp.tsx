@@ -210,7 +210,8 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                     return (
                       <a key={s.id} href={`#${s.id}`} className={cls} title={s.title}>
                         <span className="dot" />
-                        <span className="nav-name">{s.title}</span>
+                        {s.num && <span className="sec-num">{s.num}</span>}
+                        <span className="nav-name">{s.name}</span>
                       </a>
                     );
                   })}

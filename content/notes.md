@@ -2,15 +2,15 @@
 
 从基础语法一路学到用 FastAPI 写接口、连数据库、写测试。
 
-- **阶段一：Python 语言基础**（第 1–12 节）：只讲常用的写法，不常用的先跳过。
-- **阶段二：Python 进阶与工程化**（第 13–19 节）：类型注解、依赖管理、调试、异步、发 HTTP 请求、并发。
-- **阶段三：Python 后端开发**（第 20–28 节）：用 FastAPI + SQLAlchemy 从零做一个 todo 接口项目。
+- **阶段一：Python 语言基础**：只讲常用的写法，不常用的先跳过。
+- **阶段二：Python 进阶与工程化**：类型注解、依赖管理、调试、异步、发 HTTP 请求、并发。
+- **阶段三：Python 后端开发**：用 FastAPI + SQLAlchemy 从零做一个 todo 接口项目。
 
 每节的代码都建议自己敲一遍、跑一遍。代码在 Python 3.12 上跑通过，注释里写的是实际输出。
 
 ---
 
-## 0. 准备环境 {#setup}
+## 准备环境 {#setup}
 
 Mac 自带的 `python3` 版本比较老（3.9），本笔记用 3.12。用 [uv](https://docs.astral.sh/uv/) 管理 Python 版本和依赖：
 
@@ -49,7 +49,7 @@ __pycache__/
 
 # 阶段一：Python 语言基础
 
-## 1. 变量、类型、缩进 {#variables}
+## 1.1 变量、类型、缩进 {#variables}
 
 ```python
 # 01_basic.py
@@ -72,7 +72,7 @@ note: str | None = None      # 可以是 str，也可以是 None
 ```
 
 - 变量的值一眼能看出类型时，一般不写标注；**函数的参数和返回值建议都写**。
-- 标注只是提示，Python 运行时不会检查。更多写法集中在第 13 节。
+- 标注只是提示，Python 运行时不会检查。更多写法集中在第 2.1 节。
 
 **缩进就是语法**：用缩进表示代码块（不用大括号），统一 **4 个空格**。
 
@@ -134,7 +134,7 @@ print(2 ** 10)   # 1024  乘方
 print(int("42") + 1, str(42) + "!")   # 43 42!  类型转换
 ```
 
-## 2. 判断和循环 {#control-flow}
+## 1.2 判断和循环 {#control-flow}
 
 ```python
 score = 85
@@ -199,7 +199,7 @@ for i in range(10):
     print(i)                  # 0 1 3
 ```
 
-## 3. 列表、字典、元组、集合 {#collections}
+## 1.3 列表、字典、元组、集合 {#collections}
 
 **列表 list**：有顺序，可以改。
 
@@ -280,9 +280,9 @@ users = [{"id": i, "name": n, "age": a} for i, (n, a) in enumerate(zip(names, ag
 print(users[1])                          # {'id': 2, 'name': 'Jerry', 'age': 20}
 ```
 
-要组装成对象，见第 10 节的 dataclass：`[User(n, a) for n, a in zip(names, ages)]`。
+要组装成对象，见第 1.10 节的 dataclass：`[User(n, a) for n, a in zip(names, ages)]`。
 
-## 4. 推导式：一行生成列表 / 字典 {#comprehensions}
+## 1.4 推导式：一行生成列表 / 字典 {#comprehensions}
 
 ```python
 nums = [1, 2, 3, 4]
@@ -298,7 +298,7 @@ print(squares, evens, names, by_id)
 
 读法：`[n * n for n in nums]` = 「对 nums 里的每个 n，算出 n * n，放进新列表」。逻辑复杂时还是老老实实写 for 循环。
 
-## 5. 函数 {#functions}
+## 1.5 函数 {#functions}
 
 ```python
 def add(a: int, b: int = 0) -> int:     # b 有默认值，可以不传
@@ -365,7 +365,7 @@ print(sorted(["bb", "a", "ccc"], key=len))                  # ['a', 'bb', 'ccc']
 
 函数还有一种常见用法是装饰器（`@`），放在下一节和迭代器、生成器一起讲。
 
-## 6. 迭代器、生成器、装饰器 {#iter-gen-deco}
+## 1.6 迭代器、生成器、装饰器 {#iter-gen-deco}
 
 这三样自己写得不多，但别人的代码里到处都是（FastAPI、pytest、SQLAlchemy 都在用），至少要能看懂。
 
@@ -432,7 +432,7 @@ def read_lines(path: str):
 
 from pathlib import Path
 
-Path("a.txt").write_text("第一行\n第二行\n", encoding="utf-8")   # 先准备一个小文件（文件读写见第 12 节）
+Path("a.txt").write_text("第一行\n第二行\n", encoding="utf-8")   # 先准备一个小文件（文件读写见第 1.12 节）
 
 for line in read_lines("a.txt"):      # 一行一行地取，大文件也不占内存
     print(line)                       # 第一行 / 第二行
@@ -467,7 +467,7 @@ print(total)                                   # 333332833333500000
 
 作为函数唯一的参数时，外面那层括号可以省掉，所以写成 `sum(n * n for n in ...)`。
 
-第 26 节的数据库会话、第 28 节的 pytest fixture 都用 `yield` 写「先准备 → 交出去用 → 用完收尾」，原理就是这里的「暂停再继续」。
+第 3.7 节的数据库会话、第 3.9 节的 pytest fixture 都用 `yield` 写「先准备 → 交出去用 → 用完收尾」，原理就是这里的「暂停再继续」。
 
 ### 装饰器：给函数包一层
 
@@ -528,7 +528,7 @@ print(add.__name__)     # add   不加 @wraps 的话这里是 wrapper
 # list_tasks = app.get("/tasks")(list_tasks)
 ```
 
-## 7. 模块和导入 {#modules}
+## 1.7 模块和导入 {#modules}
 
 一个 `.py` 文件就是一个**模块**；带 `__init__.py` 的文件夹是一个**包**。
 
@@ -561,7 +561,7 @@ if __name__ == "__main__":   # 被别的文件 import 时不执行
     main()
 ```
 
-## 8. 类：属性和方法 {#classes}
+## 1.8 类：属性和方法 {#classes}
 
 ```python
 class Counter:
@@ -601,9 +601,9 @@ u = User.from_text("Tom,18")
 print(u.name, u.age)       # Tom 18
 ```
 
-继承、多态见第 9 节。
+继承、多态见第 1.9 节。
 
-## 9. 继承和多态 {#inheritance}
+## 1.9 继承和多态 {#inheritance}
 
 **继承**：子类自动拥有父类的属性和方法，可以覆盖（重写），也可以加新的。
 
@@ -703,9 +703,9 @@ for a in [Dog("旺财", "柴犬"), Robot()]:
 
 - 继承适合「是一种」的关系：狗是一种动物。
 - 只是想复用几个函数，不一定要继承：写成普通函数，或者把另一个对象存成属性（组合）更简单。
-- 最常见的继承是框架要求的：`class BalanceError(Exception)`（第 11 节）、`class TaskCreate(BaseModel)`（pydantic，第 22 节）、`class Task(Base)`（SQLAlchemy，第 24 节）。
+- 最常见的继承是框架要求的：`class BalanceError(Exception)`（第 1.11 节）、`class TaskCreate(BaseModel)`（pydantic，第 3.3 节）、`class Task(Base)`（SQLAlchemy，第 3.5 节）。
 
-## 10. dataclass：只存数据的类 {#dataclass}
+## 1.10 dataclass：只存数据的类 {#dataclass}
 
 只是用来装数据的类，用 `@dataclass` 自动生成 `__init__`、`__repr__`、`__eq__`，不用手写：
 
@@ -733,10 +733,10 @@ print(t == Task("写笔记", tags=["学习"]))   # True  按字段比较
 | 场景 | 用什么 |
 |---|---|
 | 程序内部传递的数据 | `@dataclass` |
-| 接口收到的请求、返回的响应（要校验） | pydantic 的 `BaseModel`（第 22 节） |
+| 接口收到的请求、返回的响应（要校验） | pydantic 的 `BaseModel`（第 3.3 节） |
 | 有复杂逻辑的类、异常类 | 普通 class，自己写 `__init__` |
 
-## 11. 异常 {#exceptions}
+## 1.11 异常 {#exceptions}
 
 ```python
 def to_int(text: str) -> int | None:
@@ -823,7 +823,7 @@ except BalanceError as e:
 
 **原则**：知道怎么处理才 `except`；不知道就别接，让它往上抛。千万别写 `except: pass` 把错误悄悄吞掉。
 
-## 12. 文件和 JSON {#files-json}
+## 1.12 文件和 JSON {#files-json}
 
 ```python
 import json
@@ -875,7 +875,7 @@ finally:
 
 写真实项目离不开的工程能力：类型注解、依赖管理、日志和配置、调试、异步、调别人的接口、并发模型。
 
-## 13. 类型注解：给变量和函数标类型 {#type-hints}
+## 2.1 类型注解：给变量和函数标类型 {#type-hints}
 
 前面每节的代码都带着 `name: str`、`-> int` 这样的标注，这一节把常用写法集中讲一遍。
 
@@ -985,13 +985,13 @@ print(double("ab"))     # abab   标的是 int，传字符串照样运行
 ```
 
 - 想在**运行前**发现这类错：编辑器（Pylance）会直接标红；命令行可以用 `mypy` 或 `pyright` 检查整个项目。
-- 想在**运行时**真的校验数据（比如接口收到的 JSON）：用 pydantic（第 22 节），它按注解检查、转换类型，不对就报错。
+- 想在**运行时**真的校验数据（比如接口收到的 JSON）：用 pydantic（第 3.3 节），它按注解检查、转换类型，不对就报错。
 
 **写到什么程度**：函数的参数和返回值都写；变量一眼能看出类型的就不写；一时写不出来的类型先用 `Any`（`from typing import Any`），别卡在类型上。
 
-## 14. 项目和依赖：uv、pip、pyproject.toml {#tooling}
+## 2.2 项目和依赖：uv、pip、pyproject.toml {#tooling}
 
-第 0 节用 `uv venv` 建了虚拟环境、用 `uv pip install` 装包，够做练习。正式项目还要解决两件事：**别人拿到代码，怎么装出一模一样的环境**；**代码风格怎么统一**。
+「准备环境」一节用 `uv venv` 建了虚拟环境、用 `uv pip install` 装包，够做练习。正式项目还要解决两件事：**别人拿到代码，怎么装出一模一样的环境**；**代码风格怎么统一**。
 
 ### pip 和 uv
 
@@ -1088,9 +1088,9 @@ def f(x):
     return x
 ```
 
-`ruff check` 会指出 `os` 导入了没用（F401），`--fix` 会直接删掉那行。第 0 节已经在编辑器里配了「保存时自动格式化」，平时不用手动跑；提交代码前跑一次 `ruff check` 就行。
+`ruff check` 会指出 `os` 导入了没用（F401），`--fix` 会直接删掉那行。「准备环境」一节已经在编辑器里配了「保存时自动格式化」，平时不用手动跑；提交代码前跑一次 `ruff check` 就行。
 
-## 15. 日志、环境变量、时间 {#logging-env-time}
+## 2.3 日志、环境变量、时间 {#logging-env-time}
 
 ```python
 import logging
@@ -1124,7 +1124,7 @@ print(now - timedelta(days=3))              # 3 天前
 | `warning` | 不正常但还能继续 |
 | `error` | 出错了 |
 
-## 16. 调试：看懂报错、打断点 {#debugging}
+## 2.4 调试：看懂报错、打断点 {#debugging}
 
 写代码大部分时间不是在写，而是在找「为什么不对」。这一节讲三件事：看懂报错、用 `print` 快速看值、打断点一步一步跑。
 
@@ -1176,7 +1176,7 @@ items = [1, 2]
 print(f"{x=}, {items=}, {len(items)=}")   # x=3, items=[1, 2], len(items)=2
 ```
 
-找完问题记得删掉；要长期保留的输出用 `logging`（第 15 节）。
+找完问题记得删掉；要长期保留的输出用 `logging`（第 2.3 节）。
 
 ### 断点：程序停下来，一步一步看
 
@@ -1257,7 +1257,7 @@ Cursor / VS Code 装好 Python 插件后：
 
 **怎么选**：报错了先看 traceback；想快速看一个值用 `print(f"{x=}")`；逻辑绕、要看很多变量就打断点。
 
-## 17. async / await {#async}
+## 2.5 async / await {#async}
 
 `async def` 定义的是**协程函数**：遇到要等待的操作（网络请求、sleep）时，可以先让出去执行别的任务，等好了再回来。
 
@@ -1459,7 +1459,7 @@ asyncio.run(main())
 # 成功： 30
 ```
 
-## 18. 用 httpx 发 HTTP 请求 {#httpx}
+## 2.6 用 httpx 发 HTTP 请求 {#httpx}
 
 后端也经常要去调别人的接口：第三方服务、内部其他服务，以及阶段四要调的大模型 API。Python 里用 `httpx`（`uv pip install httpx`）。老项目里常见的 `requests` 用法几乎一样，但它不支持 async；FastAPI 测试用的 `TestClient` 底层也是 httpx。
 
@@ -1528,7 +1528,7 @@ with httpx.Client(base_url="https://httpbin.org", headers={"Authorization": "Bea
 
 ### 异步：AsyncClient + gather 同时发
 
-在 async 代码里（比如 FastAPI 的 `async def` 接口），要用 `AsyncClient`，前面加 `await`。配合第 17 节的 `gather`，可以同时发好几个请求：
+在 async 代码里（比如 FastAPI 的 `async def` 接口），要用 `AsyncClient`，前面加 `await`。配合第 2.5 节的 `gather`，可以同时发好几个请求：
 
 ```python
 import asyncio
@@ -1558,7 +1558,7 @@ asyncio.run(main())
 
 `/delay/1` 每个请求都要等 1 秒，再加上网络来回的时间。一个一个发是 3 份时间加起来；同时发是 3 个一起等，总时间接近一个请求的时间。具体秒数看网络，差距是一样的。
 
-在 `async def` 里不要用同步的 `httpx.get`：它等待的时候会卡住整个事件循环，和第 17 节说的 `time.sleep` 是一样的问题。
+在 `async def` 里不要用同步的 `httpx.get`：它等待的时候会卡住整个事件循环，和第 2.5 节说的 `time.sleep` 是一样的问题。
 
 ### 失败重试
 
@@ -1598,7 +1598,7 @@ except RuntimeError as e:
 - **次数要有上限**：一直失败就放弃，把错误报出来。
 - 实际项目里可以用 `tenacity` 这类库，用装饰器写重试，原理和上面一样。
 
-## 19. 线程、进程、协程和 GIL {#concurrency}
+## 2.7 线程、进程、协程和 GIL {#concurrency}
 
 「同时做好几件事」在 Python 里有三种办法。面试常问它们的区别，写代码时也要知道该用哪个。
 
@@ -1729,7 +1729,7 @@ asyncio.run(main())
 
 做一个 todo 接口项目：用 FastAPI 写接口，SQLAlchemy 把数据存进 SQLite，pytest 写测试。
 
-## 20. 项目准备 {#project-setup}
+## 3.1 项目准备 {#project-setup}
 
 ```bash
 mkdir -p todo-api/app todo-api/tests && cd todo-api
@@ -1747,7 +1747,7 @@ uv pip install fastapi "uvicorn[standard]" sqlalchemy pytest httpx python-dotenv
 | sqlalchemy | 用 Python 类操作数据库 |
 | pytest | 跑测试 |
 | httpx | 测试里的 `TestClient` 要用它 |
-| python-dotenv | 启动时读取 `.env` 文件里的配置（第 24 节） |
+| python-dotenv | 启动时读取 `.env` 文件里的配置（第 3.5 节） |
 
 `"uvicorn[standard]"` 要加引号，否则 zsh 会把方括号当通配符。
 
@@ -1767,7 +1767,7 @@ todo-api/
     └── test_tasks.py
 ```
 
-## 21. 第一个接口 {#first-api}
+## 3.2 第一个接口 {#first-api}
 
 ```python
 # app/hello.py
@@ -1833,7 +1833,7 @@ uvicorn app.hello:app --reload
 - RESTful：路径用名词复数表示资源，动作用 HTTP 方法表示，不写 `/getUser`、`/users/list` 这种。
 - 固定路径要写在 `{参数}` 路径前面，比如 `/users/me` 要写在 `/users/{user_id}` 前面，否则 `me` 会被当成 `user_id`。
 
-## 22. pydantic：请求体和响应格式 {#pydantic}
+## 3.3 pydantic：请求体和响应格式 {#pydantic}
 
 继承 `BaseModel`，写好字段和类型，pydantic 会自动生成 `__init__`，并做**校验和类型转换**：
 
@@ -1854,7 +1854,7 @@ class TaskCreate(BaseModel):
 
 class TaskOut(BaseModel):
     """返回给前端的一条任务。"""
-    model_config = ConfigDict(from_attributes=True)   # 允许直接从对象的属性读值（第 27 节用）
+    model_config = ConfigDict(from_attributes=True)   # 允许直接从对象的属性读值（第 3.8 节用）
 
     id: int
     title: str
@@ -1875,7 +1875,7 @@ TaskCreate(title="")                # ❌ ValidationError：至少 1 个字符
 TaskCreate(title="a").model_dump()  # {'title': 'a', 'note': None}  转成 dict
 ```
 
-**`from_attributes=True`**：`TaskOut` 加了这个配置后，可以用 `TaskOut.model_validate(对象)` 直接从一个对象上按字段名读取同名属性来创建，不用一个个字段手写 `TaskOut(id=task.id, title=task.title, ...)`。第 27 节就用它把数据库里的 `Task` 转成返回给前端的 `TaskOut`。
+**`from_attributes=True`**：`TaskOut` 加了这个配置后，可以用 `TaskOut.model_validate(对象)` 直接从一个对象上按字段名读取同名属性来创建，不用一个个字段手写 `TaskOut(id=task.id, title=task.title, ...)`。第 3.8 节就用它把数据库里的 `Task` 转成返回给前端的 `TaskOut`。
 
 在接口里，参数类型写成 `TaskCreate`，FastAPI 就从请求体读 JSON、校验，不通过自动返回 422，函数根本不会执行：
 
@@ -1904,7 +1904,7 @@ class TaskFilter(BaseModel):
 | `ge` / `le` | 数字 大于等于 / 小于等于 |
 | `description` | 文档里的说明 |
 
-## 23. 统一响应格式和错误处理 {#errors}
+## 3.4 统一响应格式和错误处理 {#errors}
 
 **约定**：HTTP 状态码照实返回；响应体统一是 `{code, msg, data}`。
 
@@ -1962,7 +1962,7 @@ def install(app: FastAPI) -> None:
 
 - **`success(data, msg)`**：成功时把数据包一层。`success(task)` 得到 `{"code": 200, "msg": "ok", "data": task}`；`success(msg="删除成功")` 得到 `{"code": 200, "msg": "删除成功", "data": null}`。
 - **`fail(status, msg)`**：生成一个错误，前面要加 `raise` 才会抛出去：`raise fail(409, "已经有同名任务了")`。
-- **为什么失败用 `raise` 而不是 `return`**：`raise` 会让函数立刻停下，而且不管嵌套几层都能直接抛到 FastAPI。比如第 27 节的 `load_task()` 是被接口调用的普通函数，它在里面 `raise task_not_found()`，接口不用再判断一次返回值。
+- **为什么失败用 `raise` 而不是 `return`**：`raise` 会让函数立刻停下，而且不管嵌套几层都能直接抛到 FastAPI。比如第 3.8 节的 `load_task()` 是被接口调用的普通函数，它在里面 `raise task_not_found()`，接口不用再判断一次返回值。
 - **`install()`**：启动时向 FastAPI 登记「遇到 `ApiError`，就调用 `handle_api_error` 生成 `{code: -1, msg, data: null}`」。`ApiError` 是 `fail()` 背后真正被抛出的异常类，接口里不用直接写它。
 
 **出错时代码怎么走**（以 `GET /tasks/99` 为例）：
@@ -2111,7 +2111,7 @@ def boom() -> dict:
 | `DELETE /tasks/1` | 405 | `{"code": -1, "msg": "这个接口不支持这种请求方式", "data": null}` |
 | `GET /boom` | 500 | `{"code": -1, "msg": "服务出错了，请稍后再试", "data": null}` |
 
-参数校验失败用 422 还是 400，团队统一就行，很多项目用 400。如果改成 400，第 28 节测试里 `test_empty_title_rejected` 的 422 也要跟着改。
+参数校验失败用 422 还是 400，团队统一就行，很多项目用 400。如果改成 400，第 3.9 节测试里 `test_empty_title_rejected` 的 422 也要跟着改。
 
 **常用状态码**：
 
@@ -2125,7 +2125,7 @@ def boom() -> dict:
 | 422 | 参数校验没过（FastAPI 自动返回） |
 | 500 | 服务器出错 |
 
-## 24. SQLAlchemy：连数据库、用类定义表 {#sqlalchemy}
+## 3.5 SQLAlchemy：连数据库、用类定义表 {#sqlalchemy}
 
 **一个类 = 一张表，一个对象 = 一行，一个属性 = 一列。**
 
@@ -2216,7 +2216,7 @@ create_engine(DATABASE_URL)             连上数据库
 - `onupdate=_now`：这一行被修改、提交时，自动调用 `_now()` 更新这一列。`updated_at` 就靠它：新建时和创建时间基本一样（各调一次 `_now()`，可能差几微秒），之后每次改动都会刷新。
 - **表结构改了要删库重建**：`create_all` 只会建不存在的表，不会给已有的表加列。已经跑过旧版本的话，先删掉 `todo.db` 再启动，否则会报 `no such column: tasks.updated_at`。正式项目用 alembic 处理这种改动。
 
-## 25. Session：在接口里增删改查 {#session}
+## 3.6 Session：在接口里增删改查 {#session}
 
 **Session** 是你和数据库之间的一次「会话」：在里面查、加、改、删数据，它会记住你改了什么，等你 `commit()` 时一次性写进数据库。
 
@@ -2348,9 +2348,9 @@ uvicorn crud_demo:app --reload
 
 想看 SQLAlchemy 实际发了什么 SQL：在 `db.py` 里改成 `create_engine(DATABASE_URL, echo=True)`，终端会打印每一条 SQL。你会看到 `add` 和改属性时什么都没发，`commit` 时才出现 `INSERT` / `UPDATE` / `DELETE`。
 
-**发现问题了吗**：每个接口都在重复 `with SessionLocal() as session:`、查不到就 `raise fail(404, ...)`。下一节用依赖注入把「开会话」交给 FastAPI，第 27 节再把「查不到就 404」抽成 `load_task()`。
+**发现问题了吗**：每个接口都在重复 `with SessionLocal() as session:`、查不到就 `raise fail(404, ...)`。下一节用依赖注入把「开会话」交给 FastAPI，第 3.8 节再把「查不到就 404」抽成 `load_task()`。
 
-## 26. 依赖注入：接口里拿到数据库会话 {#dependency-injection}
+## 3.7 依赖注入：接口里拿到数据库会话 {#dependency-injection}
 
 每个接口都需要一个 Session，但不想每个接口都重复写「创建、提交、出错回滚、关闭」。把这套流程写成一个函数，接口参数里声明「我要一个 Session」，FastAPI 每次请求都会调用它，把结果传进来。这就是**依赖注入**。
 
@@ -2393,7 +2393,7 @@ def get_task(task_id: int, session: Db) -> dict:
 - **`Annotated[Session, Depends(db_session)]`**：「类型是 Session，值由 `db_session` 提供」。
 - **写接口里自己 `session.commit()`**：② 可能在响应已经发出去之后才执行，万一提交失败，前端会以为成功了。所以写数据的接口在返回前自己提交。
 
-## 27. 完整的 todo 接口 {#todo-api}
+## 3.8 完整的 todo 接口 {#todo-api}
 
 | 方法 | 路径 | 作用 | 成功时 |
 |---|---|---|---|
@@ -2472,7 +2472,7 @@ def delete_task(task_id: int, session: Db) -> dict:
     return success(msg="删除成功")
 ```
 
-- **`TaskOut.model_validate(task)`**：把数据库里的 `Task` 对象转成返回给前端的 `TaskOut`（第 22 节加了 `from_attributes=True` 才能这样用）。
+- **`TaskOut.model_validate(task)`**：把数据库里的 `Task` 对象转成返回给前端的 `TaskOut`（第 3.3 节加了 `from_attributes=True` 才能这样用）。
 - **为什么不能直接 `success(task)`**：`Task` 是 SQLAlchemy 的数据库对象，FastAPI 不知道怎么把它转成 JSON，会报错返回 500。转成 `TaskOut` 还有一个好处：只输出 `TaskOut` 里定义的字段，以后表里加了不该给前端看的列，也不会被带出去。
 
 启动：`uvicorn app.main:app --reload`，到 `/docs` 里点着试，或者用 curl：
@@ -2484,7 +2484,7 @@ curl -X PATCH http://127.0.0.1:8000/tasks/1/done
 curl -i http://127.0.0.1:8000/tasks/99      # -i 显示状态码：404 + {"code": -1, "msg": "没有这个任务", "data": null}
 ```
 
-## 28. pytest：给接口写测试 {#pytest}
+## 3.9 pytest：给接口写测试 {#pytest}
 
 `TestClient` 不用启动服务，就能在代码里对 app 发请求。pytest 自动找 `test_` 开头的文件和函数来跑。
 

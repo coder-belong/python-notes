@@ -281,6 +281,20 @@ aside {
   white-space: nowrap;
 }
 
+/* 节号：等宽数字、固定宽度，1.1 和 1.10 后面的标题能对齐 */
+.sec-num {
+  flex: none;
+  display: inline-block;
+  min-width: 2.4em;
+  margin-right: 4px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.nav-sec.active .sec-num {
+  color: inherit;
+}
+
 /* ---------- 显示设置：主题、字号 ---------- */
 .display-settings {
   display: flex;
@@ -1145,6 +1159,7 @@ h2.page-title {
 }
 
 .part-card li a {
+  display: flex; /* 标题折行时第二行和标题对齐，不跑到节号下面 */
   color: var(--text);
   text-decoration: none;
 }

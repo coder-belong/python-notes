@@ -8,7 +8,9 @@ import { Marked, type Token, type Tokens, type TokensList } from "marked";
 
 export type Section = {
   id: string;
-  title: string;
+  title: string; // 完整标题，带节号：「2.5 async / await」
+  num: string | null; // 节号「2.5」；「准备环境」这种不编号的是 null
+  name: string; // 去掉节号的标题
   part: string | null;
   partIntroHtml: string | null; // 一个部分的第一节才有：「# 第X部分」标题下面那段导语
   html: string;
@@ -90,9 +92,12 @@ export function loadNotes(): Notes {
 
   const flush = () => {
     if (current) {
+      const nm = current.title.match(SECTION_NUM);
       sections.push({
         id: current.id,
         title: current.title,
+        num: nm ? nm[1] : null,
+        name: nm ? nm[2] : current.title,
         part: current.part,
         partIntroHtml: current.partIntro?.length ? render(current.partIntro) : null,
         html: render(current.tokens),
@@ -137,6 +142,8 @@ export function loadNotes(): Notes {
 }
 
 /** 行末的「（次要）」/「（次要：说明）」标记。 */
+// 节号写成「阶段.第几节」：## 2.5 async / await
+const SECTION_NUM = /^(\d+\.\d+)\s+(.+)$/;
 const MINOR = /（次要(?:：([^）]*))?）\s*$/;
 
 /** 读 ROADMAP.md：只取「## 阶段…」下面的勾选清单，放到首页的学习路线里。 */
