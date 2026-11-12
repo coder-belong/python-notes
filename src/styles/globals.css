@@ -325,27 +325,6 @@ aside {
   color: var(--text);
 }
 
-.font-btn {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.display-settings {
-  position: relative;
-}
-
-/* 点 Aa 弹出的字号调节 */
-.display-settings .font-step {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: -60px;
-  z-index: 5;
-  width: 190px;
-  background: var(--panel);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-}
-
 .account-btn {
   color: var(--accent);
 }
@@ -1807,6 +1786,11 @@ body.resizing aside {
   padding-top: max(16px, 10vh);
 }
 
+/* 顶部已经让出 10vh，内容长时在弹窗里滚动，不超出屏幕底部 */
+.modal-backdrop.pinned .modal {
+  max-height: calc(100vh - max(16px, 10vh) - 16px);
+}
+
 .account-modal {
   position: relative;
   width: min(420px, 100%);
@@ -2312,4 +2296,280 @@ body.resizing aside {
     animation: none;
     transition: none;
   }
+}
+
+/* ---------- 「⋯」菜单：字号、更新日志、收起侧栏 ---------- */
+.more-menu {
+  position: relative;
+}
+
+.new-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--panel);
+  border-radius: 50%;
+  background: #e5484d;
+}
+
+.menu-pop {
+  position: absolute;
+  z-index: 15;
+  width: 230px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
+  animation: pop-in 0.16s cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+.menu-pop.down {
+  top: calc(100% + 6px);
+  right: -80px;
+}
+
+.menu-pop.right {
+  bottom: 0;
+  left: calc(100% + 10px);
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.menu-row .font-step {
+  width: 130px;
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--line);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background: var(--accent-soft);
+}
+
+.menu-item kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: 12px/1.4 "SF Mono", Menlo, Consolas, monospace;
+  color: var(--muted);
+}
+
+.menu-badge {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 11px;
+}
+
+/* ---------- 侧栏收起成窄条 ---------- */
+.side-toggle {
+  margin-left: -4px;
+}
+
+.side-rail {
+  display: none;
+}
+
+@media (min-width: 861px) {
+  html.side-collapsed aside {
+    width: 56px;
+    padding: 14px 0;
+    overflow: visible; /* 「⋯」菜单要伸到窄条外面 */
+  }
+
+  html.side-collapsed .side-full,
+  html.side-collapsed .side-resizer {
+    display: none;
+  }
+
+  html.side-collapsed .side-rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    height: 100%;
+  }
+
+  html.side-collapsed:not(.focus-mode) main {
+    margin-left: 56px;
+  }
+
+  .rail-gap {
+    flex: 1;
+  }
+
+  .rail-study .pulse {
+    width: 10px;
+    height: 10px;
+  }
+}
+
+/* 窄屏的侧栏是抽屉，没有收起这回事 */
+@media (max-width: 860px) {
+  .side-toggle,
+  .menu-item.hide-narrow {
+    display: none;
+  }
+}
+
+/* ---------- 更新日志 ---------- */
+.changelog-modal {
+  width: min(600px, 100%);
+  padding: 22px 24px 8px;
+}
+
+.changelog-modal .modal-head {
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.changelog-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.changelog {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 左边一条竖线把每天串起来 */
+.changelog-day {
+  position: relative;
+  margin: 0;
+  padding: 0 0 18px 22px;
+}
+
+.changelog-day::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: -8px;
+  left: 4px;
+  width: 2px;
+  background: var(--line);
+}
+
+.changelog-day:last-child::before {
+  display: none;
+}
+
+.changelog-date {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.changelog-dot {
+  position: absolute;
+  top: 5px;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--accent-strong);
+  border-radius: 50%;
+  background: var(--panel);
+}
+
+.changelog-day:first-child .changelog-dot {
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.changelog-latest {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.changelog-day ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.changelog-day ul li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 5px 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.changelog-tag {
+  flex: none;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  line-height: 20px;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.changelog-tag.feat {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.changelog-tag.improve {
+  background: color-mix(in srgb, var(--done) 14%, transparent);
+  color: var(--done);
+}
+
+.changelog-tag.notes {
+  background: color-mix(in srgb, #8b5cf6 14%, transparent);
+  color: #8b5cf6;
+}
+
+.changelog-tag.fix {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+}
+
+.changelog-day code {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  font-size: 0.9em;
 }

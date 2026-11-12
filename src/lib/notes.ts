@@ -15,7 +15,17 @@ export type Section = {
   partIntroHtml: string | null; // 一个部分的第一节才有：「# 第X部分」标题下面那段导语
   html: string;
 };
-export type Notes = { title: string; introHtml: string; sections: Section[]; roadmap: RoadmapStage[] };
+export type Notes = {
+  title: string;
+  introHtml: string;
+  sections: Section[];
+  roadmap: RoadmapStage[];
+  changelog: ChangelogDay[];
+};
+
+/** 更新日志（content/changelog.md）里的一天：一条一条的更新，每条带类型。 */
+export type ChangelogEntry = { tag: string | null; html: string };
+export type ChangelogDay = { date: string; entries: ChangelogEntry[] };
 
 /** 学习路线（ROADMAP.md）里的一个阶段：每一项带「笔记里写没写」。 */
 export type RoadmapItem = {
@@ -29,6 +39,7 @@ export type RoadmapStage = { title: string; items: RoadmapItem[] };
 
 const NOTES_PATH = path.join(process.cwd(), "content", "notes.md");
 const ROADMAP_PATH = path.join(process.cwd(), "ROADMAP.md");
+const CHANGELOG_PATH = path.join(process.cwd(), "content", "changelog.md");
 
 /** 节标题末尾的固定 id：`## 5. 函数 {#functions}`。 */
 const FIXED_ID = /\s*\{#([A-Za-z0-9-]+)\}\s*$/;
@@ -138,7 +149,7 @@ export function loadNotes(): Notes {
   }
   flush();
 
-  return { title, introHtml: render(intro), sections, roadmap: loadRoadmap(marked) };
+  return { title, introHtml: render(intro), sections, roadmap: loadRoadmap(marked), changelog: loadChangelog(marked) };
 }
 
 /** 行末的「（次要）」/「（次要：说明）」标记。 */
@@ -173,4 +184,31 @@ function loadRoadmap(marked: Marked): RoadmapStage[] {
     }
   }
   return stages;
+}
+
+/** 每条更新开头的类型：【新功能】【改进】【笔记】【修复】。 */
+const CHANGELOG_TAG = /^【([^】]+)】\s*/;
+
+/** 读 content/changelog.md：每个「## 日期」是一天，下面的列表是这天的更新。 */
+function loadChangelog(marked: Marked): ChangelogDay[] {
+  const tokens = marked.lexer(readFileSync(CHANGELOG_PATH, "utf-8"));
+  const days: ChangelogDay[] = [];
+  for (const token of tokens) {
+    if (token.type === "heading" && (token as Tokens.Heading).depth === 2) {
+      days.push({ date: (token as Tokens.Heading).text.trim(), entries: [] });
+      continue;
+    }
+    const day = days[days.length - 1];
+    if (day && token.type === "list") {
+      for (const item of (token as Tokens.List).items) {
+        const raw = item.text.trim();
+        const tag = raw.match(CHANGELOG_TAG);
+        day.entries.push({
+          tag: tag ? tag[1] : null,
+          html: marked.parseInline(tag ? raw.slice(tag[0].length) : raw) as string,
+        });
+      }
+    }
+  }
+  return days;
 }

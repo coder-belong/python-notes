@@ -3,16 +3,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Notes, Section } from "@/lib/notes";
-import { dayKey, loadReading, saveReading, type Reading } from "@/lib/study-store";
+import { SIDE_COLLAPSED_KEY } from "@/lib/prefs";
+import { dayKey, formatDuration, loadReading, saveReading, type Reading } from "@/lib/study-store";
 import { useStudy } from "@/lib/use-study";
 
 import AccountPanel, { AccountEntry } from "./AccountPanel";
-import DisplaySettings from "./DisplaySettings";
+import ChangelogPanel from "./ChangelogPanel";
 import FocusBar from "./FocusBar";
 import Home from "./Home";
+import MoreMenu from "./MoreMenu";
 import SideResizer from "./SideResizer";
 import ThemeToggle from "./ThemeToggle";
 import StudyPanel, { StudyEntry } from "./StudyPanel";
+
+/** 看过的最新一条更新日志的日期：比它新的就在「⋯」上显示小红点。 */
+const CHANGELOG_SEEN_KEY = "python-notes:changelog-seen";
 
 /** 第 0 节没有所属部分，侧栏里归到这一组。 */
 const NO_PART = "开始之前";
@@ -30,6 +35,10 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   const [navOpen, setNavOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
+  const [changelogSeen, setChangelogSeen] = useState<string | null>(null);
+  // 侧栏收成窄条：<head> 里的脚本已经按上次的状态加好了 class，这里读出来让按钮显示对
+  const [collapsed, setCollapsed] = useState(false);
   const [focus, setFocus] = useState(false);
   const [openParts, setOpenParts] = useState<Set<string>>(new Set());
   const [reading, setReading] = useState<Reading | null>(null);
@@ -104,11 +113,53 @@ export default function NotesApp({ notes }: { notes: Notes }) {
     };
   }, [route]);
 
-  // 键盘：← → 切换上一节 / 下一节（在输入框里、或者开着统计弹窗时不响应）
+  // 读上次的侧栏状态、看过的最新一条更新日志
+  useEffect(() => {
+    // 只能在浏览器里读，读完同步到 state
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCollapsed(document.documentElement.classList.contains("side-collapsed"));
+    try {
+      setChangelogSeen(localStorage.getItem(CHANGELOG_SEEN_KEY) ?? "");
+    } catch {
+      setChangelogSeen("");
+    }
+  }, []);
+
+  const toggleSidebar = () =>
+    setCollapsed((v) => {
+      const next = !v;
+      document.documentElement.classList.toggle("side-collapsed", next);
+      try {
+        localStorage.setItem(SIDE_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // 存不了就只在这次有效
+      }
+      return next;
+    });
+
+  const latestChange = notes.changelog[0]?.date ?? "";
+  // 还没读到 localStorage 时先不显示红点，免得一闪
+  const hasNewChange = changelogSeen !== null && latestChange > changelogSeen;
+  const openChangelog = () => {
+    setChangelogOpen(true);
+    setChangelogSeen(latestChange);
+    try {
+      localStorage.setItem(CHANGELOG_SEEN_KEY, latestChange);
+    } catch {
+      // 存不了下次还会显示红点，不影响使用
+    }
+  };
+
+  // 键盘：← → 切换上一节 / 下一节（在输入框里、或者开着弹窗时不响应）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (statsOpen || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
-      if ((e.target as HTMLElement).closest("input, textarea, [contenteditable]")) return;
+      if (statsOpen || accountOpen || changelogOpen || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if ((e.target as HTMLElement).closest?.("input, textarea, [contenteditable]")) return;
+      // \ 收起 / 展开侧栏
+      if (e.key === "\\") {
+        toggleSidebar();
+        return;
+      }
       // F 进入 / 退出专注模式，Esc 退出
       if (e.key === "f" || e.key === "F") {
         setFocus((v) => !v);
@@ -123,7 +174,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [prev, next, statsOpen]);
+  }, [prev, next, statsOpen, accountOpen, changelogOpen]);
 
   // 专注模式：给 <html> 加个 class，CSS 负责收起侧栏、正文居中
   useEffect(() => {
@@ -175,53 +226,102 @@ export default function NotesApp({ notes }: { notes: Notes }) {
       </button>
 
       <aside className={navOpen ? "open" : ""}>
-        <div className="brand-row">
-          <a className="brand" href="#">
-            {notes.title}
-          </a>
-          <DisplaySettings />
+        {/* 收起后的窄条：只留常用按钮（只在宽屏显示，窄屏侧栏是抽屉，不收窄条） */}
+        <div className="side-rail">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={toggleSidebar}
+            aria-label="展开侧栏"
+            title="展开侧栏（\）"
+          >
+            <SidebarIcon />
+          </button>
+          <button
+            type="button"
+            className={`icon-btn rail-study ${study.status}`}
+            onClick={() => setStatsOpen(true)}
+            aria-label="学习统计"
+            title={`今天 ${formatDuration(study.data.days[dayKey()] ?? 0)} · 学习统计`}
+          >
+            <span className="pulse" />
+          </button>
+          <span className="rail-gap" />
+          <MoreMenu
+            hasNew={hasNewChange}
+            onOpenChangelog={openChangelog}
+            collapsed={collapsed}
+            onToggleSidebar={toggleSidebar}
+            placement="right"
+          />
           <AccountEntry study={study} onOpen={() => setAccountOpen(true)} />
           <ThemeToggle />
         </div>
-        <StudyEntry study={study} onOpen={() => setStatsOpen(true)} />
-        <nav>
-          <a href="#" className={`nav-home ${route === null ? "active" : ""}`}>
-            首页 · 学习路线
-          </a>
-          {groups.map((g) => {
-            const done = g.items.filter((s) => study.data.done[s.id]).length;
-            const open = openParts.has(g.part);
-            return (
-              <div key={g.part} className="nav-group">
-                <button type="button" className="nav-part" onClick={() => togglePart(g.part)} aria-expanded={open}>
-                  <span className={`chev ${open ? "open" : ""}`}>›</span>
-                  <span className="nav-part-name" title={g.part}>
-                    {g.part}
-                  </span>
-                  <span className="nav-part-count">
-                    {done}/{g.items.length}
-                  </span>
-                  <span className="mini-bar">
-                    <i style={{ width: `${(done / g.items.length) * 100}%` }} />
-                  </span>
-                </button>
-                {open &&
-                  g.items.map((s) => {
-                    const cls = ["nav-sec", route === s.id ? "active" : "", study.data.done[s.id] ? "done" : ""]
-                      .filter(Boolean)
-                      .join(" ");
-                    return (
-                      <a key={s.id} href={`#${s.id}`} className={cls} title={s.title}>
-                        <span className="dot" />
-                        {s.num && <span className="sec-num">{s.num}</span>}
-                        <span className="nav-name">{s.name}</span>
-                      </a>
-                    );
-                  })}
-              </div>
-            );
-          })}
-        </nav>
+
+        <div className="side-full">
+          <div className="brand-row">
+            <button
+              type="button"
+              className="icon-btn side-toggle"
+              onClick={toggleSidebar}
+              aria-label="收起侧栏"
+              title="收起侧栏（\）"
+            >
+              <SidebarIcon />
+            </button>
+            <a className="brand" href="#">
+              {notes.title}
+            </a>
+            <MoreMenu
+              hasNew={hasNewChange}
+              onOpenChangelog={openChangelog}
+              collapsed={collapsed}
+              onToggleSidebar={toggleSidebar}
+              placement="down"
+            />
+            <AccountEntry study={study} onOpen={() => setAccountOpen(true)} />
+            <ThemeToggle />
+          </div>
+          <StudyEntry study={study} onOpen={() => setStatsOpen(true)} />
+          <nav>
+            <a href="#" className={`nav-home ${route === null ? "active" : ""}`}>
+              首页 · 学习路线
+            </a>
+            {groups.map((g) => {
+              const done = g.items.filter((s) => study.data.done[s.id]).length;
+              const open = openParts.has(g.part);
+              return (
+                <div key={g.part} className="nav-group">
+                  <button type="button" className="nav-part" onClick={() => togglePart(g.part)} aria-expanded={open}>
+                    <span className={`chev ${open ? "open" : ""}`}>›</span>
+                    <span className="nav-part-name" title={g.part}>
+                      {g.part}
+                    </span>
+                    <span className="nav-part-count">
+                      {done}/{g.items.length}
+                    </span>
+                    <span className="mini-bar">
+                      <i style={{ width: `${(done / g.items.length) * 100}%` }} />
+                    </span>
+                  </button>
+                  {open &&
+                    g.items.map((s) => {
+                      const cls = ["nav-sec", route === s.id ? "active" : "", study.data.done[s.id] ? "done" : ""]
+                        .filter(Boolean)
+                        .join(" ");
+                      return (
+                        <a key={s.id} href={`#${s.id}`} className={cls} title={s.title}>
+                          <span className="dot" />
+                          {s.num && <span className="sec-num">{s.num}</span>}
+                          <span className="nav-name">{s.name}</span>
+                        </a>
+                      );
+                    })}
+                </div>
+              );
+            })}
+          </nav>
+        </div>
       </aside>
       <SideResizer />
 
@@ -311,7 +411,26 @@ export default function NotesApp({ notes }: { notes: Notes }) {
       )}
       {statsOpen && <StudyPanel study={study} sections={sections} onClose={() => setStatsOpen(false)} />}
       {accountOpen && <AccountPanel study={study} onClose={() => setAccountOpen(false)} />}
+      {changelogOpen && <ChangelogPanel days={notes.changelog} onClose={() => setChangelogOpen(false)} />}
     </>
+  );
+}
+
+/** 侧栏开关的图标：一个方框，左边一竖。 */
+function SidebarIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      aria-hidden="true"
+    >
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <path d="M9.5 4.5v15" />
+    </svg>
   );
 }
 

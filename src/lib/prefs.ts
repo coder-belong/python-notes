@@ -39,4 +39,7 @@ export function applyPrefs(p: Prefs): void {
  * 放在 <head> 里、页面画出来之前就执行的脚本：先套上保存的主题和字号，
  * 否则选了深色的话，每次打开会先闪一下浅色。逻辑和 applyPrefs 一样。
  */
-export const PREFS_BOOT_SCRIPT = `try{var p=JSON.parse(localStorage.getItem(${JSON.stringify(PREFS_KEY)})||"{}"),r=document.documentElement;if(p.theme==="light"||p.theme==="dark")r.dataset.theme=p.theme;if(p.fontSize)r.style.setProperty("--fs",p.fontSize+"px")}catch(e){}`;
+/** 侧栏是否收起成窄条（只在宽屏有效，窄屏侧栏本来就是抽屉）。 */
+export const SIDE_COLLAPSED_KEY = "python-notes:side-collapsed";
+
+export const PREFS_BOOT_SCRIPT = `try{if(localStorage.getItem(${JSON.stringify("python-notes:side-collapsed")})==="1")document.documentElement.classList.add("side-collapsed")}catch(e){}try{var p=JSON.parse(localStorage.getItem(${JSON.stringify(PREFS_KEY)})||"{}"),r=document.documentElement;if(p.theme==="light"||p.theme==="dark")r.dataset.theme=p.theme;if(p.fontSize)r.style.setProperty("--fs",p.fontSize+"px")}catch(e){}`;

@@ -30,11 +30,16 @@
 **侧栏**
 
 - 目录按部分折叠，显示每部分学完几节；右边缘可以拖动调宽度（双击恢复默认），标题不换行，太长显示省略号。
+- 标题左边的方框图标把侧栏收起成一条 56px 的窄边（只留展开、学习状态、「⋯」、账号、主题），正文更宽；再点或按 `\` 展开。收起状态会记住。窄屏的侧栏是抽屉，没有这个按钮。
 - 标题右边一排图标：
-  - 「Aa」点开调正文字号（14 / 16 / 18 / 20）；
+  - 「⋯」：正文字号（14 / 16 / 18 / 20）、更新日志、收起侧栏。不常用的设置都放这里，以后加设置也往这里放；更新日志有没看过的新内容时，按钮上有小红点；
   - 人像是登录 / 注册，登录后显示用户名的第一个字，右下角小点是同步状态（绿：已同步，橙：失败）；
   - 太阳 / 月亮切换浅色和深色，换的时候新颜色从按钮处画圆铺开；没点过就跟随系统。
 - 标题下面一行是今天学了多久，点开是学习统计。
+
+**更新日志**
+
+内容在 `content/changelog.md`：每天一个 `## 2026-11-12`，下面一行一条，开头用【新功能】【改进】【笔记】【修复】标类型，最新的写在最上面。改完要重启 `npm run dev`。新加一天后，「⋯」上会出现小红点，打开更新日志后消失。
 
 **专注模式**
 
@@ -48,7 +53,8 @@
 |---|---|
 | ← → | 上一节 / 下一节 |
 | F | 进入 / 退出专注模式 |
-| Esc | 退出专注模式、关闭统计弹窗 |
+| \ | 收起 / 展开侧栏（中文输入法下打出来是「、」，要切到英文） |
+| Esc | 退出专注模式、关闭弹窗和菜单 |
 
 ## 学习时长
 
@@ -65,6 +71,8 @@
 | `python-notes:reading` | 上次读到的节和滚动位置 |
 | `python-notes:prefs` | 主题、字号 |
 | `python-notes:side-w` | 侧栏宽度 |
+| `python-notes:side-collapsed` | 侧栏是否收起成窄边 |
+| `python-notes:changelog-seen` | 看过的最新一条更新日志的日期（用来判断显不显示小红点） |
 | `python-notes:auth` | 登录后的 token 和用户名 |
 | `python-notes:sync` | 还没同步到账号上的学习记录 |
 
@@ -111,10 +119,11 @@ uv run uvicorn app.main:app --reload --port 8000
 
 ```
 content/notes.md                笔记正文
+content/changelog.md            更新日志
 ROADMAP.md                      学习路线（首页读「## 阶段…」下面的勾选清单）
 src/app/layout.tsx              页面外壳：把样式直接写进页面，<head> 里先套上主题和字号
 src/app/page.tsx                构建时读 notes.md，交给 NotesApp
-src/lib/notes.ts                Markdown → 按「部分 / 节」拆好的 HTML（代码高亮在这里做），读 ROADMAP
+src/lib/notes.ts                Markdown → 按「部分 / 节」拆好的 HTML（代码高亮在这里做），读 ROADMAP 和更新日志
 src/lib/study-store.ts          学习记录、阅读位置的读写和格式化
 src/lib/legacy-ids.ts           旧版按标题生成的 id → 固定 id，打开页面时自动迁移学习记录
 src/lib/use-study.ts            学习计时、「学完了」、番茄数，登录后的同步
@@ -127,7 +136,8 @@ src/components/StudyPanel.tsx   学习统计入口和弹窗
 src/components/AccountPanel.tsx 账号入口和登录 / 注册弹窗
 src/components/FocusBar.tsx     专注模式底部的番茄钟
 src/components/ThemeToggle.tsx  浅色 / 深色切换按钮和动画
-src/components/DisplaySettings.tsx  字号调节
+src/components/MoreMenu.tsx      「⋯」菜单：字号、更新日志、收起侧栏
+src/components/ChangelogPanel.tsx  更新日志弹窗
 src/components/SideResizer.tsx  拖动调侧栏宽度
 src/styles/globals.css          样式（构建时直接写进页面）
 scripts/single-html.mjs         把 out/ 打成一个 HTML
