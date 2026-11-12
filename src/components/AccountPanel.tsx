@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { formatDuration } from "@/lib/study-store";
 import type { useStudy } from "@/lib/use-study";
 
 type Study = ReturnType<typeof useStudy>;
@@ -45,20 +46,81 @@ export function AccountEntry({ study, onOpen }: { study: Study; onOpen: () => vo
   );
 }
 
-/** 点开入口后的弹窗：没登录是登录 / 注册表单，登录了是同步状态和退出。 */
+const ICON = {
+  user: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4 3.6-7 8-7s8 3 8 7" />
+    </svg>
+  ),
+  lock: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="4" y="10" width="16" height="11" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </svg>
+  ),
+  eye: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+  eyeOff: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 3l18 18" />
+      <path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    </svg>
+  ),
+  check: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  ),
+  alert: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5v5.5M12 16.5v.01" />
+    </svg>
+  ),
+  sync: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4" />
+    </svg>
+  ),
+  logout: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4" />
+    </svg>
+  ),
+};
+
+/** 注册页列出来的好处。 */
+const PERKS = ["家里、公司登录同一个账号，进度是同一份", "学习时长、热力图、「学完了」都跟着账号走", "只要用户名和密码，不用邮箱和手机号"];
+
+const USERNAME_RULE = /^[\p{L}\p{N}_]{2,20}$/u;
+
+/** 点开入口后的弹窗：没登录是登录 / 注册表单，登录了是账号信息和同步状态。 */
 export default function AccountPanel({ study, onClose }: { study: Study; onClose: () => void }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [shaking, setShaking] = useState(false); // 出错时让输入区抖一下
   const [busy, setBusy] = useState(false);
-  const { account, sync } = study;
+  const { account, sync, data } = study;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const switchMode = (m: "login" | "register") => {
+    setMode(m);
+    setError("");
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,45 +131,87 @@ export default function AccountPanel({ study, onClose }: { study: Study; onClose
       setPassword("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "出错了，请稍后再试");
+      setShaking(true);
     } finally {
       setBusy(false);
     }
   };
 
+  const nameOk = USERNAME_RULE.test(username.trim());
+  const passOk = password.length >= 6;
+  const totalSeconds = Object.values(data.days).reduce((a, b) => a + b, 0);
+  const doneCount = Object.values(data.done).filter(Boolean).length;
+  const studiedDays = Object.values(data.days).filter((v) => v >= 60).length;
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop pinned" onClick={onClose}>
       <div className="modal account-modal" role="dialog" aria-label="账号" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h3>{account ? "账号" : mode === "login" ? "登录" : "注册"}</h3>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="关闭">
-            ×
-          </button>
-        </div>
+        <button type="button" className="modal-close account-close" onClick={onClose} aria-label="关闭">
+          ×
+        </button>
 
         {account ? (
-          <>
-            <p className="account-hello">
-              已登录：<b>{account.username}</b>
-            </p>
-            <p className={`account-sync ${sync.state}`}>
-              {sync.state === "syncing" && "正在同步…"}
-              {sync.state === "ok" && `学习记录已同步（${timeText(sync.at)}）`}
-              {sync.state === "error" && `同步失败：${sync.msg}。记录先存在本机，稍后会自动重试。`}
-              {sync.state === "idle" && "登录后每分钟自动同步一次。"}
-            </p>
+          <div className="account-profile">
+            <div className="account-hero">
+              <span className="avatar big">{Array.from(account.username)[0]}</span>
+              <div>
+                <h3>{account.username}</h3>
+                <p className={`account-sync ${sync.state}`}>
+                  <span className="dot" />
+                  {sync.state === "syncing" && "正在同步…"}
+                  {sync.state === "ok" && `学习记录已同步 · ${timeText(sync.at)}`}
+                  {sync.state === "error" && `同步失败：${sync.msg}`}
+                  {sync.state === "idle" && "每分钟自动同步一次"}
+                </p>
+              </div>
+            </div>
+
+            <div className="account-stats">
+              <div>
+                <b>{formatDuration(totalSeconds)}</b>
+                <span>累计学习</span>
+              </div>
+              <div>
+                <b>{studiedDays} 天</b>
+                <span>学习天数</span>
+              </div>
+              <div>
+                <b>{doneCount} 节</b>
+                <span>已学完</span>
+              </div>
+            </div>
+
+            {sync.state === "error" && (
+              <p className="account-note">记录先存在本机，会自动重试，不会丢。</p>
+            )}
+
             <div className="account-actions">
-              <button type="button" className="btn primary" onClick={() => void study.syncNow()}>
+              <button
+                type="button"
+                className={`btn primary ${sync.state === "syncing" ? "spinning" : ""}`}
+                onClick={() => void study.syncNow()}
+                disabled={sync.state === "syncing"}
+              >
+                <i className="btn-icon">{ICON.sync}</i>
                 立即同步
               </button>
-              <button type="button" className="btn" onClick={study.signOut}>
+              <button type="button" className="btn ghost" onClick={study.signOut}>
+                <i className="btn-icon">{ICON.logout}</i>
                 退出登录
               </button>
             </div>
-            <p className="hint">退出登录后，这台电脑上的记录还在；在别的电脑登录同一个账号，能看到同样的进度。</p>
-          </>
+            <p className="account-foot">退出后本机记录还在；换台电脑登录同一个账号，进度一样。</p>
+          </div>
         ) : (
-          <form onSubmit={submit} className="account-form">
-            <div className="account-tabs" role="tablist">
+          <form onSubmit={submit} className="account-form" noValidate>
+            <div className="account-brand">
+              <span className="account-logo">Py</span>
+              <h3>{mode === "login" ? "欢迎回来" : "创建账号"}</h3>
+              <p>{mode === "login" ? "登录后，学习进度在每台电脑上都一样" : "注册完直接登录，本机已有的记录会一起带上"}</p>
+            </div>
+
+            <div className={`account-tabs ${mode}`} role="tablist">
+              <span className="account-tabs-thumb" />
               {(["login", "register"] as const).map((m) => (
                 <button
                   key={m}
@@ -115,44 +219,93 @@ export default function AccountPanel({ study, onClose }: { study: Study; onClose
                   role="tab"
                   aria-selected={mode === m}
                   className={mode === m ? "active" : ""}
-                  onClick={() => {
-                    setMode(m);
-                    setError("");
-                  }}
+                  onClick={() => switchMode(m)}
                 >
                   {m === "login" ? "登录" : "注册"}
                 </button>
               ))}
             </div>
-            <label>
-              <span>用户名</span>
-              <input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
-                placeholder="2～20 个字：字母、数字、下划线、汉字"
-                required
-                autoFocus
-              />
-            </label>
-            <label>
-              <span>密码</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                placeholder="至少 6 位"
-                required
-              />
-            </label>
-            {error && <p className="account-error">{error}</p>}
-            <button type="submit" className="btn primary wide" disabled={busy}>
+
+            <div className={`account-fields ${shaking ? "shake" : ""}`} onAnimationEnd={() => setShaking(false)}>
+              <label className="field">
+                <span className="field-label">用户名</span>
+                <span className="field-box">
+                  <i className="field-icon">{ICON.user}</i>
+                  <input
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    autoComplete="username"
+                    placeholder="你的用户名"
+                    maxLength={20}
+                    autoFocus
+                  />
+                  {mode === "register" && nameOk && <i className="field-ok">{ICON.check}</i>}
+                </span>
+                {mode === "register" && <span className="field-help">2～20 个字，可以用字母、数字、下划线和汉字</span>}
+              </label>
+
+              <label className="field">
+                <span className="field-label">密码</span>
+                <span className="field-box">
+                  <i className="field-icon">{ICON.lock}</i>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete={mode === "login" ? "current-password" : "new-password"}
+                    placeholder={mode === "login" ? "你的密码" : "至少 6 位"}
+                  />
+                  <button
+                    type="button"
+                    className="field-eye"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? "隐藏密码" : "显示密码"}
+                    title={showPassword ? "隐藏密码" : "显示密码"}
+                  >
+                    {showPassword ? ICON.eyeOff : ICON.eye}
+                  </button>
+                </span>
+                {mode === "register" && (
+                  <span className={`field-help ${passOk ? "ok" : ""}`}>
+                    {passOk ? "密码长度可以" : `至少 6 位，还差 ${6 - password.length} 位`}
+                  </span>
+                )}
+              </label>
+            </div>
+
+            {error && (
+              <p className="account-error" role="alert">
+                <i>{ICON.alert}</i>
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              className="btn primary wide"
+              disabled={busy || !username.trim() || !password}
+            >
+              {busy && <span className="spinner" />}
               {busy ? "请稍候…" : mode === "login" ? "登录" : "注册并登录"}
             </button>
-            <p className="hint">
-              登录后，这台电脑上已有的学习记录会合并到账号里；家里、公司登录同一个账号，进度是同一份。
-            </p>
+
+            {mode === "register" ? (
+              <ul className="account-perks">
+                {PERKS.map((t) => (
+                  <li key={t}>
+                    <i>{ICON.check}</i>
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="account-switch">
+                还没有账号？
+                <button type="button" className="link-btn" onClick={() => switchMode("register")}>
+                  注册一个
+                </button>
+              </p>
+            )}
           </form>
         )}
       </div>
