@@ -782,7 +782,7 @@ def to_int(text: str) -> int | None:
 
 
 print(to_int("42"))     # 不管成功失败都会执行 / 42
-print(to_int("abc"))    # 转换失败： invalid literal for int() with base 10: 'abc' / ... / None
+print(to_int("abc"))    # 转换失败： invalid literal for int() with base 10: 'abc' / 不管成功失败都会执行 / None
 ```
 
 **常见的错误类型**：
@@ -799,8 +799,8 @@ print(to_int("abc"))    # 转换失败： invalid literal for int() with base 10
 
 **主动抛错 `raise`**：执行到 `raise`，当前函数立刻停下，后面的代码都不执行（和 `return` 一样）。区别是停下之后去哪里：
 
-- `return`：把结果交回给调用的地方，程序照常往下走。
-- `raise`：错误一层层往外抛，找有没有 `try/except` 接住；接住了就跳到 `except` 里继续执行，没人接就整个程序终止并打印报错。`finally` 里的代码不管怎样都会执行。
+- `return`：函数到这里结束，带着结果回到调用它的那一行，**调用方**接着往下执行。
+- `raise`：调用方拿不到结果，错误一层层往外抛，找有没有 `try/except` 接住；接住了就跳到 `except` 里继续执行，没人接就整个程序终止并打印报错。`finally` 里的代码不管怎样都会执行。
 
 ```python
 def check(age: int) -> str:
