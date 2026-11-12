@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Notes, Section } from "@/lib/notes";
 import { SIDE_COLLAPSED_KEY } from "@/lib/prefs";
@@ -40,6 +40,37 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   // 侧栏收成窄条：<head> 里的脚本已经按上次的状态加好了 class，这里读出来让按钮显示对
   const [collapsed, setCollapsed] = useState(false);
   const [focus, setFocus] = useState(false);
+  /** 是否全屏；null = 浏览器不支持（如 iPhone Safari）。 */
+  const [fullscreen, setFullscreen] = useState<boolean | null>(false);
+  const focusRef = useRef(false);
+  /** 点「退出全屏」按钮时只退全屏、留在专注模式；按 Esc 退全屏则连专注一起退。 */
+  const keepFocusRef = useRef(false);
+
+  useEffect(() => {
+    focusRef.current = focus;
+  }, [focus]);
+
+  /** 进入专注模式，顺便全屏（要在点击、按键里调用，浏览器才允许全屏）。 */
+  const enterFocus = useCallback(() => {
+    setFocus(true);
+    if (document.fullscreenEnabled && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  }, []);
+
+  const exitFocus = useCallback(() => {
+    setFocus(false);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      keepFocusRef.current = true;
+      document.exitFullscreen().catch(() => {});
+    } else {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  }, []);
   const [openParts, setOpenParts] = useState<Set<string>>(new Set());
   const [reading, setReading] = useState<Reading | null>(null);
   const restoreY = useRef<number | null>(null);
@@ -162,11 +193,12 @@ export default function NotesApp({ notes }: { notes: Notes }) {
       }
       // F 进入 / 退出专注模式，Esc 退出
       if (e.key === "f" || e.key === "F") {
-        setFocus((v) => !v);
+        if (focus) exitFocus();
+        else enterFocus();
         return;
       }
       if (e.key === "Escape") {
-        setFocus(false);
+        exitFocus();
         return;
       }
       const to = e.key === "ArrowLeft" ? prev : e.key === "ArrowRight" ? next : null;
@@ -174,12 +206,27 @@ export default function NotesApp({ notes }: { notes: Notes }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [prev, next, statsOpen, accountOpen, changelogOpen]);
+  }, [prev, next, statsOpen, accountOpen, changelogOpen, focus, enterFocus, exitFocus]);
 
   // 专注模式：给 <html> 加个 class，CSS 负责收起侧栏、正文居中
   useEffect(() => {
     document.documentElement.classList.toggle("focus-mode", focus);
   }, [focus]);
+
+  // 全屏状态跟着浏览器走：按 Esc 退出全屏时，浏览器不会把 Esc 交给页面，只能在这里一起退出专注
+  useEffect(() => {
+    // 浏览器支不支持全屏只能在客户端判断
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!document.fullscreenEnabled) setFullscreen(null);
+    const onChange = () => {
+      const on = !!document.fullscreenElement;
+      setFullscreen(on);
+      if (!on && focusRef.current && !keepFocusRef.current) setFocus(false);
+      keepFocusRef.current = false;
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
 
   // 给代码块加「复制」按钮（每次换节，正文换了就重新加）
   useEffect(() => {
@@ -341,7 +388,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                   第 {index + 1} / {sections.length} 节
                 </span>
                 {!focus && (
-                  <button type="button" className="focus-btn" onClick={() => setFocus(true)} title="专注模式（F）">
+                  <button type="button" className="focus-btn" onClick={enterFocus} title="专注模式（F）：全屏、收起侧栏">
                     <FocusIcon />
                     专注
                   </button>
@@ -396,7 +443,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                   </a>
                 )}
               </nav>
-              <p className="hint pager-hint">键盘 ← → 切换上一节 / 下一节，F 进入专注模式</p>
+              <p className="hint pager-hint">键盘 ← → 切换上一节 / 下一节，F 进入专注模式（全屏）</p>
             </article>
           )}
         </div>
@@ -406,7 +453,9 @@ export default function NotesApp({ notes }: { notes: Notes }) {
         <FocusBar
           today={study.data.pomodoros[dayKey()] ?? 0}
           onComplete={study.addPomodoro}
-          onExit={() => setFocus(false)}
+          onExit={exitFocus}
+          fullscreen={fullscreen}
+          onToggleFullscreen={toggleFullscreen}
         />
       )}
       {statsOpen && <StudyPanel study={study} sections={sections} onClose={() => setStatsOpen(false)} />}

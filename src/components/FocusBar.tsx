@@ -13,6 +13,9 @@ type Props = {
   /** 专注满 25 分钟时调用：记一个番茄。 */
   onComplete: () => void;
   onExit: () => void;
+  /** 当前是否全屏；浏览器不支持全屏（如 iPhone）时为 null，不显示按钮。 */
+  fullscreen: boolean | null;
+  onToggleFullscreen: () => void;
 };
 
 /** 时间到了响两声（不用音频文件，浏览器直接合成）。 */
@@ -39,10 +42,13 @@ function chime() {
 const mmss = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
 /**
- * 专注模式底部的番茄钟：进入专注模式就开始 25 分钟倒计时，到点响铃、记一个番茄，
+ * 专注模式右上角的番茄钟：进入专注模式就开始 25 分钟倒计时，到点响铃、记一个番茄，
  * 自动进入 5 分钟休息；休息完再响一次，等你点开始下一个。
+ *
+ * 平时只露一个小番茄（外圈是进度，不显示数字，免得分心）；鼠标移上去才展开时间和按钮。
+ * 休息中、暂停时一直展开，提醒你该干嘛。
  */
-export default function FocusBar({ today, onComplete, onExit }: Props) {
+export default function FocusBar({ today, onComplete, onExit, fullscreen, onToggleFullscreen }: Props) {
   const [phase, setPhase] = useState<Phase>("focus");
   const [left, setLeft] = useState(FOCUS_SECONDS);
   const [running, setRunning] = useState(true);
@@ -97,33 +103,64 @@ export default function FocusBar({ today, onComplete, onExit }: Props) {
     setRunning(true);
   };
 
+  const open = phase === "break" || !running;
+
   return (
-    <div className={`focus-bar ${phase}`} role="timer" aria-label="番茄钟">
-      <span className="focus-ring" style={{ "--p": progress } as React.CSSProperties}>
+    <div className={`focus-bar ${phase}${open ? " open" : ""}`} role="timer" aria-label="番茄钟">
+      <span className="focus-ring" style={{ "--p": progress } as React.CSSProperties} tabIndex={0}>
         {phase === "focus" ? "🍅" : "☕"}
       </span>
-      <span className="focus-phase">{phase === "focus" ? "专注" : "休息一下"}</span>
-      <span className="focus-time">{mmss(left)}</span>
+      <div className="focus-more">
+        <span className="focus-phase">{phase === "focus" ? (running ? "专注中" : "已暂停") : "休息一下"}</span>
+        <span className="focus-time">{mmss(left)}</span>
 
-      <button type="button" onClick={() => setRunning((r) => !r)} title={running ? "暂停" : "开始"}>
-        {running ? <PauseIcon /> : <PlayIcon />}
-      </button>
-      <button type="button" onClick={restart} title="重新开始这一轮">
-        <RestartIcon />
-      </button>
-      {phase === "break" && (
-        <button type="button" className="focus-text-btn" onClick={skipBreak}>
-          跳过休息
+        <button type="button" onClick={() => setRunning((r) => !r)} title={running ? "暂停" : "开始"}>
+          {running ? <PauseIcon /> : <PlayIcon />}
         </button>
-      )}
+        <button type="button" onClick={restart} title="重新开始这一轮">
+          <RestartIcon />
+        </button>
+        {phase === "break" && (
+          <button type="button" className="focus-text-btn" onClick={skipBreak}>
+            跳过休息
+          </button>
+        )}
 
-      <span className="focus-count" title="今天完成的番茄钟">
-        今天 🍅 × {today}
-      </span>
-      <button type="button" className="focus-exit" onClick={onExit} title="退出专注模式（Esc）">
-        退出专注
-      </button>
+        <span className="focus-count" title="今天完成的番茄钟">
+          今天 🍅 × {today}
+        </span>
+        {fullscreen !== null && (
+          <button type="button" onClick={onToggleFullscreen} title={fullscreen ? "退出全屏" : "全屏"}>
+            <FullscreenIcon exit={fullscreen} />
+          </button>
+        )}
+        <button type="button" className="focus-exit" onClick={onExit} title="退出专注模式（Esc）">
+          退出专注
+        </button>
+      </div>
     </div>
+  );
+}
+
+function FullscreenIcon({ exit }: { exit: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {exit ? (
+        <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+      ) : (
+        <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+      )}
+    </svg>
   );
 }
 

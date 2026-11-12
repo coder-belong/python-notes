@@ -43,9 +43,10 @@
 
 **专注模式**
 
-- 每节右上角「专注」或按 F 进入：侧栏收起，正文居中，底部出现番茄钟。
+- 每节右上角「专注」或按 F 进入：自动全屏，侧栏收起，正文居中。
+- 番茄钟平时只是右上角一个小番茄（外圈是进度，不显示时间），鼠标移上去才展开时间和按钮；暂停、休息时一直展开。浏览器不支持全屏（如 iPhone）时只是不全屏，其他照常。
 - 专注 25 分钟到点响铃、记一个番茄，自动休息 5 分钟；可以暂停、重来、跳过休息。
-- 点「退出专注」或按 Esc / F 退出。
+- 点「退出专注」或按 Esc / F 退出，全屏也一起退出；只想退全屏、留在专注模式，点番茄钟里的全屏按钮。
 
 **快捷键**
 
@@ -134,7 +135,7 @@ src/components/Home.tsx         首页
 src/components/Heatmap.tsx      学习热力图
 src/components/StudyPanel.tsx   学习统计入口和弹窗
 src/components/AccountPanel.tsx 账号入口和登录 / 注册弹窗
-src/components/FocusBar.tsx     专注模式底部的番茄钟
+src/components/FocusBar.tsx     专注模式右上角的番茄钟、全屏按钮
 src/components/ThemeToggle.tsx  浅色 / 深色切换按钮和动画
 src/components/MoreMenu.tsx      「⋯」菜单：字号、更新日志、收起侧栏
 src/components/ChangelogPanel.tsx  更新日志弹窗
