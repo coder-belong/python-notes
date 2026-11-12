@@ -644,7 +644,7 @@ class Animal:
         self.name = name
 
     def speak(self) -> str:
-        return "..."
+        return f"{self.name}: ？"   # 普通动物不知道怎么叫
 
 
 class Dog(Animal):
@@ -671,12 +671,13 @@ class Cat(Animal):
         return f"{self.name}: 喵"
 
 
+# list[Animal]：列表里放的都是 Animal，子类的对象也算
 animals: list[Animal] = [Dog("旺财", "柴犬"), Cat("咪咪"), Animal("某某")]
 for a in animals:
-    print(a.speak())
+    print(a.speak())    # 先在对象自己的类里找 speak，找不到再去父类找
 # 旺财: 汪
 # 咪咪: 喵
-# ...
+# 某某: ？
 ```
 
 循环里只管调用 `a.speak()`，是汪还是喵由对象自己决定。以后加一种动物，只要再写一个子类，这个循环一行都不用改。
