@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Python 入门笔记 API", lifespan=lifespan)
+app = FastAPI(title="AI 应用开发笔记 API", lifespan=lifespan)
 errors.install(app)
 
 # 前端和接口不在同一个域名（单文件 HTML 甚至是 file:// 打开的），浏览器要求接口声明允许跨域。

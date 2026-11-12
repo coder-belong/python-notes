@@ -1,7 +1,7 @@
 [project]
 name = "python-notes-api"
 version = "0.1.0"
-description = "Python 入门笔记的后端：注册、登录、同步学习进度"
+description = "AI 应用开发笔记的后端：注册、登录、同步学习进度"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

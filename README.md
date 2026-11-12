@@ -1,6 +1,6 @@
-# Python 入门笔记
+# AI 应用开发笔记
 
-基础语法 → FastAPI 写接口 → SQLAlchemy 连数据库 → pytest 测试。用 Next.js 维护，导出成一个可以双击打开的 HTML。
+从 Python 到 Agent：基础语法 → FastAPI 写接口 → SQLAlchemy 连数据库 → pytest 测试 → AI 应用与 Agent 开发。用 Next.js 维护，导出成一个可以双击打开的 HTML。
 
 ## 日常怎么用
 
@@ -9,7 +9,7 @@
 | 改笔记内容 | 编辑 `content/notes.md`（普通 Markdown） |
 | 改学习路线 | 编辑 `ROADMAP.md`，首页的「学习路线」从这里读 |
 | 边改边看 | `npm run dev`，打开 http://localhost:3100 。改了 `.tsx` 会自动刷新；改了 `notes.md`、`ROADMAP.md`、`globals.css` 要重启 dev |
-| 生成 HTML | `npm run build`，产物是 `dist/Python入门笔记.html`，双击打开，也可以单独拷走 |
+| 生成 HTML | `npm run build`，产物是 `dist/AI应用开发笔记.html`，双击打开，也可以单独拷走 |
 
 第一次用先装依赖：`npm install`。
 

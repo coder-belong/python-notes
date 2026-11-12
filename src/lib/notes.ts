@@ -93,7 +93,7 @@ export function loadNotes(): Notes {
     return marked.parser(group);
   };
 
-  let title = "Python 入门笔记";
+  let title = "AI 应用开发笔记";
   let part: string | null = null;
   const intro: Token[] = [];
   let partIntro: Token[] | null = null; // 刚进入一个新部分、还没遇到第一节时的内容
