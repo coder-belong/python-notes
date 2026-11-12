@@ -1325,71 +1325,156 @@ h2.page-title {
   color: var(--accent);
 }
 
+.part-pre {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  font-size: 14px;
+}
+
+.part-pre-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.part-pre a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.part-pre a:hover {
+  color: var(--accent);
+}
+
+.part-pre a.done .dot,
+.part-card li.done .dot {
+  background: var(--done);
+  border-color: var(--done);
+}
+
 .part-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 12px;
 }
 
 .part-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
+  padding: 16px 18px 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.part-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.05);
 }
 
 .part-card-head {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 12px;
 }
 
-.part-card-head span {
-  font-size: 13px;
+.part-card-head b {
+  display: block;
+  font-size: 16px;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.part-card-stage {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 12px;
   color: var(--muted);
+}
+
+.part-card-count {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .part-card .mini-bar.wide {
   max-width: none;
   flex: none;
+  margin: 10px 0 8px;
 }
 
 .part-card ul {
   list-style: none;
-  margin: 0;
+  margin: 0 -8px;
   padding: 0;
   font-size: 14px;
-}
-
-.part-card li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 3px 0;
+  line-height: 1.5;
 }
 
 .part-card li a {
-  display: flex; /* 标题折行时第二行和标题对齐，不跑到节号下面 */
+  display: flex;
+  align-items: baseline; /* 节号、标题按第一行文字对齐；标题折行时第二行和标题对齐 */
+  gap: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
   color: var(--text);
   text-decoration: none;
 }
 
 .part-card li a:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   color: var(--accent);
 }
 
-.part-card li.done .dot {
-  background: var(--done);
-  border-color: var(--done);
+.part-card li .dot {
+  align-self: flex-start;
+  margin: calc(0.75em - 4px) 10px 0 0; /* 竖直居中在第一行文字上 */
+}
+
+.part-card .sec-num {
+  min-width: 2.6em;
+  margin-right: 6px;
+}
+
+.part-card-name {
+  min-width: 0;
+  text-wrap: pretty;
+}
+
+.part-card li.done .part-card-name {
+  color: var(--muted);
 }
 
 .part-card-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
   margin-top: auto;
+  padding-top: 12px;
   font-size: 13px;
   text-decoration: none;
+}
+
+.part-card-go span {
+  transition: transform 0.15s;
+}
+
+.part-card-go:hover span {
+  transform: translateX(3px);
 }
 
 .stages {

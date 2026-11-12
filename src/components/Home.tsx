@@ -43,38 +43,60 @@ export default function Home({ notes, groups, done, reading, studyDays }: Props)
       <Heatmap days={studyDays} />
 
       <h2 className="home-h">笔记目录</h2>
-      <div className="part-cards">
-        {groups.map((g) => {
-          const n = g.items.filter((s) => done[s.id]).length;
-          const todo = g.items.find((s) => !done[s.id]) ?? g.items[0];
-          return (
-            <div key={g.part} className="part-card">
-              <div className="part-card-head">
-                <b>{g.part}</b>
-                <span>
-                  {n}/{g.items.length}
-                </span>
-              </div>
-              <span className="mini-bar wide">
-                <i style={{ width: `${(n / g.items.length) * 100}%` }} />
-              </span>
-              <ul>
-                {g.items.map((s) => (
-                  <li key={s.id} className={done[s.id] ? "done" : ""}>
-                    <span className="dot" />
-                    <a href={`#${s.id}`}>
-                      {s.num && <span className="sec-num">{s.num}</span>}
-                      {s.name}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-              <a className="part-card-go" href={`#${todo.id}`}>
-                {n === g.items.length ? "复习这部分 →" : n === 0 ? "开始这部分 →" : "接着学 →"}
+      {/* 「开始之前」这种不编号的部分只有一两节，放成一行，不占一张大卡片 */}
+      {groups
+        .filter((g) => g.items.every((s) => !s.num))
+        .map((g) => (
+          <div key={g.part} className="part-pre">
+            <span className="part-pre-label">{g.part}</span>
+            {g.items.map((s) => (
+              <a key={s.id} href={`#${s.id}`} className={done[s.id] ? "done" : ""}>
+                <span className="dot" />
+                {s.title}
               </a>
-            </div>
-          );
-        })}
+            ))}
+          </div>
+        ))}
+      <div className="part-cards">
+        {groups
+          .filter((g) => g.items.some((s) => s.num))
+          .map((g) => {
+            const n = g.items.filter((s) => done[s.id]).length;
+            const todo = g.items.find((s) => !done[s.id]) ?? g.items[0];
+            // 「阶段一：Python 语言基础」拆成小标签和标题两行，标题不容易折行
+            const [stage, name] = g.part.includes("：") ? g.part.split("：", 2) : [null, g.part];
+            return (
+              <div key={g.part} className="part-card">
+                <div className="part-card-head">
+                  <div>
+                    {stage && <span className="part-card-stage">{stage}</span>}
+                    <b>{name}</b>
+                  </div>
+                  <span className="part-card-count">
+                    {n}/{g.items.length}
+                  </span>
+                </div>
+                <span className="mini-bar wide">
+                  <i style={{ width: `${(n / g.items.length) * 100}%` }} />
+                </span>
+                <ul>
+                  {g.items.map((s) => (
+                    <li key={s.id} className={done[s.id] ? "done" : ""}>
+                      <a href={`#${s.id}`}>
+                        <span className="dot" />
+                        <span className="sec-num">{s.num}</span>
+                        <span className="part-card-name">{s.name}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+                <a className="part-card-go" href={`#${todo.id}`}>
+                  {n === g.items.length ? "复习这部分" : n === 0 ? "开始这部分" : "接着学"}
+                  <span aria-hidden>→</span>
+                </a>
+              </div>
+            );
+          })}
       </div>
 
       {roadmap.length > 0 && (
