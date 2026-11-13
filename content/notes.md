@@ -1582,9 +1582,28 @@ import httpx
 r = httpx.get("https://httpbin.org/get", params={"q": "python", "page": 1}, timeout=10)
 print(r.status_code)          # 200
 print(r.url)                  # https://httpbin.org/get?q=python&page=1   params 自动拼进网址
-data = r.json()               # 响应体按 JSON 解析成 dict
+data = r.json()               # 响应体按 JSON 解析成 dict，等于 json.loads(r.text)
 print(data["args"])           # {'page': '1', 'q': 'python'}
 ```
+
+httpbin 会把你这次请求的信息整理好原样返回，`data` 是这样一个字典：
+
+```python
+{
+    "args": {"page": "1", "q": "python"},        # 查询参数，就是上面的 params
+    "headers": {                                 # 这次请求带的请求头
+        "Accept": "*/*",
+        "Accept-Encoding": "gzip, deflate",
+        "Host": "httpbin.org",
+        "User-Agent": "python-httpx/0.28.1",     # httpx 自动带上的
+    },
+    "method": "GET",
+    "origin": "你的公网 IP",
+    "url": "https://httpbin.org/get?q=python&page=1",
+}
+```
+
+`page` 传的是数字 `1`，返回的却是字符串 `"1"`：查询参数拼进网址后都是文本，服务器拿到的只能是字符串。
 
 ### POST：发 JSON、带请求头
 
