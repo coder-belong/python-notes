@@ -1382,7 +1382,9 @@ Cursor / VS Code 装好 Python 插件后：
 
 ## 2.5 async / await {#async}
 
-`async def` 定义的是**协程函数**：遇到要等待的操作（网络请求、sleep）时，可以先让出去执行别的任务，等好了再回来。
+`async def` 定义的是**异步函数**：遇到要等待的操作（网络请求、sleep）时，可以先让出去执行别的任务，等好了再回来。调大模型、同时请求好几个接口都会用到。
+
+> **先看这里**：第一遍只要看懂下面这个例子和后面的 7 条规则，就够用到阶段四。后面标了「进阶」的小节，用到再看。
 
 ```python
 import asyncio
@@ -1406,39 +1408,23 @@ async def main() -> None:
 asyncio.run(main())                    # 程序入口启动事件循环
 ```
 
-**为什么写 `asyncio.run(main())`，不直接 `main()`**
+**规则，照着写就行**：
 
-调用 `async def` 定义的函数时，函数体**不会执行**，只会得到一个「协程对象」：
+1. 异步函数用 `async def` 定义。
+2. 调用异步函数要拿结果，前面必须加 `await`：`result = await fetch("A", 1)`。
+3. `await` 只能写在 `async def` 里面。
+4. 程序最外层用 `asyncio.run(main())` 启动，整个程序只写这一次。
+5. 几件事想同时等，用 `await asyncio.gather(a(), b(), c())`，结果按顺序放在列表里。
+6. 异步函数里要等一会儿，用 `await asyncio.sleep(秒)`，不能用 `time.sleep()`。
+7. 写 FastAPI 时不用写 `asyncio.run`，框架会替你启动；接口用普通 `def` 也可以。
 
-```python
-async def hello():
-    print("运行了")
+---
 
-coro = hello()
-print(coro)          # <coroutine object hello at 0x...>   "运行了" 没打印
-coro.close()         # 不 close 的话会警告：coroutine 'hello' was never awaited
-```
+**下面是进阶内容**：后台任务、超时、取消、限制并发、出错处理。第一遍可以跳过，做 AI 应用调大模型时再回来看。
 
-协程要靠**事件循环**来驱动：它记着每个任务在等什么，谁等好了就让谁从 `await` 的地方接着跑。`asyncio.run(main())` 做三件事：
+### create_task：先放到后台跑（进阶）
 
-1. 创建一个事件循环；
-2. 运行 `main()` 直到结束，返回 `main` 的返回值；
-3. 关闭事件循环。
-
-`await` 只能写在 `async def` 里，而程序最外层是普通代码，所以需要 `asyncio.run` 作为入口，从普通代码进入 async 的世界：
-
-```
-普通代码 ──asyncio.run()──→ main() ──await──→ fetch() ──await──→ asyncio.sleep()
-```
-
-- 整个程序只在最外层调用一次 `asyncio.run(main())`；在 async 函数里面要用 `await`，不能再调用 `asyncio.run`（会报错，因为事件循环已经在跑了）。
-- 用 FastAPI 不需要写 `asyncio.run`：uvicorn 启动时已经建好了事件循环，你写的 `async def` 接口由它来调用。
-- 在 async 函数里**不要用 `time.sleep()`**，它会卡住整个程序；要用 `await asyncio.sleep()`。
-- 写 FastAPI 接口时，普通的 `def` 就够用（FastAPI 会放到线程池里跑），入门阶段不必纠结。
-
-### create_task：先放到后台跑
-
-`await` 一个协程会一直等它做完。想让它在后台先跑着、自己接着干别的，用 `asyncio.create_task`，需要结果时再 `await`：
+`await` 一个异步函数会一直等它做完。想让它在后台先跑着、自己接着干别的，用 `asyncio.create_task`，需要结果时再 `await`：
 
 ```python
 import asyncio
@@ -1461,9 +1447,9 @@ asyncio.run(main())
 # a.zip 下载完了
 ```
 
-`gather` 其实就是帮你把多个协程都 `create_task`，再一起等。
+`gather` 其实就是帮你把多个异步函数都 `create_task`，再一起等。
 
-### 超时：`asyncio.timeout`
+### 超时：`asyncio.timeout`（进阶）
 
 调接口、调大模型都可能卡住，一定要设超时：
 
@@ -1489,7 +1475,7 @@ asyncio.run(main())    # 超过 1 秒，不等了
 
 `asyncio.timeout` 是 Python 3.11 加的；老代码里常见的 `await asyncio.wait_for(slow(), timeout=1)` 是同一个意思。
 
-### 取消任务
+### 取消任务（进阶）
 
 用户关掉页面、点了「停止生成」，后台还在跑的任务要能停下来。`task.cancel()` 会在任务当前 `await` 的地方抛出 `CancelledError`：
 
@@ -1527,7 +1513,7 @@ asyncio.run(main())
 
 超时其实就是「到点自动 cancel」，所以超时和取消走的是同一套机制。
 
-### 限制同时跑几个：Semaphore
+### 限制同时跑几个：Semaphore（进阶）
 
 `gather` 一下子开 100 个请求，对方服务器可能直接把你限流。用 `Semaphore`（信号量）控制最多同时跑几个：
 
@@ -1553,7 +1539,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-### 其中一个出错了怎么办
+### 其中一个出错了怎么办（进阶）
 
 `gather` 里有一个任务抛错，`await gather(...)` 就会抛出这个错，其他任务的结果也拿不到。加上 `return_exceptions=True`，错误会和正常结果一起放进列表，自己挨个判断：
 
