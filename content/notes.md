@@ -3,8 +3,8 @@
 从 Python 基础学起，到用 FastAPI 写后端接口，再到 AI 应用和 Agent 开发。
 
 - **阶段一：Python 语言基础**：只讲常用的写法，不常用的先跳过。
-- **阶段二：Python 进阶与工程化**：类型注解、依赖管理、调试、异步、发 HTTP 请求、并发。
-- **阶段三：Python 后端开发**：用 FastAPI + SQLAlchemy 从零做一个 todo 接口项目。
+- **阶段二：Python 进阶与工程化**：类型注解、依赖管理、调试、异步、发 HTTP 请求、并发、上下文管理器。
+- **阶段三：FastAPI 后端开发**：用 FastAPI + SQLAlchemy 从零做一个 todo 接口项目。
 
 每节的代码都建议自己敲一遍、跑一遍。代码在 Python 3.12 上跑通过，注释里写的是实际输出。
 
@@ -494,7 +494,7 @@ print(total)                                   # 333332833333500000
 
 作为函数唯一的参数时，外面那层括号可以省掉，所以写成 `sum(n * n for n in ...)`。
 
-第 3.7 节的数据库会话、第 3.9 节的 pytest fixture 都用 `yield` 写「先准备 → 交出去用 → 用完收尾」，原理就是这里的「暂停再继续」。
+第 3.8 节的数据库会话、第 3.10 节的 pytest fixture 都用 `yield` 写「先准备 → 交出去用 → 用完收尾」，原理就是这里的「暂停再继续」。
 
 ### 装饰器：给函数包一层
 
@@ -735,7 +735,7 @@ for a in [Dog("旺财", "柴犬"), Robot()]:
 
 - 继承适合「是一种」的关系：狗是一种动物。
 - 只是想复用几个函数，不一定要继承：写成普通函数，或者把另一个对象存成属性（组合）更简单。
-- 最常见的继承是框架要求的：`class BalanceError(Exception)`（第 1.11 节）、`class TaskCreate(BaseModel)`（pydantic，第 3.3 节）、`class Task(Base)`（SQLAlchemy，第 3.5 节）。
+- 最常见的继承是框架要求的：`class BalanceError(Exception)`（第 1.11 节）、`class TaskCreate(BaseModel)`（pydantic，第 3.3 节）、`class Task(Base)`（SQLAlchemy，第 3.6 节）。
 
 ## 1.10 dataclass：只存数据的类 {#dataclass}
 
@@ -1793,11 +1793,147 @@ asyncio.run(main())
 
 > Python 3.13 起有一个实验性的「无 GIL」版本，以后线程也许能多核一起算，但现在大部分项目和库还是按有 GIL 来写的。
 
+## 2.8 with 和上下文管理器 {#context-manager}
+
+第 1.12 节用过 `with open(...)`：进入时拿到资源，离开时自动收尾，中途出错也会收尾。能放在 `with` 后面的对象叫**上下文管理器**。文件、httpx 的 `Client`、数据库会话、锁都是。
+
+后端里到处都是这种「先准备、用完一定要收尾」的事：开数据库会话要关、开事务要提交或回滚、服务启动时建连接池、关闭时释放。这一节讲怎么自己写一个。
+
+### 用 `@contextmanager` 写一个
+
+最常用的写法：写一个带 `yield` 的函数，加上 `@contextmanager`。`yield` 前面是「进入时做的事」，后面是「离开时做的事」，`yield` 出去的值就是 `as` 拿到的东西。
+
+```python
+import time
+from contextlib import contextmanager
+
+
+@contextmanager
+def timer(label: str):
+    start = time.perf_counter()          # 进入 with 时执行
+    try:
+        yield                            # 在这里暂停，去执行 with 里面的代码
+    finally:
+        print(f"{label} 用了 {time.perf_counter() - start:.1f}s")   # 离开 with 时执行
+
+
+with timer("睡一会"):
+    time.sleep(0.5)
+# 睡一会 用了 0.5s
+```
+
+`yield` 外面要包 `try / finally`：`with` 里面出了错，错误会从 `yield` 那一行抛出来，不写 `finally` 的话收尾代码就跳过了。
+
+### 出错时做不同的事：事务
+
+`yield` 外面也能用 `except`，出错时做一件事、没出错做另一件。数据库事务就是这个结构：全部成功才提交，有一步出错就回滚，然后把错误接着往外抛。
+
+```python
+from contextlib import contextmanager
+
+
+class FakeDB:                            # 假装是一个数据库连接
+    def commit(self) -> None:
+        print("提交")
+
+    def rollback(self) -> None:
+        print("回滚")
+
+    def close(self) -> None:
+        print("关闭连接")
+
+
+@contextmanager
+def transaction():
+    db = FakeDB()
+    try:
+        yield db                         # as 拿到的就是 db
+        db.commit()                      # with 里没出错才走到这里
+    except Exception:
+        db.rollback()
+        raise                            # 回滚完接着抛，不能把错误吞掉
+    finally:
+        db.close()
+
+
+with transaction() as db:
+    print("写入两条数据")
+# 写入两条数据
+# 提交
+# 关闭连接
+
+try:
+    with transaction() as db:
+        print("写入第一条")
+        raise ValueError("第二条数据不对")
+except ValueError as e:
+    print("出错了：", e)
+# 写入第一条
+# 回滚
+# 关闭连接
+# 出错了： 第二条数据不对
+```
+
+SQLAlchemy 的 `with session.begin():` 做的就是这件事。
+
+### 用类写：`__enter__` 和 `__exit__`
+
+`@contextmanager` 背后就是这两个方法：进入 `with` 时调用 `__enter__`，它的返回值给 `as`；离开时调用 `__exit__`。库的源码里常见这种写法，能看懂就行，自己写一般用 `@contextmanager`。
+
+```python
+import time
+
+
+class Timer:
+    def __enter__(self) -> "Timer":
+        self.start = time.perf_counter()
+        return self                      # 给 as
+
+    def __exit__(self, exc_type, exc, tb) -> None:   # 出错时三个参数是错误信息，没出错都是 None
+        self.seconds = time.perf_counter() - self.start
+
+
+with Timer() as t:
+    time.sleep(0.2)
+print(f"{t.seconds:.1f}s")    # 0.2s
+```
+
+### 一次开好几个
+
+```python
+with open("a.txt", encoding="utf-8") as src, open("b.txt", "w", encoding="utf-8") as dst:
+    dst.write(src.read())    # 两个文件都会自动关
+```
+
+### async 版本：`async with` 和 `@asynccontextmanager`
+
+进入、离开时要 `await` 的（异步建连接、异步关闭），用 `async with`，第 2.5、2.6 节的 `asyncio.timeout`、`httpx.AsyncClient` 都是。自己写就把 `@contextmanager` 换成 `@asynccontextmanager`，函数改成 `async def`。
+
+FastAPI 的 `lifespan` 就是这么写的：`yield` 之前是服务启动时做的事，之后是服务关闭时做的事。
+
+```python
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("启动：建表、建连接池")       # 服务启动时执行一次
+    yield                                # 服务运行中
+    print("关闭：释放连接池")           # 服务停止时执行一次
+
+
+app = FastAPI(lifespan=lifespan)
+```
+
+第 3.8 节依赖注入里带 `yield` 的 `get_session`，也是同一个思路：`yield` 前开会话，`yield` 后关会话，只是由 FastAPI 在每个请求前后替你执行。
+
 ---
 
-# 阶段三：Python 后端开发
+# 阶段三：FastAPI 后端开发
 
-做一个 todo 接口项目：用 FastAPI 写接口，SQLAlchemy 把数据存进 SQLite，pytest 写测试。
+做一个 todo 接口项目：用 FastAPI 写接口，先手写 SQL 打基础，再用 SQLAlchemy 把数据存进 SQLite，pytest 写测试（3.1～3.10）；再一步步升级成能上线的多用户后端：拆文件、注册登录、数据隔离和分页、数据库迁移、部署（3.11～3.15）。
 
 ## 3.1 项目准备 {#project-setup}
 
@@ -1817,7 +1953,7 @@ uv pip install fastapi "uvicorn[standard]" sqlalchemy pytest httpx python-dotenv
 | sqlalchemy | 用 Python 类操作数据库 |
 | pytest | 跑测试 |
 | httpx | 测试里的 `TestClient` 要用它 |
-| python-dotenv | 启动时读取 `.env` 文件里的配置（第 3.5 节） |
+| python-dotenv | 启动时读取 `.env` 文件里的配置（第 3.6 节） |
 
 `"uvicorn[standard]"` 要加引号，否则 zsh 会把方括号当通配符。
 
@@ -1903,7 +2039,7 @@ uvicorn app.hello:app --reload
 - RESTful：路径用名词复数表示资源，动作用 HTTP 方法表示，不写 `/getUser`、`/users/list` 这种。
 - 固定路径要写在 `{参数}` 路径前面，比如 `/users/me` 要写在 `/users/{user_id}` 前面，否则 `me` 会被当成 `user_id`。
 
-## 3.3 pydantic：请求体和响应格式 {#pydantic}
+## 3.3 请求体和响应：pydantic {#pydantic}
 
 继承 `BaseModel`，写好字段和类型，pydantic 会自动生成 `__init__`，并做**校验和类型转换**：
 
@@ -1924,7 +2060,7 @@ class TaskCreate(BaseModel):
 
 class TaskOut(BaseModel):
     """返回给前端的一条任务。"""
-    model_config = ConfigDict(from_attributes=True)   # 允许直接从对象的属性读值（第 3.8 节用）
+    model_config = ConfigDict(from_attributes=True)   # 允许直接从对象的属性读值（第 3.9 节用）
 
     id: int
     title: str
@@ -1945,7 +2081,7 @@ TaskCreate(title="")                # ❌ ValidationError：至少 1 个字符
 TaskCreate(title="a").model_dump()  # {'title': 'a', 'note': None}  转成 dict
 ```
 
-**`from_attributes=True`**：`TaskOut` 加了这个配置后，可以用 `TaskOut.model_validate(对象)` 直接从一个对象上按字段名读取同名属性来创建，不用一个个字段手写 `TaskOut(id=task.id, title=task.title, ...)`。第 3.8 节就用它把数据库里的 `Task` 转成返回给前端的 `TaskOut`。
+**`from_attributes=True`**：`TaskOut` 加了这个配置后，可以用 `TaskOut.model_validate(对象)` 直接从一个对象上按字段名读取同名属性来创建，不用一个个字段手写 `TaskOut(id=task.id, title=task.title, ...)`。第 3.9 节就用它把数据库里的 `Task` 转成返回给前端的 `TaskOut`。
 
 在接口里，参数类型写成 `TaskCreate`，FastAPI 就从请求体读 JSON、校验，不通过自动返回 422，函数根本不会执行：
 
@@ -1974,7 +2110,7 @@ class TaskFilter(BaseModel):
 | `ge` / `le` | 数字 大于等于 / 小于等于 |
 | `description` | 文档里的说明 |
 
-## 3.4 统一响应格式和错误处理 {#errors}
+## 3.4 统一响应和错误处理 {#errors}
 
 **约定**：HTTP 状态码照实返回；响应体统一是 `{code, msg, data}`。
 
@@ -2032,7 +2168,7 @@ def install(app: FastAPI) -> None:
 
 - **`success(data, msg)`**：成功时把数据包一层。`success(task)` 得到 `{"code": 200, "msg": "ok", "data": task}`；`success(msg="删除成功")` 得到 `{"code": 200, "msg": "删除成功", "data": null}`。
 - **`fail(status, msg)`**：生成一个错误，前面要加 `raise` 才会抛出去：`raise fail(409, "已经有同名任务了")`。
-- **为什么失败用 `raise` 而不是 `return`**：`raise` 会让函数立刻停下，而且不管嵌套几层都能直接抛到 FastAPI。比如第 3.8 节的 `load_task()` 是被接口调用的普通函数，它在里面 `raise task_not_found()`，接口不用再判断一次返回值。
+- **为什么失败用 `raise` 而不是 `return`**：`raise` 会让函数立刻停下，而且不管嵌套几层都能直接抛到 FastAPI。比如第 3.9 节的 `load_task()` 是被接口调用的普通函数，它在里面 `raise task_not_found()`，接口不用再判断一次返回值。
 - **`install()`**：启动时向 FastAPI 登记「遇到 `ApiError`，就调用 `handle_api_error` 生成 `{code: -1, msg, data: null}`」。`ApiError` 是 `fail()` 背后真正被抛出的异常类，接口里不用直接写它。
 
 **出错时代码怎么走**（以 `GET /tasks/99` 为例）：
@@ -2181,7 +2317,7 @@ def boom() -> dict:
 | `DELETE /tasks/1` | 405 | `{"code": -1, "msg": "这个接口不支持这种请求方式", "data": null}` |
 | `GET /boom` | 500 | `{"code": -1, "msg": "服务出错了，请稍后再试", "data": null}` |
 
-参数校验失败用 422 还是 400，团队统一就行，很多项目用 400。如果改成 400，第 3.9 节测试里 `test_empty_title_rejected` 的 422 也要跟着改。
+参数校验失败用 422 还是 400，团队统一就行，很多项目用 400。如果改成 400，第 3.10 节测试里 `test_empty_title_rejected` 的 422 也要跟着改。
 
 **常用状态码**：
 
@@ -2195,7 +2331,280 @@ def boom() -> dict:
 | 422 | 参数校验没过（FastAPI 自动返回） |
 | 500 | 服务器出错 |
 
-## 3.5 SQLAlchemy：连数据库、用类定义表 {#sqlalchemy}
+## 3.5 SQL 基础：PostgreSQL {#sql-basics}
+
+下一节开始用 SQLAlchemy 操作数据库，写的是 Python，但发给数据库的还是 SQL。这一节先不碰 Python，直接在数据库里手写 SQL：建表、增删改查、关联、统计、索引、事务。会了这些，看 SQLAlchemy 打印出来的 SQL、排查慢查询、写统计报表都用得上。
+
+数据库用 **PostgreSQL**（简称 Postgres）：第 3.15 节部署用的 Neon 就是 Postgres，本地和线上用同一种最省事。最后对比一下它和 MySQL 的区别。
+
+### 装好、连上
+
+```bash
+brew install postgresql@17          # Mac；Windows 去官网下载安装包
+brew services start postgresql@17   # 后台启动，开机自动运行
+createdb learn                      # 建一个练习用的库
+psql learn                          # 进入命令行，之后的 SQL 都在这里敲
+```
+
+不想装的话，用 Neon 免费版建一个库，复制它给的连接地址，`psql "postgresql://..."` 一样能连。
+
+psql 里几个常用命令（不是 SQL，不用分号）：
+
+| 命令 | 作用 |
+|---|---|
+| `\dt` | 列出所有表 |
+| `\d tasks` | 看 `tasks` 的列、索引、外键 |
+| `\di` | 列出所有索引 |
+| `\x` | 切换竖着显示（列多时好看） |
+| `\q` | 退出 |
+
+SQL 语句以分号结尾，没写分号直接回车，psql 会等你继续输入。关键字大小写都行，习惯写大写。
+
+### 建表
+
+```sql
+CREATE TABLE users (
+    id         serial PRIMARY KEY,                    -- 自增主键：1, 2, 3...
+    username   varchar(32) NOT NULL UNIQUE,           -- 不能为空、不能重复
+    created_at timestamptz NOT NULL DEFAULT now()     -- 不传就用当前时间
+);
+
+CREATE TABLE tasks (
+    id         serial PRIMARY KEY,
+    user_id    integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,   -- 外键：必须是存在的用户
+    title      varchar(100) NOT NULL,
+    done       boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+- `--` 后面是注释。
+- **主键** `PRIMARY KEY`：每行的唯一编号，不能重复、不能为空。`serial` 是「整数 + 自动加一」。
+- **约束**：`NOT NULL`、`UNIQUE`、`REFERENCES` 都是数据库替你把关，不合规的数据直接拒绝写入，比只在代码里检查可靠。
+- **外键** `REFERENCES users(id)`：`tasks.user_id` 必须是 `users` 里存在的 id。`ON DELETE CASCADE`：删用户时，他的任务一起删掉。
+- `timestamptz` 是带时区的时间，存的是一个绝对时刻，Postgres 里存时间优先用它。
+
+### 增删改查
+
+```sql
+-- 增：一次可以插多行
+INSERT INTO users (username) VALUES ('alice'), ('bob'), ('carol');
+INSERT INTO tasks (user_id, title) VALUES (1, '写笔记'), (1, '学 SQL'), (2, '买菜');
+
+-- RETURNING：插入后直接把新行返回来，不用再查一次
+INSERT INTO tasks (user_id, title) VALUES (1, '跑步') RETURNING id, title, done;
+--  id | title | done
+-- ----+-------+------
+--   4 | 跑步  | f
+
+-- 查：WHERE 筛选，ORDER BY 排序（DESC 从大到小）
+SELECT id, title, done FROM tasks WHERE user_id = 1 ORDER BY id DESC;
+--  id | title  | done
+-- ----+--------+------
+--   4 | 跑步   | f
+--   2 | 学 SQL | f
+--   1 | 写笔记 | f
+
+-- 模糊查：% 表示任意几个字符
+SELECT id, title FROM tasks WHERE title LIKE '%笔记%';     -- 1 | 写笔记
+
+-- 分页：跳过前 2 条，取 2 条（第 2 页，每页 2 条）
+SELECT id, title FROM tasks ORDER BY id LIMIT 2 OFFSET 2;  -- 3 | 买菜、4 | 跑步
+
+-- 改
+UPDATE tasks SET done = true WHERE id = 1;
+
+-- 删
+DELETE FROM tasks WHERE id = 4;
+```
+
+**`UPDATE` 和 `DELETE` 一定要带 `WHERE`**：不带就是改 / 删整张表，执行前先用同样的 `WHERE` 跑一遍 `SELECT`，确认是哪些行。
+
+约束挡住的写入会直接报错：
+
+```sql
+INSERT INTO tasks (user_id, title) VALUES (99, '没有这个人');
+-- ERROR:  insert or update on table "tasks" violates foreign key constraint "tasks_user_id_fkey"
+-- DETAIL:  Key (user_id)=(99) is not present in table "users".
+
+INSERT INTO users (username) VALUES ('alice');
+-- ERROR:  duplicate key value violates unique constraint "users_username_key"
+-- DETAIL:  Key (username)=(alice) already exists.
+```
+
+### 关联查询：JOIN
+
+任务表里只有 `user_id`，要显示用户名就得把两张表拼起来：
+
+```sql
+-- JOIN：两边都对得上的才出现。t、u 是表的简写
+SELECT u.username, t.title, t.done
+FROM tasks t
+JOIN users u ON u.id = t.user_id
+ORDER BY t.id;
+--  username | title  | done
+-- ----------+--------+------
+--  alice    | 写笔记 | t
+--  alice    | 学 SQL | f
+--  bob      | 买菜   | f
+
+-- LEFT JOIN：左边的表全保留，右边对不上的填 NULL
+SELECT u.username, t.title
+FROM users u
+LEFT JOIN tasks t ON t.user_id = u.id
+ORDER BY u.id, t.id;
+--  username | title
+-- ----------+--------
+--  alice    | 写笔记
+--  alice    | 学 SQL
+--  bob      | 买菜
+--  carol    |            ← carol 没有任务，title 是 NULL
+```
+
+「列出所有用户，包括还没数据的」就用 `LEFT JOIN`，用 `JOIN` 会把 carol 漏掉。
+
+### 分组统计：GROUP BY
+
+```sql
+-- 每个用户有几个任务、完成了几个
+SELECT u.username,
+       count(t.id)                       AS total,
+       count(t.id) FILTER (WHERE t.done) AS done
+FROM users u
+LEFT JOIN tasks t ON t.user_id = u.id
+GROUP BY u.id, u.username
+ORDER BY total DESC;
+--  username | total | done
+-- ----------+-------+------
+--  alice    |     2 |    1
+--  bob      |     1 |    0
+--  carol    |     0 |    0
+
+-- HAVING：对分组后的结果再筛选（WHERE 是分组前筛行）
+SELECT user_id, count(*) AS total FROM tasks GROUP BY user_id HAVING count(*) >= 2;
+--  user_id | total
+-- ---------+-------
+--        1 |     2
+```
+
+- `GROUP BY` 把同一个用户的行归成一组，`count`、`sum`、`max`、`avg` 对每组算一个值。
+- `SELECT` 里除了聚合函数，其他列都要写进 `GROUP BY`。
+- `count(t.id)` 只数不是 NULL 的，所以 carol 是 0；写 `count(*)` 会把 LEFT JOIN 补出来的那行也算上，变成 1。
+- `FILTER (WHERE ...)` 是 Postgres 的写法，「只数满足条件的」。通用写法是 `sum(CASE WHEN t.done THEN 1 ELSE 0 END)`，MySQL 只能用这种。
+
+### 索引：让查询变快
+
+没有索引时，按 `title` 查要把整张表一行行看一遍。先造 30 万条数据：
+
+```sql
+-- generate_series 生成 1～300000 的数字，一条语句插 30 万行
+INSERT INTO tasks (user_id, title)
+SELECT (i % 3) + 1, '任务 ' || i FROM generate_series(1, 300000) AS i;
+```
+
+`EXPLAIN ANALYZE` 会真的执行一次查询，并告诉你数据库是怎么查的、花了多久：
+
+```sql
+EXPLAIN ANALYZE SELECT id, title FROM tasks WHERE title = '任务 299999';
+--  Parallel Seq Scan on tasks ...
+--    Rows Removed by Filter: 150001
+--  Execution Time: 7.625 ms
+
+CREATE INDEX idx_tasks_title ON tasks (title);
+
+EXPLAIN ANALYZE SELECT id, title FROM tasks WHERE title = '任务 299999';
+--  Index Scan using idx_tasks_title on tasks ...
+--  Execution Time: 0.023 ms
+```
+
+- `Seq Scan` 是全表扫描，`Index Scan` 是走索引。同一条查询从 7.6 毫秒变成 0.02 毫秒，数据越多差得越多。
+- 主键和 `UNIQUE` 会自动建索引（`\di` 能看到 `users_username_key`）。**Postgres 不会给外键自动建索引**，`tasks.user_id` 经常拿来筛选，要自己建：`CREATE INDEX ON tasks (user_id);`。
+- 经常一起筛选的列可以建联合索引：`CREATE INDEX ON tasks (user_id, done);`，查询条件里带上最左边的 `user_id` 才能充分用上它。
+- 索引不是越多越好：每次写入都要同步更新索引，表也会变大。给 `WHERE`、`JOIN`、`ORDER BY` 里常用的列建。
+- 分页用 `OFFSET` 时，数据库其实要先数过前面那些行再扔掉，`OFFSET 100000` 会越来越慢。数据很多时改成「上一页最后一个 id 之后的 20 条」：`WHERE id < 上一页最小id ORDER BY id DESC LIMIT 20`。
+
+### 事务：几条 SQL 要么都成功，要么都不算
+
+```sql
+BEGIN;                                              -- 开始事务
+UPDATE tasks SET done = true WHERE user_id = 1;     -- UPDATE 100002
+SELECT count(*) FROM tasks WHERE user_id = 1 AND done;   -- 100002：事务里能看到改动
+ROLLBACK;                                           -- 撤销，改动全部作废
+
+SELECT count(*) FROM tasks WHERE user_id = 1 AND done;   -- 1：回到改之前
+```
+
+- 确定没问题就把 `ROLLBACK` 换成 `COMMIT`，改动才真正保存，别的连接才看得到。
+- 不写 `BEGIN` 时，每条语句自己就是一个事务，执行完自动提交。
+- 转账这类「扣 A 的钱、加 B 的钱」必须放在一个事务里，中间出错就回滚，不会出现只扣不加。第 2.8 节 `with` 里的 `commit` / `rollback`、SQLAlchemy 的 `session.commit()`，背后都是这个。
+- 手动练习时，改数据前先 `BEGIN`，看结果对了再 `COMMIT`，不对就 `ROLLBACK`，比直接改安全。
+
+### 有就更新、没有就插入：upsert
+
+记录每人每天的学习时长：同一个人同一天只有一行，第一次插入，之后累加。
+
+```sql
+CREATE TABLE daily_stats (
+    user_id integer NOT NULL REFERENCES users(id),
+    day     date    NOT NULL,
+    seconds integer NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)          -- 联合主键：(用户, 日期) 不能重复
+);
+
+-- 跑两遍
+INSERT INTO daily_stats (user_id, day, seconds) VALUES (1, '2026-11-13', 60)
+ON CONFLICT (user_id, day) DO UPDATE SET seconds = daily_stats.seconds + EXCLUDED.seconds;
+
+SELECT * FROM daily_stats;
+--  user_id |    day     | seconds
+-- ---------+------------+---------
+--        1 | 2026-11-13 |     120     ← 第二次没有新插一行，而是累加
+
+-- 已经有就什么都不做
+INSERT INTO users (username) VALUES ('alice') ON CONFLICT (username) DO NOTHING;   -- INSERT 0 0
+```
+
+- `ON CONFLICT (user_id, day)`：这两列撞了（违反主键或唯一约束）就不插入，改成执行后面的 `UPDATE`。
+- `EXCLUDED` 指「这次想插入但被挡住的那行」，`daily_stats.seconds` 是表里原来的值。
+- 先查有没有再决定插入还是更新，两个请求同时来时可能都查到「没有」，结果插两行或报错。upsert 一条语句由数据库保证不会撞。
+
+### 和 MySQL 的区别
+
+两者大部分 SQL 一样，上面的建表、增删改查、JOIN、GROUP BY、事务在 MySQL 里基本照抄就能用。主要差别：
+
+| | PostgreSQL | MySQL |
+|---|---|---|
+| 自增主键 | `serial` 或 `GENERATED ALWAYS AS IDENTITY` | `AUTO_INCREMENT` |
+| 插入后拿新行 | `RETURNING id, ...` | 不支持，用 `LAST_INSERT_ID()` 拿 id 再查一次 |
+| upsert | `ON CONFLICT (列) DO UPDATE SET ...` / `DO NOTHING` | `ON DUPLICATE KEY UPDATE ...`，不能指定按哪个约束 |
+| 按条件计数 | `count(*) FILTER (WHERE ...)` | `sum(CASE WHEN ... THEN 1 ELSE 0 END)` |
+| 字符串比较 | 区分大小写：`'Alice' = 'alice'` 是假，不区分用 `ILIKE` | 默认不区分大小写 |
+| 布尔 | 真正的 `boolean` | `BOOLEAN` 其实是 `tinyint(1)`，存 0 / 1 |
+| 名字加引号 | 双引号 `"order"` | 反引号 `` `order` `` |
+| 外键索引 | 不自动建，要自己建 | InnoDB 自动建 |
+| 建表、改表能回滚 | 能，`CREATE TABLE` 也在事务里 | 不能，执行就立即提交 |
+| JSON | `jsonb`，能建索引、查询能力强 | `JSON`，能用但功能少一些 |
+| SQLAlchemy 地址 | `postgresql+psycopg://...` | `mysql+pymysql://...` |
+
+**怎么选**：
+- 新项目、Python 项目更多选 Postgres：类型和约束更严格，`jsonb`、`RETURNING`、`ON CONFLICT` 这些写后端很顺手；Neon、Supabase 等云服务也都是 Postgres。
+- MySQL 在国内互联网公司用得非常多，很多老项目、云厂商的默认选项是它。进了公司用哪个看团队。
+- 用 SQLAlchemy 时，大部分差异被它屏蔽了，换库主要是换连接地址（第 3.14 节有实操）。两个都会一点最好，会了 Postgres 再学 MySQL 很快。
+
+### 下一节：SQL 交给 SQLAlchemy 写
+
+上面的 SQL，到了 Python 里会变成这样：
+
+| SQL | SQLAlchemy（下一节开始讲） |
+|---|---|
+| `CREATE TABLE tasks (...)` | `class Task(Base)` 加 `Base.metadata.create_all(engine)` |
+| `INSERT INTO tasks ...` | `session.add(Task(title=...))` |
+| `SELECT ... WHERE done = false` | `select(Task).where(Task.done == False)` |
+| `COMMIT` / `ROLLBACK` | `session.commit()` / `session.rollback()` |
+
+练习项目先用 SQLite：一个文件就是一个库，不用装服务。练完把连接地址换成 Postgres，代码基本不用改。
+
+## 3.6 连数据库：SQLAlchemy {#sqlalchemy}
 
 **一个类 = 一张表，一个对象 = 一行，一个属性 = 一列。**
 
@@ -2284,9 +2693,9 @@ create_engine(DATABASE_URL)             连上数据库
 - `mapped_column(...)`：数据库里这一列的定义。
 - `default=_now`：插入时没给值，就调用 `_now()`。注意传的是函数本身，不加括号；写成 `default=datetime.now(UTC)` 会在程序启动时就算好一个固定时间，所有数据都一样。
 - `onupdate=_now`：这一行被修改、提交时，自动调用 `_now()` 更新这一列。`updated_at` 就靠它：新建时和创建时间基本一样（各调一次 `_now()`，可能差几微秒），之后每次改动都会刷新。
-- **表结构改了要删库重建**：`create_all` 只会建不存在的表，不会给已有的表加列。已经跑过旧版本的话，先删掉 `todo.db` 再启动，否则会报 `no such column: tasks.updated_at`。正式项目用 alembic 处理这种改动。
+- **表结构改了要删库重建**：`create_all` 只会建不存在的表，不会给已有的表加列。已经跑过旧版本的话，先删掉 `todo.db` 再启动，否则会报 `no such column: tasks.updated_at`。正式项目用 alembic 处理这种改动（第 3.14 节）。
 
-## 3.6 Session：在接口里增删改查 {#session}
+## 3.7 增删改查：Session {#session}
 
 **Session** 是你和数据库之间的一次「会话」：在里面查、加、改、删数据，它会记住你改了什么，等你 `commit()` 时一次性写进数据库。
 
@@ -2418,9 +2827,9 @@ uvicorn crud_demo:app --reload
 
 想看 SQLAlchemy 实际发了什么 SQL：在 `db.py` 里改成 `create_engine(DATABASE_URL, echo=True)`，终端会打印每一条 SQL。你会看到 `add` 和改属性时什么都没发，`commit` 时才出现 `INSERT` / `UPDATE` / `DELETE`。
 
-**发现问题了吗**：每个接口都在重复 `with SessionLocal() as session:`、查不到就 `raise fail(404, ...)`。下一节用依赖注入把「开会话」交给 FastAPI，第 3.8 节再把「查不到就 404」抽成 `load_task()`。
+**发现问题了吗**：每个接口都在重复 `with SessionLocal() as session:`、查不到就 `raise fail(404, ...)`。下一节用依赖注入把「开会话」交给 FastAPI，第 3.9 节再把「查不到就 404」抽成 `load_task()`。
 
-## 3.7 依赖注入：接口里拿到数据库会话 {#dependency-injection}
+## 3.8 依赖注入：拿到数据库会话 {#dependency-injection}
 
 每个接口都需要一个 Session，但不想每个接口都重复写「创建、提交、出错回滚、关闭」。把这套流程写成一个函数，接口参数里声明「我要一个 Session」，FastAPI 每次请求都会调用它，把结果传进来。这就是**依赖注入**。
 
@@ -2463,7 +2872,7 @@ def get_task(task_id: int, session: Db) -> dict:
 - **`Annotated[Session, Depends(db_session)]`**：「类型是 Session，值由 `db_session` 提供」。
 - **写接口里自己 `session.commit()`**：② 可能在响应已经发出去之后才执行，万一提交失败，前端会以为成功了。所以写数据的接口在返回前自己提交。
 
-## 3.8 完整的 todo 接口 {#todo-api}
+## 3.9 完整的 todo 接口 {#todo-api}
 
 | 方法 | 路径 | 作用 | 成功时 |
 |---|---|---|---|
@@ -2489,7 +2898,7 @@ from app.schemas import TaskCreate, TaskList, TaskOut
 
 app = FastAPI(title="todo-api")
 errors.install(app)
-Base.metadata.create_all(engine)   # 练习用：启动时自动建表；正式项目用 alembic 管理表结构
+Base.metadata.create_all(engine)   # 练习用：启动时自动建表；正式项目用 alembic 管理表结构（第 3.14 节）
 
 
 def load_task(session: Session, task_id: int) -> Task:
@@ -2554,7 +2963,7 @@ curl -X PATCH http://127.0.0.1:8000/tasks/1/done
 curl -i http://127.0.0.1:8000/tasks/99      # -i 显示状态码：404 + {"code": -1, "msg": "没有这个任务", "data": null}
 ```
 
-## 3.9 pytest：给接口写测试 {#pytest}
+## 3.10 写测试：pytest {#pytest}
 
 `TestClient` 不用启动服务，就能在代码里对 app 发请求。pytest 自动找 `test_` 开头的文件和函数来跑。
 
@@ -2649,3 +3058,1034 @@ python -m pytest -q -k 404     # 只跑名字里带 404 的测试
 - **`@pytest.fixture`**：测试的准备工作。测试函数参数里写了 `client`，pytest 就先跑同名的 fixture，把 `yield` 出来的东西传进去；测试结束后执行 `yield` 后面的收尾。
 - **`app.dependency_overrides`**：测试时把某个依赖换掉，这里把真数据库换成内存库，跑完不留垃圾。
 - 内存库 `sqlite://` 要配 `StaticPool`，否则每个连接拿到的都是一个新的空库，会报 `no such table`。
+
+## 3.11 拆文件和配置 {#routers-settings}
+
+到 3.10 为止，所有接口都写在 `main.py` 里。接下来要加注册登录，接口会越来越多，先把结构理顺：**按业务拆成多个路由文件，配置集中到一个地方**。这一节只搬代码、不改功能，搬完 3.10 的测试应该原样通过。
+
+```bash
+uv pip install pydantic-settings
+```
+
+拆完的目录（后面几节在这个基础上加文件）：
+
+```
+todo-api/
+├── app/
+│   ├── config.py          # 新增：所有配置
+│   ├── db.py
+│   ├── models.py
+│   ├── schemas.py
+│   ├── errors.py
+│   ├── routers/           # 新增：按业务分的接口
+│   │   ├── __init__.py
+│   │   └── tasks.py       # /tasks 相关的接口
+│   └── main.py            # 只负责创建 app、把路由挂上去
+└── tests/
+```
+
+### 配置：pydantic-settings
+
+3.6 节用 `load_dotenv()` + `os.environ.get(...)` 读配置。配置一多就有问题：读出来全是字符串，要自己转类型；同一个配置在好几个文件里各读一遍，默认值还可能写得不一样。
+
+`pydantic-settings` 用写 pydantic 模型的方式定义配置：字段名就是环境变量名，类型自动转换、校验，不对就启动失败。
+
+```python
+from __future__ import annotations
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """所有配置都在这里：先读环境变量，没有再读 .env，都没有用默认值。"""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    database_url: str = "sqlite:///todo.db"   # 对应环境变量 DATABASE_URL（不区分大小写）
+    debug: bool = False                       # DEBUG=true 会自动转成 True
+
+
+settings = Settings()   # 整个项目共用这一个，别处 from app.config import settings
+```
+
+- **读取顺序**：环境变量 → `.env` 文件 → 默认值。线上直接设环境变量，本地写 `.env`，代码不用改，和 3.6 节一样。
+- **自动转类型**：`DEBUG=true` 读进来就是 `True`，写成 `DEBUG=abc` 启动直接报错，不会带着错误的配置跑起来。
+- **`extra="ignore"`**：`.env` 里有这个类没定义的配置（比如给别的工具用的），忽略，不报错。
+
+`app/db.py` 开头改成从 `settings` 读，`load_dotenv` 和 `os` 都不用了：
+
+```python
+# app/db.py（开头改成这样，后面不变）
+from __future__ import annotations
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+from app.config import settings
+
+engine = create_engine(settings.database_url, echo=settings.debug)   # debug 时打印每条 SQL
+```
+
+### 拆路由：APIRouter
+
+`APIRouter` 是「一组接口」，写法和 `app` 一样（`@router.get`、`@router.post`），最后挂到 `app` 上。把 3.9 节 `main.py` 里的接口整个搬过来，`@app` 换成 `@router`，路径去掉 `/tasks` 前缀：
+
+```python
+from __future__ import annotations
+
+from fastapi import APIRouter
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.db import Db
+from app.errors import fail, success, task_not_found
+from app.models import Task
+from app.schemas import TaskCreate, TaskList, TaskOut
+
+# prefix：这个文件里的路径都自动加上 /tasks；tags：/docs 里按这个分组
+router = APIRouter(prefix="/tasks", tags=["任务"])
+
+
+def load_task(session: Session, task_id: int) -> Task:
+    task = session.get(Task, task_id)
+    if task is None:
+        raise task_not_found()
+    return task
+
+
+@router.get("")                      # 完整路径 = prefix + "" = /tasks
+def list_tasks(session: Db, done: bool | None = None, limit: int = 20) -> dict:
+    stmt = select(Task).order_by(Task.id.desc()).limit(limit)
+    if done is not None:
+        stmt = stmt.where(Task.done == done)
+    tasks = session.scalars(stmt).all()
+    total = session.scalar(select(func.count()).select_from(Task))
+    items = [TaskOut.model_validate(t) for t in tasks]
+    return success(TaskList(items=items, total=total or 0))
+
+
+@router.post("", status_code=201)
+def create_task(body: TaskCreate, session: Db) -> dict:
+    if session.scalar(select(Task).where(Task.title == body.title, Task.done.is_(False))):
+        raise fail(409, "已经有一条同名的未完成任务")
+    task = Task(title=body.title, note=body.note)
+    session.add(task)
+    session.commit()
+    return success(TaskOut.model_validate(task), msg="创建成功")
+
+
+@router.get("/{task_id}")            # 完整路径 = /tasks/{task_id}
+def get_task(task_id: int, session: Db) -> dict:
+    return success(TaskOut.model_validate(load_task(session, task_id)))
+
+
+@router.patch("/{task_id}/done")
+def finish_task(task_id: int, session: Db) -> dict:
+    task = load_task(session, task_id)
+    task.done = True
+    session.commit()
+    return success(TaskOut.model_validate(task))
+
+
+@router.delete("/{task_id}")
+def delete_task(task_id: int, session: Db) -> dict:
+    session.delete(load_task(session, task_id))
+    session.commit()
+    return success(msg="删除成功")
+```
+
+```python
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app import errors
+from app.db import Base, engine
+from app.routers import tasks
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    Base.metadata.create_all(engine)   # 启动时建表（第 3.14 节换成 alembic）
+    yield
+
+
+app = FastAPI(title="todo-api", lifespan=lifespan)
+errors.install(app)
+app.include_router(tasks.router)       # 把路由挂到 app 上
+```
+
+```bash
+touch app/routers/__init__.py      # 和 3.1 节一样，有它才能 from app.routers import ...
+python -m pytest -q                 # 还是 5 passed：只是搬了位置，功能没变
+```
+
+- **`prefix="/tasks"`**：这个文件里的路径都自动加上 `/tasks`。`@router.get("")` 就是 `GET /tasks`，`@router.get("/{task_id}")` 就是 `GET /tasks/{task_id}`。
+- **`tags=["任务"]`**：`/docs` 里按它分组显示。下一节加上账号接口后，文档里会分成「账号」「任务」两组。
+- **`app.include_router(...)`**：挂上才生效，忘了挂，访问就是 404。
+- **建表挪到了 `lifespan`**：就是 2.8 节讲的写法，服务启动时执行一次。比写在模块顶层好：测试里导入 `app` 时不会顺手去连真数据库。
+
+以后再加一类业务（比如「标签」），就是新建 `routers/tags.py`，在 `main.py` 里多一行 `include_router`。
+
+## 3.12 注册登录：JWT {#auth}
+
+现在谁都能调接口，所有人看到的也是同一份任务。这一节加上账号：注册、登录，登录后拿到一个 **token**，之后每次请求带上它，后端就知道「你是谁」。下一节再让每个人只看到自己的任务。
+
+```bash
+uv pip install pyjwt "pwdlib[argon2]"
+```
+
+### 几种登录方式
+
+| | Session + Cookie | JWT（这一节用的） |
+|---|---|---|
+| 登录后后端记什么 | 在数据库 / Redis 里存一条「会话」，把会话 id 放进 Cookie | 什么都不存，签一个 token 给前端 |
+| 之后的请求怎么认人 | 浏览器自动带上 Cookie，后端拿 id 去查会话 | 前端在请求头带 `Authorization: Bearer <token>`，后端验签名 |
+| 退出登录 / 踢人下线 | 删掉那条会话，立刻生效 | token 在过期前一直有效，要做黑名单才能提前作废 |
+| 适合 | 传统网页、同一个域名 | 前后端分开部署、App、小程序、多个服务之间调用 |
+
+JWT 不用存会话、天然支持跨域，前后端分离的项目用得最多。代价是不好提前作废，所以过期时间不要设太长。
+
+**JWT 长什么样**：三段，用 `.` 连起来。拆开看：
+
+```
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9         头部：{"alg":"HS256","typ":"JWT"}  用什么算法
+eyJzdWIiOiIxIiwiZXhwIjoxNzk1MDg5Mzc1fQ       内容：{"sub":"1","exp":1795089375}  用户 id、过期时间
+psp76-RKMAF2K4GSPyTENws3zIN6Fu5trWmGusoO1Rg  签名
+```
+
+- 前两段只是 base64 编码，**不是加密**，谁都能解开看到内容。所以里面只放用户 id，不放密码、手机号这类信息。
+- 第三段是用 `jwt_secret` 对前两段算出来的签名。别人改了内容（比如把 `sub` 改成别人的 id），签名就对不上，`jwt.decode` 会报错。所以**密钥一定不能泄露**，泄露了谁都能伪造任意用户的 token。
+
+### 密码：只存哈希
+
+数据库里绝不能存明文密码。存的是**哈希**：一种单向的计算，`hash_password("123456")` 能算出一长串，但从这一长串反推不出 `123456`。登录时把用户输入的密码再算一遍、比一比就行。
+
+```python
+hash_password("123456")
+# $argon2id$v=19$m=65536,t=3,p=4$+1qkfLNB9eexyrW0v6KHPA$WSSmXl1va571FXD0LjyeIJ1cgD4jfUueruDahstIvIk
+#  算法     参数               盐（随机）              哈希值
+```
+
+同一个密码，每次算出来的结果都不一样：里面混了一段随机的「盐」，存在结果里，验证时取出来用。这样两个用户都用 `123456`，存的也不一样，别人没法拿一张「常见密码 → 哈希」的表去对。**别自己用 md5、sha256 算**：它们太快了，被拖库后能被暴力猜出来。Argon2 是专门为存密码设计的，故意算得慢。
+
+### 代码
+
+`app/config.py` 加两个配置：
+
+```python
+    jwt_secret: str = "dev-secret-change-me"  # 签 token 的密钥，线上一定要换成随机长字符串
+    token_days: int = 7                       # token 几天后过期
+```
+
+生成一个随机密钥写进 `.env`：`python -c "import secrets; print(secrets.token_urlsafe(32))"`。
+
+`app/models.py` 加一张用户表：
+
+```python
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)   # unique：不能重名
+    password_hash: Mapped[str] = mapped_column(String(200), nullable=False)          # 只存哈希，不存密码
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
+```
+
+`app/schemas.py` 加注册登录的请求体和返回格式：
+
+```python
+class AuthIn(BaseModel):
+    """注册、登录的请求体。"""
+    username: str = Field(min_length=2, max_length=20, pattern=r"^\w+$")   # 字母、数字、下划线、汉字
+    password: str = Field(min_length=6, max_length=128)
+
+
+class TokenOut(BaseModel):
+    token: str
+    username: str
+```
+
+密码和 token 的处理单独放一个文件：
+
+```python
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from typing import Annotated
+
+import jwt
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pwdlib import PasswordHash
+
+from app.config import settings
+from app.db import Db
+from app.errors import fail
+from app.models import User
+
+# ---------- 密码：只存哈希 ----------
+password_hash = PasswordHash.recommended()     # 用 Argon2 算法
+
+
+def hash_password(password: str) -> str:
+    return password_hash.hash(password)        # 每次结果都不一样：里面带了随机的盐
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    return password_hash.verify(password, hashed)
+
+
+# ---------- token：登录后发给前端，之后每次请求带上 ----------
+def create_token(user_id: int) -> str:
+    payload = {
+        "sub": str(user_id),                                            # 这个 token 属于谁
+        "exp": datetime.now(UTC) + timedelta(days=settings.token_days),  # 过期时间，过期后 decode 会报错
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+
+
+# auto_error=False：没带 token 时不让 FastAPI 自己报 403，交给下面统一返回 401
+bearer = HTTPBearer(auto_error=False)
+
+
+def current_user(
+    session: Db,
+    cred: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+) -> User:
+    """依赖：从请求头 Authorization: Bearer <token> 解析出当前用户，不对就 401。"""
+    if cred is None:
+        raise fail(401, "请先登录")
+    try:
+        payload = jwt.decode(cred.credentials, settings.jwt_secret, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        raise fail(401, "登录已过期，请重新登录") from None
+    except jwt.InvalidTokenError:
+        raise fail(401, "登录无效，请重新登录") from None
+    user = session.get(User, int(payload["sub"]))
+    if user is None:                                   # token 是对的，但用户已经被删了
+        raise fail(401, "账号不存在，请重新登录")
+    return user
+
+
+CurrentUser = Annotated[User, Depends(current_user)]   # 接口里写 user: CurrentUser 就要求登录
+```
+
+```python
+from __future__ import annotations
+
+from fastapi import APIRouter
+from sqlalchemy import select
+
+from app.db import Db
+from app.errors import fail, success
+from app.models import User
+from app.schemas import AuthIn, TokenOut
+from app.security import CurrentUser, create_token, hash_password, verify_password
+
+router = APIRouter(prefix="/auth", tags=["账号"])
+
+
+@router.post("/register", status_code=201)
+def register(body: AuthIn, session: Db) -> dict:
+    if session.scalar(select(User).where(User.username == body.username)):
+        raise fail(409, "这个用户名已经被注册了")
+    user = User(username=body.username, password_hash=hash_password(body.password))
+    session.add(user)
+    session.commit()
+    # 注册成功直接发 token，等于已经登录，前端不用再调一次登录
+    return success(TokenOut(token=create_token(user.id), username=user.username), msg="注册成功")
+
+
+@router.post("/login")
+def login(body: AuthIn, session: Db) -> dict:
+    user = session.scalar(select(User).where(User.username == body.username))
+    # 用户不存在和密码错误返回同一句话：不告诉别人「这个用户名是存在的」
+    if user is None or not verify_password(body.password, user.password_hash):
+        raise fail(401, "用户名或密码错误")
+    return success(TokenOut(token=create_token(user.id), username=user.username), msg="登录成功")
+
+
+@router.get("/me")
+def me(user: CurrentUser) -> dict:           # 声明要 CurrentUser：没登录进不来
+    return success({"id": user.id, "username": user.username})
+```
+
+`main.py` 里挂上：`from app.routers import auth, tasks`，再加一行 `app.include_router(auth.router)`。`users` 是一张新表，启动时 `create_all` 会自动建上，不用删库。
+
+- **`current_user` 是一个依赖**：和 3.8 节的 `db_session` 一样，接口参数写 `user: CurrentUser`，FastAPI 就先执行它。没带 token、token 被改过、过期了，都会 `raise fail(401, ...)`，接口函数根本不会执行。它自己也依赖 `Db`，依赖可以一层套一层。
+- **`HTTPBearer`**：FastAPI 自带的，负责从请求头 `Authorization: Bearer xxx` 里取出 `xxx`。用它还有个好处：`/docs` 右上角会出现 **Authorize** 按钮，填一次 token，之后点着试的请求都会自动带上。
+- **登录失败只说「用户名或密码错误」**：如果分别提示「用户不存在」「密码错误」，别人就能一个个试出哪些用户名注册过。
+- **注册成功直接返回 token**：等于注册完就登录了，前端不用再调一次登录接口。
+- **`raise ... from None`**：在 `except` 里抛新的错误时，不把原来那个 JWT 的报错串在后面，日志干净一些。
+
+实际运行（curl）：
+
+| 请求 | HTTP | 响应 |
+|---|---|---|
+| `POST /auth/register` `{"username":"tom","password":"123456"}` | 201 | `{"code":200,"msg":"注册成功","data":{"token":"eyJ...","username":"tom"}}` |
+| `GET /auth/me`，带 `Authorization: Bearer eyJ...` | 200 | `{"code":200,"msg":"ok","data":{"id":1,"username":"tom"}}` |
+| `GET /auth/me`，不带 token | 401 | `{"code":-1,"msg":"请先登录","data":null}` |
+| `POST /auth/login`，密码错 | 401 | `{"code":-1,"msg":"用户名或密码错误","data":null}` |
+| `POST /auth/register`，用户名已存在 | 409 | `{"code":-1,"msg":"这个用户名已经被注册了","data":null}` |
+
+**测试**：`client` 这个 fixture 现在两个测试文件都要用，从 `test_tasks.py` 挪到 `tests/conftest.py`。`conftest.py` 是 pytest 约定的文件名，里面的 fixture 同一目录的所有测试文件都能直接用，不用 import。
+
+```python
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+
+def test_register_login_me(client: TestClient) -> None:
+    r = client.post("/auth/register", json={"username": "tom", "password": "123456"})
+    assert r.status_code == 201
+    token = r.json()["data"]["token"]
+
+    r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert r.json()["data"]["username"] == "tom"
+
+    r = client.post("/auth/login", json={"username": "tom", "password": "123456"})
+    assert r.status_code == 200
+
+
+def test_wrong_password(client: TestClient) -> None:
+    client.post("/auth/register", json={"username": "tom", "password": "123456"})
+    r = client.post("/auth/login", json={"username": "tom", "password": "wrong-pass"})
+    assert r.status_code == 401
+    assert r.json()["msg"] == "用户名或密码错误"
+
+
+def test_duplicate_username(client: TestClient) -> None:
+    client.post("/auth/register", json={"username": "tom", "password": "123456"})
+    r = client.post("/auth/register", json={"username": "tom", "password": "654321"})
+    assert r.status_code == 409
+
+
+def test_me_requires_token(client: TestClient) -> None:
+    assert client.get("/auth/me").json()["msg"] == "请先登录"
+    r = client.get("/auth/me", headers={"Authorization": "Bearer abc"})
+    assert r.status_code == 401
+    assert r.json()["msg"] == "登录无效，请重新登录"
+```
+
+## 3.13 一对多和分页 {#relations-paging}
+
+能登录了，但任务还是所有人共用一份。这一节给任务加上「属于谁」，每个接口只操作自己的任务；顺便把列表改成分页。
+
+### 一对多：外键和 relationship
+
+一个用户有多条任务，一条任务只属于一个用户，这叫**一对多**。做法是在「多」的那一边（`tasks` 表）加一列 `user_id`，存它属于哪个用户：
+
+```
+users                    tasks
+id | username            id | user_id | title
+ 1 | tom          ←──────  1 |    1    | 写笔记
+ 2 | jerry        ←──┐     2 |    1    | 读书
+                     └───  3 |    2    | 跑步
+```
+
+```python
+# app/models.py（改动的部分）
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+
+class User(Base):
+    ...
+    # 一对多：一个用户有多条任务。不是表里的列，是 Python 里方便取关联数据用的
+    tasks: Mapped[list[Task]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+
+class Task(Base):
+    ...
+    # 外键：这条任务属于哪个用户，值是 users 表的 id；index=True 加索引，按用户查更快
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    ...
+    user: Mapped[User] = relationship(back_populates="tasks")          # 反过来：任务 → 用户
+```
+
+- **`ForeignKey("users.id")`**：外键。数据库会检查 `user_id` 必须是 `users` 表里真实存在的 id，不能随便填。
+- **`index=True`**：给这一列建**索引**。没有索引时，按 `user_id` 查要把整张表从头扫到尾；有了索引，就像书的目录，直接翻到那几行。经常出现在 `where` 里的列都应该加索引。
+- **`relationship`**：不对应数据库里的列，是 SQLAlchemy 提供的便利：`tom.tasks` 拿到他的所有任务，`task.user` 拿到任务的主人，它自己去查。`back_populates` 把两边连起来，改一边另一边也同步。
+- **`cascade="all, delete-orphan"`**：删用户时，他的任务一起删掉。
+
+```python
+tom = User(username="tom", password_hash="...")
+tom.tasks.append(Task(title="写笔记"))     # 不用自己填 user_id
+tom.tasks.append(Task(title="读书"))
+session.add(tom)
+session.commit()
+
+print([t.title for t in tom.tasks])       # ['写笔记', '读书']
+print(session.get(Task, 1).user.username) # tom
+session.delete(tom)                       # 删 tom，他的两条任务也跟着删了（cascade）
+```
+
+`relationship` 适合「拿一个对象顺带看看关联的东西」。要按条件筛选、分页、计数，还是自己写 `select(...).where(...)`，下面的接口就是这样做的。
+
+> **多对多**（比如任务和标签：一个任务多个标签，一个标签多个任务）要再建一张中间表，只存 `task_id` 和 `tag_id` 两列。原理一样，用到再查文档。
+
+### 接口：加上「是不是自己的」
+
+`schemas.py` 里 `TaskList` 加两个字段，告诉前端现在是第几页：
+
+```python
+class TaskList(BaseModel):
+    items: list[TaskOut]      # 模型可以嵌套
+    total: int                # 符合条件的一共多少条（不是这一页的条数）
+    page: int
+    size: int
+```
+
+```python
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import APIRouter, Query
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.db import Db
+from app.errors import fail, success, task_not_found
+from app.models import Task, User
+from app.schemas import TaskCreate, TaskList, TaskOut
+from app.security import CurrentUser
+
+router = APIRouter(prefix="/tasks", tags=["任务"])
+
+
+def load_task(session: Session, task_id: int, user: User) -> Task:
+    """取自己的一条任务。别人的任务也当成不存在：返回 404，不告诉对方「有这条，但不是你的」。"""
+    task = session.get(Task, task_id)
+    if task is None or task.user_id != user.id:
+        raise task_not_found()
+    return task
+
+
+@router.get("")
+def list_tasks(
+    user: CurrentUser,
+    session: Db,
+    done: bool | None = None,
+    page: Annotated[int, Query(ge=1)] = 1,              # 第几页，从 1 开始
+    size: Annotated[int, Query(ge=1, le=100)] = 20,     # 每页几条，最多 100，防止一次拉太多
+) -> dict:
+    conditions = [Task.user_id == user.id]               # 只查自己的
+    if done is not None:
+        conditions.append(Task.done == done)
+
+    total = session.scalar(select(func.count()).select_from(Task).where(*conditions))   # 总数和列表用同一组条件
+    stmt = (
+        select(Task)
+        .where(*conditions)
+        .order_by(Task.id.desc())
+        .offset((page - 1) * size)                       # 跳过前面几页
+        .limit(size)
+    )
+    items = [TaskOut.model_validate(t) for t in session.scalars(stmt)]
+    return success(TaskList(items=items, total=total or 0, page=page, size=size))
+
+
+@router.post("", status_code=201)
+def create_task(body: TaskCreate, user: CurrentUser, session: Db) -> dict:
+    same = select(Task).where(Task.user_id == user.id, Task.title == body.title, Task.done.is_(False))
+    if session.scalar(same):
+        raise fail(409, "已经有一条同名的未完成任务")
+    task = Task(user_id=user.id, title=body.title, note=body.note)
+    session.add(task)
+    session.commit()
+    return success(TaskOut.model_validate(task), msg="创建成功")
+
+
+@router.get("/{task_id}")
+def get_task(task_id: int, user: CurrentUser, session: Db) -> dict:
+    return success(TaskOut.model_validate(load_task(session, task_id, user)))
+
+
+@router.patch("/{task_id}/done")
+def finish_task(task_id: int, user: CurrentUser, session: Db) -> dict:
+    task = load_task(session, task_id, user)
+    task.done = True
+    session.commit()
+    return success(TaskOut.model_validate(task))
+
+
+@router.delete("/{task_id}")
+def delete_task(task_id: int, user: CurrentUser, session: Db) -> dict:
+    session.delete(load_task(session, task_id, user))
+    session.commit()
+    return success(msg="删除成功")
+```
+
+- **每个接口都加了 `user: CurrentUser`**：不登录访问任何任务接口都是 401。
+- **列表**：条件里加 `Task.user_id == user.id`，只查自己的。
+- **单条（详情、完成、删除）**：都走 `load_task`，查到了还要比一下 `task.user_id`。**不能只靠前端「不显示」**：别人直接改网址里的 id 就能访问，后端必须每次检查。返回 404 而不是 403，不暴露「这个 id 存在」。
+- **同名检查**也只在自己的任务里查：你有「写笔记」，不影响别人也建一条「写笔记」。
+
+### 分页
+
+数据多了不能一次全返回。约定前端传 `page`（第几页）和 `size`（每页几条），后端换算成 SQL 的 `OFFSET` 和 `LIMIT`：
+
+| page | size | offset = (page - 1) × size | 拿到的是 |
+|---|---|---|---|
+| 1 | 10 | 0 | 第 1～10 条 |
+| 2 | 10 | 10 | 第 11～20 条 |
+| 3 | 10 | 20 | 第 21～30 条 |
+
+- **`Query(ge=1, le=100)`**：查询参数也能像 `Field` 一样加校验。`size` 不设上限的话，有人传 `size=1000000` 就能把数据库拖垮。
+- **`total` 和列表用同一组条件**：前端靠 `total` 算总页数。3.9 节的 `total` 数的是整张表，没带 `done` 筛选，其实是个 bug；现在两条查询共用 `conditions`，不会再对不上。
+- **一定要 `order_by`**：不排序的话，数据库不保证每次返回的顺序一样，翻页时可能有的数据重复出现、有的永远看不到。
+
+> 页数很深（比如第 10000 页）时，`OFFSET` 会越来越慢，因为数据库要先数过前面所有行。那种场景用「游标分页」：前端传上一页最后一条的 id，后端查 `where id < 那个 id`。一般的后台列表用 `page / size` 就够了。
+
+表结构又变了，**再删一次 `todo.db`**。这种「改一次表就删一次库」的做法到这里为止，下一节换成 alembic。
+
+**测试**：`conftest.py` 里加一个注册用户、返回请求头的小工具，任务的测试都带上它：
+
+```python
+# tests/conftest.py（末尾加上）
+def login(client: TestClient, username: str = "tom") -> dict:
+    """注册一个用户，返回带 token 的请求头。"""
+    r = client.post("/auth/register", json={"username": username, "password": "123456"})
+    return {"Authorization": f"Bearer {r.json()['data']['token']}"}
+
+
+@pytest.fixture
+def auth(client: TestClient) -> dict:
+    return login(client)
+```
+
+原来的测试都改成带上 `headers=auth`（比如 `client.post("/tasks", json={...}, headers=auth)`），再加三个新的：
+
+```python
+def test_requires_login(client: TestClient) -> None:
+    r = client.get("/tasks")
+    assert r.status_code == 401
+
+
+def test_users_cannot_see_each_other(client: TestClient) -> None:
+    tom, jerry = login(client, "tom"), login(client, "jerry")
+    task_id = client.post("/tasks", json={"title": "tom 的任务"}, headers=tom).json()["data"]["id"]
+
+    assert client.get("/tasks", headers=jerry).json()["data"]["total"] == 0      # 列表里看不到
+    assert client.get(f"/tasks/{task_id}", headers=jerry).status_code == 404     # 直接猜 id 也拿不到
+    assert client.delete(f"/tasks/{task_id}", headers=jerry).status_code == 404  # 删不掉
+    assert client.get(f"/tasks/{task_id}", headers=tom).status_code == 200       # 自己还在
+
+
+def test_pagination(client: TestClient, auth: dict) -> None:
+    for i in range(1, 26):                                   # 建 25 条
+        client.post("/tasks", json={"title": f"任务{i}"}, headers=auth)
+    data = client.get("/tasks", params={"page": 2, "size": 10}, headers=auth).json()["data"]
+    assert data["total"] == 25
+    assert [t["title"] for t in data["items"]][:2] == ["任务15", "任务14"]   # 倒序，第 2 页从第 11 条开始
+    assert len(client.get("/tasks", params={"page": 3, "size": 10}, headers=auth).json()["data"]["items"]) == 5
+    assert client.get("/tasks", params={"size": 500}, headers=auth).status_code == 422
+```
+
+`test_tasks.py` 开头要 `from tests.conftest import login`：fixture 能自动用，普通函数还是要 import。跑一下应该是 `12 passed`。
+
+## 3.14 数据库迁移：Alembic {#alembic}
+
+前面每次改表都要删库重建，因为 `create_all` 只会建不存在的表，不会改已有的表。本地数据删了无所谓，**线上的数据是不能删的**。迁移工具解决的就是「表结构要改，数据要留着」：
+
+- 每次改表，生成一个**迁移脚本**，写着「这次加了哪一列」「建了哪张表」。
+- 数据库里多一张 `alembic_version` 表，记着当前执行到哪个版本。
+- `alembic upgrade head` 把还没执行的脚本按顺序执行一遍。本地、同事电脑、线上，都用同一套脚本升到同一个结构。
+
+迁移脚本要提交到 git，和代码一起走。
+
+```bash
+uv pip install alembic
+alembic init migrations        # 在 todo-api/ 下生成 alembic.ini 和 migrations/ 目录
+```
+
+### 配置：改 `migrations/env.py` 的两处
+
+生成的 `env.py` 不知道你的数据库在哪、表长什么样。找到 `target_metadata = None` 那一段，换成：
+
+```python
+# ---- 改动 ①：数据库地址和项目用同一份配置，不在 alembic.ini 里再写一遍 ----
+from app import models  # noqa: E402,F401  导入一下，表才会登记到 Base.metadata 上
+from app.config import settings  # noqa: E402
+from app.db import Base  # noqa: E402
+
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))  # % 要写成 %%
+
+# ---- 改动 ②：告诉 alembic「代码里的表长什么样」，autogenerate 拿它和数据库对比 ----
+target_metadata = Base.metadata
+```
+
+再在文件里两处 `context.configure(...)` 的参数里各加一行 `render_as_batch=True`：SQLite 不支持删列、改列，开了这个，alembic 会用「建新表 → 复制数据 → 删旧表」的方式绕过去。用 Postgres 的话加了也没影响。
+
+`.replace("%", "%%")`：`alembic.ini` 的格式把 `%` 当特殊字符，数据库密码里有 `%` 时不转义会报错。
+
+最后，`main.py` 里的 `lifespan` 和 `create_all` **删掉**：表结构从此只由 alembic 管。
+
+```python
+app = FastAPI(title="todo-api")         # 不再 create_all：表结构交给 alembic
+```
+
+测试里的 `create_all` 留着：测试用的是内存库，每次都是全新的，直接建表最省事。
+
+### 第一次：从现在的表结构生成迁移
+
+```bash
+rm -f todo.db                                         # 最后一次删库：之后都靠迁移
+alembic revision --autogenerate -m "create users and tasks"
+alembic upgrade head
+```
+
+`--autogenerate` 会把代码里的表和数据库里的表做对比，把差别写成脚本，放在 `migrations/versions/` 下面：
+
+```python
+"""create users and tasks
+
+Revision ID: 8b3af2c15abf
+Revises:
+"""
+revision: str = '8b3af2c15abf'
+down_revision: Union[str, Sequence[str], None] = None    # 上一个版本：第一个没有
+
+
+def upgrade() -> None:                                    # 升级：执行这个
+    op.create_table('users',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('username', sa.String(length=20), nullable=False),
+    ...
+    )
+    op.create_table('tasks', ...)
+    with op.batch_alter_table('tasks', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_tasks_user_id'), ['user_id'], unique=False)
+
+
+def downgrade() -> None:                                  # 回退：执行这个，把 upgrade 做的撤销掉
+    ...
+    op.drop_table('tasks')
+    op.drop_table('users')
+```
+
+执行完，数据库里多了 `alembic_version` 表，记着当前版本 `8b3af2c15abf`。
+
+### 之后每次改表：改模型 → 生成 → 检查 → 升级
+
+比如给任务加一个优先级。先往数据库里随便建几条任务，再改模型：
+
+```python
+# app/models.py，Task 里加一列
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+```
+
+```bash
+alembic revision --autogenerate -m "add task priority"
+alembic upgrade head
+```
+
+**报错了**：
+
+```
+sqlite3.OperationalError: Cannot add a NOT NULL column with default value NULL
+```
+
+原因：`default=0` 是 **Python 这边**的默认值，只在 SQLAlchemy 插入新数据时生效，数据库根本不知道。表里已经有的那几行，新加的 `priority` 列填什么？数据库只能填 NULL，而这一列又规定了不能为 NULL。
+
+改成同时写 `server_default`：这是**数据库这边**的默认值，加列时已有的行会自动填上它。删掉刚才生成的那个迁移文件，重新生成：
+
+```python
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+```
+
+```bash
+rm migrations/versions/*_add_task_priority.py
+alembic revision --autogenerate -m "add task priority"
+alembic upgrade head            # Running upgrade 8b3af2c15abf -> 23a1f64ac3fa, add task priority
+```
+
+生成的脚本：
+
+```python
+def upgrade() -> None:
+    with op.batch_alter_table('tasks', schema=None) as batch_op:
+        batch_op.add_column(sa.Column('priority', sa.Integer(), server_default='0', nullable=False))
+
+
+def downgrade() -> None:
+    with op.batch_alter_table('tasks', schema=None) as batch_op:
+        batch_op.drop_column('priority')
+```
+
+原来的数据都还在，`priority` 自动是 0。要在接口里返回，`TaskOut` 也加上 `priority: int`。
+
+**给已经有数据的表加「不能为空」的列，一定要给 `server_default`。** 这个坑本地发现不了（本地经常是空表），一上线就炸。
+
+### 常用命令
+
+| 命令 | 作用 |
+|---|---|
+| `alembic revision --autogenerate -m "说明"` | 对比模型和数据库，生成迁移脚本 |
+| `alembic upgrade head` | 升到最新 |
+| `alembic downgrade -1` | 回退一个版本 |
+| `alembic current` | 数据库现在在哪个版本 |
+| `alembic history` | 所有版本，从新到旧 |
+
+```
+$ alembic history
+8b3af2c15abf -> 23a1f64ac3fa (head), add task priority
+<base> -> 8b3af2c15abf, create users and tasks
+```
+
+- **生成的脚本一定要打开看一眼再 upgrade**。autogenerate 不是万能的：比如把列**改名**，它会识别成「删掉旧列 + 加一列新的」，数据就丢了。这种要手动把脚本改成 `batch_op.alter_column('旧名', new_column_name='新名')`。
+- **已经执行过、提交过的迁移脚本不要再改**。要改就再生成一个新的。
+
+### 换成 PostgreSQL
+
+模型和迁移脚本都不用改，只换连接地址：
+
+```bash
+uv pip install "psycopg[binary]"         # Postgres 的驱动
+```
+
+```
+# .env
+DATABASE_URL=postgresql+psycopg://用户名:密码@localhost:5432/todo
+```
+
+```bash
+alembic upgrade head                     # 在新库上从头建一遍
+uvicorn app.main:app --reload
+```
+
+- 地址开头是 `postgresql+psycopg://`：`+psycopg` 指定用哪个驱动。云数据库（比如 Neon）给的地址一般是 `postgresql://...`，要手动加上 `+psycopg`，否则 SQLAlchemy 会去找另一个没装的驱动。
+- 本地装 Postgres：Mac 上 `brew install postgresql@17`，或者直接用 Neon 这类云数据库的免费版，下一节部署也会用到。
+- 这一节的代码在 Postgres 上实际跑过：两个迁移都能执行，接口正常。有一点不同：返回的时间会带上数据库所在的时区，比如 `2026-11-12T19:58:42+08:00`，和 SQLite 返回的 `2026-11-12T11:58:42Z` 是同一个时刻，前端用 `new Date(...)` 解析结果一样。
+
+## 3.15 上线：CORS、中间件、部署 {#deploy}
+
+最后三件事：让浏览器里的前端能调到接口，给每个请求记日志，部署到线上。
+
+### CORS：跨域
+
+前端在 `http://localhost:5173`，后端在 `http://localhost:8000`，端口不同就算**不同的源**。浏览器出于安全，默认不让网页读别的源返回的数据。这时候浏览器会先问后端一句（发一个 `OPTIONS` 请求，叫**预检**）：「`localhost:5173` 的页面能调你吗？」后端回答可以，浏览器才把真正的请求发出去。
+
+所以 CORS 是**后端**的配置，前端改不了。FastAPI 用自带的中间件：
+
+```python
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_methods=["*"],                 # 所有请求方法
+    allow_headers=["*"],                 # 所有请求头，包括 Authorization
+)
+```
+
+`app/config.py` 加一个配置，线上把前端的正式网址写进去：
+
+```python
+    # 允许哪些前端网址跨域调用；环境变量里写成 JSON：CORS_ORIGINS='["https://todo.example.com"]'
+    cors_origins: list[str] = ["http://localhost:5173"]
+```
+
+- **`allow_origins` 写具体网址，不要图省事写 `["*"]`**。本笔记站的后端写的是 `*`，因为它的 token 在请求头里、不用 Cookie，任何网页都拿不到别人的 token，开放也没风险。用 Cookie 登录的项目绝不能写 `*`（这种情况浏览器也不允许）。
+- 用 curl、Postman 调接口不会遇到跨域：CORS 只是浏览器的限制。所以「Postman 能通、浏览器报 CORS」就是这个问题。
+
+### 中间件：每个请求都经过的地方
+
+**中间件**包在所有接口外面：请求进来先经过它，再到接口；接口的响应出去，也要再经过它。适合放「每个请求都要做」的事：记日志、统计耗时、加响应头。上面的 CORS 也是一个中间件。
+
+```python
+import logging
+import time
+from collections.abc import Awaitable, Callable
+
+from fastapi import Request, Response
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger("todo-api")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    start = time.perf_counter()
+    response = await call_next(request)          # 交给后面的路由去处理，拿到响应
+    ms = (time.perf_counter() - start) * 1000
+    logger.info("%s %s → %s %.0fms", request.method, request.url.path, response.status_code, ms)
+    response.headers["X-Response-Time"] = f"{ms:.0f}ms"   # 也可以改响应：加个响应头
+    return response
+```
+
+```
+2026-11-12 19:59:24,565 INFO GET / → 200 7ms
+2026-11-12 19:59:24,574 INFO GET /tasks → 401 1ms
+```
+
+`call_next(request)` 之前的代码在接口执行**前**跑，之后的在接口执行**后**跑，和 2.8 节 `yield` 前后是一个意思。日志用 2.3 节的 `logging`，不用 `print`：线上能按级别过滤，也能统一收集。
+
+完整的 `main.py`：
+
+```python
+from __future__ import annotations
+
+import logging
+import time
+from collections.abc import Awaitable, Callable
+
+from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+
+from app import errors
+from app.config import settings
+from app.routers import auth, tasks
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger("todo-api")
+
+app = FastAPI(title="todo-api")         # 不再 create_all：表结构交给 alembic
+errors.install(app)
+
+# 跨域：允许这些网址的前端页面调接口
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_methods=["*"],                 # 所有请求方法
+    allow_headers=["*"],                 # 所有请求头，包括 Authorization
+)
+
+
+# 中间件：每个请求进来、出去都会经过这里
+@app.middleware("http")
+async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    start = time.perf_counter()
+    response = await call_next(request)          # 交给后面的路由去处理，拿到响应
+    ms = (time.perf_counter() - start) * 1000
+    logger.info("%s %s → %s %.0fms", request.method, request.url.path, response.status_code, ms)
+    response.headers["X-Response-Time"] = f"{ms:.0f}ms"   # 也可以改响应：加个响应头
+    return response
+
+
+app.include_router(auth.router)
+app.include_router(tasks.router)
+
+
+@app.get("/", tags=["健康检查"])
+def health() -> dict:
+    """部署后先访问这个，确认服务起来了。"""
+    return errors.success({"status": "ok"})
+```
+
+加一个 `/` 接口当**健康检查**：部署完先访问它，返回 `ok` 说明服务起来了；也可以交给监控定时访问。
+
+### 部署到 Vercel
+
+本笔记站的后端（仓库里的 `backend/` 目录）就是这么部署的，可以对照着看。
+
+**1. 线上数据库**：Vercel 上的函数用完就销毁，磁盘也是临时的，SQLite 文件存不住，只能用云数据库。在 Vercel 项目的 Storage 里一键建一个 Neon（Postgres，有免费额度），它会自动设好 `DATABASE_URL` 环境变量。记得按上一节说的把开头改成 `postgresql+psycopg://`。
+
+**2. 入口文件和依赖**：项目根目录加一个 `index.py`，Vercel 找到里面的 `app` 就能运行：
+
+```python
+# Vercel 的入口：找到这个文件里的 app 就能跑
+from app.main import app  # noqa: F401
+```
+
+依赖写进 `pyproject.toml`（2.2 节）或 `requirements.txt`，Vercel 会自动安装。`uvicorn`、`pytest` 这类只在本地用的不用写进去。
+
+**3. 连接池和密钥**：`app/config.py` 加一个 `vercel` 配置，和一个检查：
+
+```python
+    vercel: bool = False                      # Vercel 上会自动设置 VERCEL=1
+
+    @model_validator(mode="after")
+    def check_secret(self) -> Settings:
+        # 线上还在用开发密钥，等于谁都能伪造 token：直接启动失败，比悄悄上线好
+        if self.vercel and self.jwt_secret == DEV_SECRET:
+            raise ValueError("线上必须设置 JWT_SECRET 环境变量")
+        return self
+```
+
+`app/db.py` 里，在 Vercel 上不用连接池：
+
+```python
+from sqlalchemy.pool import NullPool
+
+engine = create_engine(
+    settings.database_url,
+    echo=settings.debug,                                 # debug 时打印每条 SQL
+    # Vercel 上每个请求可能是一个新的函数实例，自己维护连接池没意义还占连接：用完就关
+    poolclass=NullPool if settings.vercel else None,     # None = 用默认的连接池
+)
+```
+
+**4. 环境变量**：在 Vercel 项目的 Settings → Environment Variables 里加上：
+
+| 变量 | 值 |
+|---|---|
+| `DATABASE_URL` | Neon 的地址（开头改成 `postgresql+psycopg://`） |
+| `JWT_SECRET` | `python -c "import secrets; print(secrets.token_urlsafe(32))"` 生成的随机串 |
+| `CORS_ORIGINS` | `["https://你的前端网址"]` |
+
+**5. 建表**：Vercel 不会帮你执行迁移。在本地把 `DATABASE_URL` 临时指向线上库，执行一次：
+
+```bash
+DATABASE_URL='postgresql+psycopg://...线上地址...' alembic upgrade head
+```
+
+以后每次有新的迁移，都要先这样升级线上库，再部署新代码。顺序反了的话，新代码会去读还不存在的列，直接报错。
+
+**6. 部署和检查**：推到 GitHub，Vercel 自动部署。部署完访问 `https://你的后端域名/`，返回 `{"code":200,"msg":"ok","data":{"status":"ok"}}` 就成功了，再到 `/docs` 里注册、登录、建任务走一遍。
+
+> 国内访问 `*.vercel.app` 经常不通（域名被污染），自己测试需要开代理；给别人用的话，绑一个自己的域名。
+
+**测试**：加两个，确认健康检查和 CORS 生效（应该是 `14 passed`）：
+
+```python
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+
+def test_health(client: TestClient) -> None:
+    r = client.get("/")
+    assert r.json()["data"] == {"status": "ok"}
+    assert r.headers["X-Response-Time"].endswith("ms")
+
+
+def test_cors_preflight(client: TestClient) -> None:
+    # 浏览器跨域发带 Authorization 的请求前，会先发一个 OPTIONS「预检」
+    headers = {
+        "Origin": "http://localhost:5173",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "authorization,content-type",
+    }
+    r = client.options("/tasks", headers=headers)
+    assert r.status_code == 200
+    assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+    r = client.options("/tasks", headers={**headers, "Origin": "https://evil.example.com"})
+    assert "access-control-allow-origin" not in r.headers      # 不在名单里的网址拿不到许可
+```
+
+### 阶段三做完了什么
+
+从 3.1 的一个 hello 接口，到现在是一个能上线的多用户后端：
+
+| 能力 | 在哪一节 |
+|---|---|
+| 接口、参数、请求体校验 | 3.2、3.3 |
+| 统一的响应格式和错误处理 | 3.4 |
+| 手写 SQL、Postgres 和 MySQL 的区别 | 3.5 |
+| 数据库增删改查、依赖注入 | 3.6～3.9 |
+| 自动化测试 | 3.10 |
+| 按业务拆文件、配置管理 | 3.11 |
+| 注册登录、密码哈希、JWT | 3.12 |
+| 数据隔离、一对多、分页 | 3.13 |
+| 数据库迁移、换 Postgres | 3.14 |
+| 跨域、请求日志、部署 | 3.15 |
+
+接下来的阶段四，就是在这样的后端里接入大模型。

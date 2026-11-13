@@ -22,28 +22,31 @@
 - [x] Pydantic 数据校验（第 3.3 节，放在阶段三的 todo 项目里讲）
 - [x] asyncio 异步编程：gather、create_task、超时、取消、限制并发（第 2.5 节）
 - [x] 日志管理（第 2.3 节）
-- [x] 单元测试 pytest（第 3.9 节，放在阶段三的 todo 项目里讲）
+- [x] 单元测试 pytest（第 3.10 节，放在阶段三的 todo 项目里讲）
 - [x] 用 httpx 发 HTTP 请求：同步 / 异步、超时、重试（第 2.6 节）
 - [x] 调试：看懂报错、断点、`pdb`（第 2.4 节）
 - [x] 线程、进程、协程的区别，GIL（第 2.7 节）
+- [x] with 和上下文管理器：`@contextmanager`、事务、`lifespan`（第 2.8 节）
 - [ ] Git、代码规范：Ruff 在第 2.2 节（次要：Git 平时一直在用）
 
-## 阶段三：Python 后端开发（第 5～6 周）
+## 阶段三：FastAPI 后端开发（第 5～6 周）
 
-- [ ] HTTP、RESTful API：状态码、方法、URL 设计
+- [x] HTTP、RESTful API：状态码、方法、URL 设计（第 3.2、3.4 节）
 - [x] FastAPI（第 3.1、3.2 节）
 - [x] 请求与响应（第 3.3、3.4 节）
-- [x] 路由、依赖注入（第 3.7、3.8 节；**APIRouter 拆文件还没写**）
-- [ ] Middleware 中间件
-- [ ] JWT 身份认证（含密码哈希）
-- [ ] 鉴权概念：Cookie、Session、JWT 的区别，RBAC 角色权限
-- [ ] CORS 跨域：前后端分开部署一定会遇到
-- [x] SQLAlchemy ORM（第 3.5、3.6 节）
-- [ ] SQL 基础：表设计、索引、分页、事务、关联查询（只会 ORM 不够）
-- [ ] SQLAlchemy 表关系：一对多、多对多
-- [ ] MySQL / PostgreSQL：现在用 SQLite，**补换数据库的连接方式和 alembic 迁移实操**
+- [x] 路由、依赖注入、APIRouter 拆文件（第 3.8、3.9、3.11 节）
+- [x] Middleware 中间件（第 3.15 节）
+- [x] JWT 身份认证（含密码哈希）（第 3.12 节）
+- [x] 鉴权概念：Cookie、Session、JWT 的区别（第 3.12 节）
+- [ ] RBAC 角色权限（次要：管理员 / 普通用户，用到再补）
+- [x] CORS 跨域：前后端分开部署一定会遇到（第 3.15 节）
+- [x] SQLAlchemy ORM（第 3.6、3.7 节）
+- [x] SQL 基础：表设计、索引、分页、事务、关联查询、upsert（第 3.5 节，用 PostgreSQL 手写）
+- [x] SQLAlchemy 表关系：一对多（第 3.13 节；多对多只提了思路）
+- [x] MySQL / PostgreSQL：两者区别（第 3.5 节）、换数据库和 alembic 迁移实操（第 3.14 节）
 - [ ] Redis：缓存、计数、过期时间
-- [ ] 配置管理（pydantic-settings）、文件上传、后台任务
+- [x] 配置管理 pydantic-settings（第 3.11 节）
+- [ ] 文件上传（放到阶段四做 RAG 时一起讲：上传文档）
 
 ## 阶段四：AI 应用开发（第 7～8 周）
 
@@ -86,9 +89,8 @@
 - [ ] Docker
 - [ ] Linux 部署（次要：会用基本命令、能把服务跑起来就行）
 - [ ] Nginx
-- [ ] Celery / 消息队列（次要：个人项目用 FastAPI 后台任务就够）
+- [ ] 任务队列 / 消息队列：Redis + ARQ 或 Celery，长任务排队、重试、进度查询（AI 应用里调模型、处理文档、生成视频都是长任务，很常用）；先对比 FastAPI 自带的 BackgroundTasks 为什么不够
 - [ ] SSE / WebSocket（SSE 放到阶段四和流式输出一起学，这里补 WebSocket 原理）
-- [ ] 任务队列（次要：和 Celery 是一回事）
 - [ ] 错误处理与监控
 - [ ] CI/CD（次要：Vercel、GitHub Actions 会用即可）
 - [ ] HTTPS、环境变量、日志：上线必备
