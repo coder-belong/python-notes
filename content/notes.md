@@ -1213,16 +1213,18 @@ import logging
 import os
 from datetime import UTC, datetime, timedelta
 
-logging.basicConfig(level=logging.INFO)     # 程序入口配置一次：INFO 及以上都输出
+# 程序入口配置一次：INFO 及以上都输出；format 是每行日志的格式（时间 级别 logger 名: 内容）
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)           # 每个文件一个 logger，名字是模块名
 
-log.info("开始处理 %s 条", 3)                # 用 %s 占位，不要自己拼字符串
-log.warning("快满了")
-log.error("失败了")
+log.debug("调试细节")                        # 级别低于 INFO，不输出
+log.info("开始处理 %s 条", 3)                # 2026-11-13 14:28:48,622 INFO __main__: 开始处理 3 条
+log.warning("快满了")                        # 2026-11-13 14:28:48,622 WARNING __main__: 快满了
+log.error("失败了")                          # 2026-11-13 14:28:48,622 ERROR __main__: 失败了
 
 # 环境变量：密码、地址这类配置不写死在代码里
-db_url = os.environ.get("DATABASE_URL", "sqlite:///todo.db")   # 没配就用默认值
-print(db_url)
+db_url = os.environ.get("DATABASE_URL", "sqlite:///todo.db")   # 读环境变量 DATABASE_URL，没配就用默认值
+print(db_url)                               # 没配时：sqlite:///todo.db
 
 # 时间
 now = datetime.now(UTC)                     # 带时区的当前时间，存库和返回接口都用 UTC
@@ -1231,7 +1233,12 @@ print(now.strftime("%Y-%m-%d %H:%M:%S"))    # 2026-11-10 07:00:00
 print(now - timedelta(days=3))              # 3 天前
 ```
 
-**为什么用 logging 不用 print**：能分级别（线上只看 warning 以上）、自动带时间和模块名、可以统一输出到文件或日志系统。
+**为什么用 logging 不用 print**：能分级别（线上只看 warning 以上）、按 `format` 统一带上时间和模块名、可以统一输出到文件或日志系统。
+
+- `__main__` 是 logger 的名字：直接运行的文件，`__name__` 就是 `__main__`；被别的文件导入时是模块名，比如 `app.db`，一看就知道日志是哪个文件打的。
+- 不写 `format` 时默认格式是 `INFO:__main__:开始处理 3 条`，没有时间，所以一般都会配上。
+- `"开始处理 %s 条", 3`：`%s` 是占位符，后面的 `3` 会填进去。不写成 `f"开始处理 {n} 条"`，是因为这条日志的级别没开时（比如 debug），logging 就不用花时间去拼这个字符串。
+- 日志默认输出到**标准错误（stderr）**，`print` 输出到标准输出（stdout）。终端里两个都能看到；用 `python app.py > out.txt` 把输出存进文件时，只有 `print` 的会进文件，日志还会留在终端上。
 
 | 级别 | 用在哪 |
 |---|---|
@@ -1239,6 +1246,28 @@ print(now - timedelta(days=3))              # 3 天前
 | `info` | 正常的关键步骤 |
 | `warning` | 不正常但还能继续 |
 | `error` | 出错了 |
+
+**环境变量是从哪读的**：`os.environ` 读的是**运行这个 Python 程序的那个进程的环境变量**，不是读某个文件。程序启动时从启动它的地方继承一份。把上面的代码存成 `app.py`，换几种方式运行（只看 `print(db_url)` 那行）：
+
+```bash
+# ① 只对这一次运行有效：写在命令前面
+DATABASE_URL=postgresql://localhost/todo python app.py   # postgresql://localhost/todo
+
+# ② 当前终端窗口一直有效，关掉终端就没了
+export DATABASE_URL=postgresql://localhost/todo
+python app.py                                           # postgresql://localhost/todo
+echo $DATABASE_URL                                      # 在终端里看当前的值
+
+# ③ 都没设
+unset DATABASE_URL                                      # 删掉 ② 设的
+python app.py                                           # sqlite:///todo.db（用默认值）
+```
+
+- 想每次打开终端都有：把 `export ...` 那行写进 `~/.zshrc`。
+- 线上服务器：在 Vercel、Docker、云服务器的「环境变量」设置里配，程序启动时就带上了。
+- 项目里的 `.env` 文件**不会**被自动读取，`os.environ` 看不到它，要用 `python-dotenv` 的 `load_dotenv()` 先把它加载进环境变量（第 3.6 节）。
+- `os.environ.get("名字", 默认值)`：没设就返回默认值。`os.environ["名字"]` 没设会直接报 `KeyError: 'DATABASE_URL'`，适合「必须配置、没配就不该启动」的值，比如线上的数据库密码。
+- 环境变量的值都是**字符串**，`PORT=8000` 读出来是 `"8000"`，要数字得自己 `int(...)`。
 
 ## 2.4 调试：看懂报错、打断点 {#debugging}
 
