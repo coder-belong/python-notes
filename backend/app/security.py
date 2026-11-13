@@ -7,7 +7,7 @@ import jwt
 from fastapi import Depends, Header
 from pwdlib import PasswordHash
 
-from .config import JWT_SECRET, TOKEN_DAYS
+from .config import ADMIN_USERNAMES, JWT_SECRET, TOKEN_DAYS
 from .db import Db
 from .errors import fail
 from .models import User
@@ -50,3 +50,17 @@ def current_user(session: Db, authorization: Annotated[str | None, Header()] = N
 
 
 CurrentUser = Annotated[User, Depends(current_user)]
+
+
+def is_admin(user: User) -> bool:
+    return user.username in ADMIN_USERNAMES
+
+
+def admin_user(user: CurrentUser) -> User:
+    """在 current_user 的基础上再检查一下是不是管理员：没登录 401，登录了但不是管理员 403。"""
+    if not is_admin(user):
+        raise fail(403, "只有管理员能查看")
+    return user
+
+
+AdminUser = Annotated[User, Depends(admin_user)]

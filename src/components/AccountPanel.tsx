@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { apiGet } from "@/lib/account";
 import { formatDuration } from "@/lib/study-store";
 import type { useStudy } from "@/lib/use-study";
 
@@ -89,6 +90,13 @@ const ICON = {
       <path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4" />
     </svg>
   ),
+  team: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" />
+      <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18.5 14.3c1.8.8 3 2.7 3 5.7" />
+    </svg>
+  ),
   logout: (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4" />
@@ -102,7 +110,15 @@ const PERKS = ["家里、公司登录同一个账号，进度是同一份", "学
 const USERNAME_RULE = /^[\p{L}\p{N}_]{2,20}$/u;
 
 /** 点开入口后的弹窗：没登录是登录 / 注册表单，登录了是账号信息和同步状态。 */
-export default function AccountPanel({ study, onClose }: { study: Study; onClose: () => void }) {
+export default function AccountPanel({
+  study,
+  onClose,
+  onOpenAdmin,
+}: {
+  study: Study;
+  onClose: () => void;
+  onOpenAdmin: () => void;
+}) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -113,6 +129,19 @@ export default function AccountPanel({ study, onClose }: { study: Study; onClose
   // 「立即同步」按钮自己的状态：本机连本机太快，转一下就结束，看不出点没点到，所以至少转 0.6 秒，再显示 2 秒结果
   const [manual, setManual] = useState<"idle" | "syncing" | "done" | "failed">("idle");
   const { account, sync, data } = study;
+  // 是不是管理员由后端说了算：打开弹窗时问一次 /auth/me
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!account) return;
+    let alive = true;
+    apiGet<{ is_admin?: boolean }>("/auth/me", account.token)
+      .then((me) => alive && setIsAdmin(!!me.is_admin))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [account]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -211,6 +240,13 @@ export default function AccountPanel({ study, onClose }: { study: Study; onClose
                 退出登录
               </button>
             </div>
+            {isAdmin && (
+              <button type="button" className="btn ghost wide admin-entry" onClick={onOpenAdmin}>
+                <i className="btn-icon">{ICON.team}</i>
+                所有用户的学习情况
+                <span className="admin-badge">管理员</span>
+              </button>
+            )}
             <p className="account-foot">退出后本机记录还在；换台电脑登录同一个账号，进度一样。</p>
           </div>
         ) : (

@@ -2389,6 +2389,28 @@ body.resizing aside {
   gap: 10px;
 }
 
+/* 管理员入口：在「立即同步 / 退出登录」下面，悬停是主题色（不是退出按钮的红色） */
+.btn.admin-entry {
+  margin-top: 10px;
+  height: 40px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.btn.admin-entry:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.admin-badge {
+  margin-left: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-size: 11px;
+  color: var(--accent);
+}
+
 .account-foot {
   margin: 14px 0 0;
   text-wrap: balance;
@@ -2689,3 +2711,139 @@ body.resizing aside {
     gap: 8px;
   }
 }
+
+/* ---------- 管理员：所有用户的学习情况 ---------- */
+.admin-modal {
+  width: min(960px, 100%);
+}
+
+.admin-modal .modal-head h3 {
+  flex: 1;
+}
+
+.admin-refresh {
+  margin-right: 12px;
+  font-size: 13px;
+}
+
+.admin-box {
+  padding: 4px 0;
+}
+
+.admin-box > .hint,
+.admin-box > .account-error {
+  margin: 12px 16px;
+}
+
+/* 手机上表格放不下：只让表格自己横向滚动，页面不滚 */
+.admin-table-wrap {
+  overflow-x: auto;
+}
+
+/* 覆盖正文表格的默认样式（block、四周边框、表头底色），这里只要横线 */
+.admin-table {
+  display: table;
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 10px 14px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.admin-table th {
+  background: none;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table th {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.admin-table th button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.admin-table th button:hover,
+.admin-table th button.active {
+  color: var(--text);
+}
+
+.admin-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-table td.strong {
+  font-weight: 600;
+  color: var(--done);
+}
+
+.admin-table td.dim {
+  color: var(--muted);
+}
+
+.admin-table tbody tr:hover {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.admin-table tr.me td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.admin-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.admin-user em {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-size: 11px;
+  font-style: normal;
+  color: var(--accent);
+}
+
+.admin-week {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-bar {
+  width: 56px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.admin-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--done);
+}
+

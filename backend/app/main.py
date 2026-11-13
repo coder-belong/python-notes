@@ -1,10 +1,12 @@
-"""接口：注册、登录、查当前用户、同步学习进度。"""
+"""接口：注册、登录、查当前用户、同步学习进度，以及管理员查看所有用户。"""
 
 from contextlib import asynccontextmanager
+from datetime import UTC, date, datetime, timedelta
+from typing import Annotated
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
@@ -13,7 +15,7 @@ from .db import Base, Db, engine
 from .errors import fail, success
 from .models import SectionStat, StudyDay, SyncBatch, User
 from .schemas import AuthIn, SyncIn
-from .security import CurrentUser, create_token, hash_password, verify_password
+from .security import AdminUser, CurrentUser, create_token, hash_password, is_admin, verify_password
 
 
 @asynccontextmanager
@@ -68,7 +70,7 @@ def login(body: AuthIn, session: Db) -> dict:
 
 @app.get("/auth/me")
 def me(user: CurrentUser) -> dict:
-    return success({"username": user.username})
+    return success({"username": user.username, "is_admin": is_admin(user)})
 
 
 def upsert(session: Session, model, values: dict, add: dict, set_: dict | None = None) -> None:
@@ -117,3 +119,68 @@ def sync(body: SyncIn, user: CurrentUser, session: Db) -> dict:
             upsert(session, SectionStat, key, {"seconds": body.sections.get(sid, 0)}, set_)
         session.commit()
     return success(totals(session, user.id))
+
+
+def as_utc(t: datetime | None) -> str | None:
+    """数据库 now() 存的是 UTC 时间但不带时区，补上时区再给前端，前端才能换算成本地时间。"""
+    if t is None:
+        return None
+    return (t if t.tzinfo else t.replace(tzinfo=UTC)).isoformat()
+
+
+@app.get("/admin/users")
+def admin_users(
+    _admin: AdminUser,
+    session: Db,
+    today: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}-\d{2}$")] = None,
+) -> dict:
+    """所有用户的学习情况，按累计时长从多到少。
+
+    日期都是前端按用户本地时间记的字符串（2026-11-13），所以「今天」也让管理员的前端传过来，
+    不用服务器的日期：服务器在 UTC，北京时间早上 8 点前会差一天。
+    """
+    today = today or date.today().isoformat()
+    week_start = (date.fromisoformat(today) - timedelta(days=6)).isoformat()  # 含今天共 7 天
+
+    # 每个用户的学习天数据汇总成一行：一条 SQL 按 user_id 分组算完，不用把每天的记录都查出来
+    days = (
+        select(
+            StudyDay.user_id,
+            func.sum(StudyDay.seconds).label("total"),
+            func.sum(case((StudyDay.day == today, StudyDay.seconds), else_=0)).label("today"),
+            func.sum(case((StudyDay.day >= week_start, StudyDay.seconds), else_=0)).label("week"),
+            func.count(case((StudyDay.seconds >= 60, 1))).label("days"),  # 学满 1 分钟才算学了一天
+            func.max(case((StudyDay.seconds > 0, StudyDay.day))).label("last_day"),
+            func.sum(StudyDay.pomodoros).label("pomodoros"),
+        )
+        .group_by(StudyDay.user_id)
+        .subquery()
+    )
+    done = (
+        select(SectionStat.user_id, func.count().label("done"))
+        .where(SectionStat.done.is_(True))
+        .group_by(SectionStat.user_id)
+        .subquery()
+    )
+    rows = session.execute(
+        select(User.username, User.created_at, days, done.c.done)
+        .outerjoin(days, days.c.user_id == User.id)  # outerjoin：注册了还没学过的用户也要列出来
+        .outerjoin(done, done.c.user_id == User.id)
+    ).all()
+
+    users = [
+        {
+            "username": r.username,
+            "created_at": as_utc(r.created_at),
+            "total_seconds": r.total or 0,
+            "today_seconds": r.today or 0,
+            "week_seconds": r.week or 0,
+            "study_days": r.days or 0,
+            "last_day": r.last_day,
+            "pomodoros": r.pomodoros or 0,
+            "done_sections": r.done or 0,
+        }
+        for r in rows
+    ]
+    users.sort(key=lambda u: u["total_seconds"], reverse=True)
+    return success({"today": today, "users": users})

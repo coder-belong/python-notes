@@ -95,16 +95,25 @@ export class ApiError extends Error {
   }
 }
 
-/** 调后端接口。后端统一返回 {code, msg, data}；失败时抛出 ApiError，message 是后端给的提示。 */
-export async function api<T>(path: string, body: unknown, token?: string, keepalive = false): Promise<T> {
+/** 调后端接口（POST）。后端统一返回 {code, msg, data}；失败时抛出 ApiError，message 是后端给的提示。 */
+export function api<T>(path: string, body: unknown, token?: string, keepalive = false): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+    keepalive, // 关页面时也能把最后一批发出去
+  });
+}
+
+/** GET 接口：查询参数直接写在 path 里。 */
+export function apiGet<T>(path: string, token: string): Promise<T> {
+  return request<T>(path, { headers: { Authorization: `Bearer ${token}` } });
+}
+
+async function request<T>(path: string, init: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(apiBase() + path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(body),
-      keepalive, // 关页面时也能把最后一批发出去
-    });
+    res = await fetch(apiBase() + path, init);
   } catch {
     throw new ApiError(0, "连不上服务器，检查一下网络");
   }

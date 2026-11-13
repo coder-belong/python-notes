@@ -18,3 +18,6 @@ if not JWT_SECRET:
 
 # token 多少天后过期，过期要重新登录
 TOKEN_DAYS = 30
+
+# 管理员：能看所有用户的学习时长。多个用逗号隔开，线上可以用环境变量 ADMIN_USERNAMES 改
+ADMIN_USERNAMES = {name.strip() for name in os.getenv("ADMIN_USERNAMES", "belong").split(",") if name.strip()}

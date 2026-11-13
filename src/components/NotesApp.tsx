@@ -8,6 +8,7 @@ import { dayKey, formatDuration, loadReading, saveReading, type Reading } from "
 import { useStudy } from "@/lib/use-study";
 
 import AccountPanel, { AccountEntry } from "./AccountPanel";
+import AdminPanel from "./AdminPanel";
 import ChangelogPanel from "./ChangelogPanel";
 import FocusBar from "./FocusBar";
 import Home from "./Home";
@@ -35,6 +36,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   const [navOpen, setNavOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [changelogSeen, setChangelogSeen] = useState<string | null>(null);
   // 侧栏收成窄条：<head> 里的脚本已经按上次的状态加好了 class，这里读出来让按钮显示对
@@ -184,7 +186,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   // 键盘：← → 切换上一节 / 下一节（在输入框里、或者开着弹窗时不响应）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (statsOpen || accountOpen || changelogOpen || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (statsOpen || accountOpen || adminOpen || changelogOpen || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if ((e.target as HTMLElement).closest?.("input, textarea, [contenteditable]")) return;
       // \ 收起 / 展开侧栏
       if (e.key === "\\") {
@@ -206,7 +208,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [prev, next, statsOpen, accountOpen, changelogOpen, focus, enterFocus, exitFocus]);
+  }, [prev, next, statsOpen, accountOpen, adminOpen, changelogOpen, focus, enterFocus, exitFocus]);
 
   // 专注模式：给 <html> 加个 class，CSS 负责收起侧栏、正文居中
   useEffect(() => {
@@ -459,7 +461,19 @@ export default function NotesApp({ notes }: { notes: Notes }) {
         />
       )}
       {statsOpen && <StudyPanel study={study} sections={sections} onClose={() => setStatsOpen(false)} />}
-      {accountOpen && <AccountPanel study={study} onClose={() => setAccountOpen(false)} />}
+      {accountOpen && (
+        <AccountPanel
+          study={study}
+          onClose={() => setAccountOpen(false)}
+          onOpenAdmin={() => {
+            setAccountOpen(false);
+            setAdminOpen(true);
+          }}
+        />
+      )}
+      {adminOpen && study.account && (
+        <AdminPanel token={study.account.token} me={study.account.username} onClose={() => setAdminOpen(false)} />
+      )}
       {changelogOpen && <ChangelogPanel days={notes.changelog} onClose={() => setChangelogOpen(false)} />}
     </>
   );
