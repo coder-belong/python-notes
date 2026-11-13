@@ -1247,28 +1247,6 @@ print(now - timedelta(days=3))              # 3 天前
 | `warning` | 不正常但还能继续 |
 | `error` | 出错了 |
 
-**环境变量是从哪读的**：`os.environ` 读的是**运行这个 Python 程序的那个进程的环境变量**，不是读某个文件。程序启动时从启动它的地方继承一份。把上面的代码存成 `app.py`，换几种方式运行（只看 `print(db_url)` 那行）：
-
-```bash
-# ① 只对这一次运行有效：写在命令前面
-DATABASE_URL=postgresql://localhost/todo python app.py   # postgresql://localhost/todo
-
-# ② 当前终端窗口一直有效，关掉终端就没了
-export DATABASE_URL=postgresql://localhost/todo
-python app.py                                           # postgresql://localhost/todo
-echo $DATABASE_URL                                      # 在终端里看当前的值
-
-# ③ 都没设
-unset DATABASE_URL                                      # 删掉 ② 设的
-python app.py                                           # sqlite:///todo.db（用默认值）
-```
-
-- 想每次打开终端都有：把 `export ...` 那行写进 `~/.zshrc`。
-- 线上服务器：在 Vercel、Docker、云服务器的「环境变量」设置里配，程序启动时就带上了。
-- 项目里的 `.env` 文件**不会**被自动读取，`os.environ` 看不到它，要用 `python-dotenv` 的 `load_dotenv()` 先把它加载进环境变量（第 3.6 节）。
-- `os.environ.get("名字", 默认值)`：没设就返回默认值。`os.environ["名字"]` 没设会直接报 `KeyError: 'DATABASE_URL'`，适合「必须配置、没配就不该启动」的值，比如线上的数据库密码。
-- 环境变量的值都是**字符串**，`PORT=8000` 读出来是 `"8000"`，要数字得自己 `int(...)`。
-
 ## 2.4 调试：看懂报错、打断点 {#debugging}
 
 写代码大部分时间不是在写，而是在找「为什么不对」。这一节讲三件事：看懂报错、用 `print` 快速看值、打断点一步一步跑。
