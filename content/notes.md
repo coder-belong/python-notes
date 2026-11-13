@@ -895,27 +895,73 @@ except BalanceError as e:
 
 ## 1.12 文件和 JSON {#files-json}
 
+`pathlib` 的 `Path` 用来表示「一个文件或文件夹的路径」，建文件夹、读写文件、找文件都通过它；`json` 负责在字典和 JSON 字符串之间转换。下面分五步：建文件夹 → 写 → 读 → 看文件信息 → 找文件。
+
 ```python
+# demo.py
 import json
 from pathlib import Path
 
-folder = Path("data")
-folder.mkdir(exist_ok=True)                # 建文件夹，已存在不报错
-f = folder / "user.json"                   # 用 / 拼路径
+# ① 准备文件夹和文件路径
+folder = Path("data")              # 一个路径对象，指向当前目录下的 data 文件夹（这时还不存在）
+folder.mkdir(exist_ok=True)        # 创建文件夹；exist_ok=True：已经有了也不报错
+user_file = folder / "user.json"   # 用 / 拼接路径，结果是 data/user.json
+print(user_file)                   # data/user.json
 
-data = {"name": "Tom", "tags": ["a", "b"]}
-f.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")   # 写
-loaded = json.loads(f.read_text(encoding="utf-8"))                                # 读
-print(loaded["tags"])                      # ['a', 'b']
+# ② 写：字典 → JSON 字符串 → 写进文件
+user = {"name": "Tom", "age": 18, "tags": ["学生", "程序员"]}
+text = json.dumps(user, ensure_ascii=False, indent=2)   # 转成字符串；中文原样保留，缩进 2 格
+user_file.write_text(text, encoding="utf-8")             # 写进文件（文件不存在会自动创建，已存在会覆盖）
 
-print(f.exists(), f.name, f.suffix)        # True user.json .json
-for p in folder.glob("*.json"):            # 找文件
-    print(p)
+# ③ 读：读出文件内容 → JSON 字符串 → 字典
+text = user_file.read_text(encoding="utf-8")   # 整个文件读成一个字符串
+loaded = json.loads(text)                      # 字符串转回字典
+print(loaded["name"], loaded["tags"])          # Tom ['学生', '程序员']
+
+# ④ 看看这个文件的信息
+print(user_file.exists())   # True       文件存在吗
+print(user_file.name)       # user.json  文件名
+print(user_file.stem)       # user       去掉后缀的文件名
+print(user_file.suffix)     # .json      后缀
+
+# ⑤ 找出文件夹里所有的 .json 文件
+(folder / "config.json").write_text("{}", encoding="utf-8")   # 再建两个文件，方便演示
+(folder / "readme.txt").write_text("hi", encoding="utf-8")
+for path in sorted(folder.glob("*.json")):   # *.json：所有以 .json 结尾的文件
+    print(path)
+# data/config.json
+# data/user.json              ← readme.txt 不是 .json，没找出来
 ```
 
-- `json.dumps` / `json.loads`：对象 ↔ **字符串**（带 s = string）。
-- `json.dump` / `json.load`：对象 ↔ **文件对象**。
-- `ensure_ascii=False`：中文原样写出，不变成 `中`。
+运行完，当前目录下多了这些文件：
+
+```
+.
+├── demo.py
+└── data/
+    ├── config.json
+    ├── readme.txt
+    └── user.json
+```
+
+`data/user.json` 的内容（`indent=2` 让它分行缩进，`ensure_ascii=False` 让中文原样写出）：
+
+```json
+{
+  "name": "Tom",
+  "age": 18,
+  "tags": [
+    "学生",
+    "程序员"
+  ]
+}
+```
+
+- 写和读都是两步：**字典 ↔ 字符串** 用 `json`，**字符串 ↔ 文件** 用 `Path`。
+- `json.dumps` / `json.loads`：字典 ↔ **字符串**（带 s = string）。`json.dump` / `json.load` 不带 s，直接读写打开的文件，比如 `with open("data/user.json", encoding="utf-8") as fp: user = json.load(fp)`，效果和第 ③ 步一样。
+- 不加 `ensure_ascii=False`，中文会写成 `\u5b66\u751f` 这种编码，文件里看不懂。
+- `encoding="utf-8"` 每次都写上：不写的话用系统默认编码，Windows 上读写中文可能乱码。
+- 路径是**相对于运行命令时所在的目录**，不是 `.py` 文件所在的目录。在别的目录运行 `python 子目录/demo.py`，`data` 会建在你所在的目录。
 - JSON 的键必须是字符串；Python 的 `True` / `None` 会转成 `true` / `null`。
 
 大文件不要一次 `read_text()` 全读进内存，按行读：
