@@ -85,6 +85,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   const [reading, setReading] = useState<Reading | null>(null);
   const restoreY = useRef<number | null>(null);
   const [resumed, setResumed] = useState(false);
+  const [toastLeaving, setToastLeaving] = useState(false);
   const [showTop, setShowTop] = useState(false);
   const study = useStudy(route ?? null);
 
@@ -134,8 +135,13 @@ export default function NotesApp({ notes }: { notes: Notes }) {
     window.scrollTo({ top: y, behavior: "instant" });
     restoreY.current = null;
     // 自动滚下去了就提示一下；只往下一点点的不提示
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setResumed(y > 300);
+    if (y > 300) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setResumed(true);
+      setToastLeaving(false);
+    } else {
+      setToastLeaving(true); // 切到别的节：正在显示的提示淡出
+    }
     if (section) {
       const part = section.part ?? NO_PART;
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -167,11 +173,21 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   }, [route]);
 
   // 「已回到上次的位置」提示：5 秒后自动收起
+  // 收起分两步：先加 leaving 播放 0.3 秒的淡出动画，0.3 秒后再真正移除
   useEffect(() => {
     if (!resumed) return;
-    const timer = window.setTimeout(() => setResumed(false), 5000);
+    const timer = window.setTimeout(() => setToastLeaving(true), 5000);
     return () => window.clearTimeout(timer);
   }, [resumed, route]);
+
+  useEffect(() => {
+    if (!resumed || !toastLeaving) return;
+    const timer = window.setTimeout(() => {
+      setResumed(false);
+      setToastLeaving(false);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [resumed, toastLeaving]);
 
   // 往下滚了一屏多才显示「回到顶部」
   useEffect(() => {
@@ -182,7 +198,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   }, []);
 
   const scrollToTop = () => {
-    setResumed(false);
+    setToastLeaving(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -493,12 +509,12 @@ export default function NotesApp({ notes }: { notes: Notes }) {
 
       {resumed && (
         <div className="resume-toast-wrap">
-          <div className="resume-toast" role="status">
+          <div className={`resume-toast ${toastLeaving ? "leaving" : ""}`} role="status">
             <span>已回到上次读到的位置</span>
             <button type="button" onClick={scrollToTop}>
               从头读
             </button>
-            <button type="button" className="resume-toast-close" onClick={() => setResumed(false)} aria-label="关闭提示">
+            <button type="button" className="resume-toast-close" onClick={() => setToastLeaving(true)} aria-label="关闭提示">
               ×
             </button>
           </div>
