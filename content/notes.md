@@ -1673,7 +1673,11 @@ async def main() -> None:
         print(f"一个一个发：{time.perf_counter() - start:.1f}s")
 
         start = time.perf_counter()
-        responses = await asyncio.gather(*(client.get("/delay/1") for _ in range(3)))
+        # 循环 3 次准备 3 个请求（_ 表示循环变量用不到）；没 await，请求还没发出去
+        # requests = [未发出的请求, 未发出的请求, 未发出的请求]
+        requests = [client.get("/delay/1") for _ in range(3)]
+        # *requests 把列表拆开传给 gather，等于 gather(请求1, 请求2, 请求3)：一起发出、一起等
+        responses = await asyncio.gather(*requests)
         print([r.status_code for r in responses])
         print(f"同时发：{time.perf_counter() - start:.1f}s")
 
