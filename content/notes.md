@@ -1996,6 +1996,7 @@ def get_user(user_id: int) -> dict:
     return {"user_id": user_id}
 
 
+# status_code=201：成功时返回 201 Created（新建成功），不写默认是 200
 @app.post("/users", status_code=201)    # 新建：请求体 {"name": "Tom", "age": 18}
 def create_user(body: User) -> User:
     # 直接返回 pydantic 对象就行：FastAPI 会先把它转成字典，再转成 JSON 返回给前端
@@ -2228,7 +2229,7 @@ def success(data: object = None, msg: str = "ok") -> dict:
 **动手试**（不连数据库）：
 
 ```python
-# errors_demo.py（放在 todo-api/ 下）
+# api_demo.py（放在 todo-api/ 下）
 from fastapi import FastAPI
 
 from app.response import success
@@ -2243,14 +2244,14 @@ def get_task(task_id: int) -> dict:
     return success({"id": task_id, "title": TASKS[task_id]})
 
 
-@app.post("/tasks", status_code=201)
+@app.post("/tasks", status_code=201)    # 新建成功返回 201，不写默认是 200
 def create_task(title: str) -> dict:
     new_id = max(TASKS) + 1
     TASKS[new_id] = title
     return success({"id": new_id, "title": title}, msg="创建成功")
 ```
 
-`uvicorn errors_demo:app --reload` 启动，实际结果：
+`uvicorn api_demo:app --reload` 启动，实际结果：
 
 | 请求 | HTTP | 响应体 |
 |---|---|---|
@@ -2323,10 +2324,10 @@ def install(app: FastAPI) -> None:
 3. FastAPI 发现是 `ApiError`，调用启动时登记的 `handle_api_error`。
 4. 返回 404 和 `{"code": -1, "msg": "没有这个任务", "data": null}`。
 
-把上一节的 `errors_demo.py` 改成这样：
+把上一节的 `api_demo.py` 改成这样：
 
 ```python
-# errors_demo.py
+# api_demo.py
 from fastapi import FastAPI
 
 from app import errors
@@ -2440,7 +2441,7 @@ def install(app: FastAPI) -> None:
 - **④ 不把报错细节给前端**：报错信息里可能有代码路径、SQL 语句等内部细节。前端只拿到一句通用提示，完整报错去运行 uvicorn 的终端里看。
 - 用 FastAPI 自带的 `raise HTTPException(404, ...)` 抛出的错误，也会被 ③ 接住。
 
-在 `errors_demo.py` 末尾临时加一个会出错的接口，用来试 ④：
+在 `api_demo.py` 末尾临时加一个会出错的接口，用来试 ④：
 
 ```python
 @app.get("/boom")
