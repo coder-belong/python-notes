@@ -4,7 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Notes, Section } from "@/lib/notes";
 import { SIDE_COLLAPSED_KEY } from "@/lib/prefs";
-import { dayKey, formatDuration, loadReading, saveReading, type Reading } from "@/lib/study-store";
+import {
+  dayKey,
+  formatDuration,
+  loadPosition,
+  loadReading,
+  savePosition,
+  saveReading,
+  type Reading,
+} from "@/lib/study-store";
 import { useStudy } from "@/lib/use-study";
 
 import AccountPanel, { AccountEntry } from "./AccountPanel";
@@ -76,6 +84,8 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   const [openParts, setOpenParts] = useState<Set<string>>(new Set());
   const [reading, setReading] = useState<Reading | null>(null);
   const restoreY = useRef<number | null>(null);
+  const [resumed, setResumed] = useState(false);
+  const [showTop, setShowTop] = useState(false);
   const study = useStudy(route ?? null);
 
   const index = route ? sections.findIndex((s) => s.id === route) : -1;
@@ -101,11 +111,14 @@ export default function NotesApp({ notes }: { notes: Notes }) {
     // 只能在浏览器里读 localStorage 和网址，读完同步到 state
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setReading(saved);
+    // 打开网站时网址没带 #：直接回到上次读的那一节（之后点「首页」不再跳）
+    if (!location.hash && saved && sections.some((s) => s.id === saved.id)) {
+      history.replaceState(null, "", `#${encodeURIComponent(saved.id)}`);
+    }
     const apply = () => {
       const id = decodeURIComponent(location.hash.slice(1));
       const found = sections.some((s) => s.id === id);
-      const last = loadReading();
-      restoreY.current = found && last?.id === id ? last.y : null;
+      restoreY.current = found ? loadPosition(id) : null;   // 每节各记各的位置，没读过就从头
       setRoute(found ? id : null);
       setNavOpen(false);
     };
@@ -117,8 +130,12 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   // 切节后：回到顶部（或上次的位置）、展开所在的部分
   useEffect(() => {
     if (route === undefined) return;
-    window.scrollTo({ top: restoreY.current ?? 0, behavior: "instant" });
+    const y = restoreY.current ?? 0;
+    window.scrollTo({ top: y, behavior: "instant" });
     restoreY.current = null;
+    // 自动滚下去了就提示一下；只往下一点点的不提示
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setResumed(y > 300);
     if (section) {
       const part = section.part ?? NO_PART;
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -136,6 +153,9 @@ export default function NotesApp({ notes }: { notes: Notes }) {
         const r = { id: route, y: Math.round(window.scrollY) };
         saveReading(r);
         setReading(r);
+        // 已经滚到底（读完了）的节，下次切回来从头开始
+        const atEnd = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 200;
+        savePosition(route, atEnd ? 0 : r.y);
       }, 500);
     };
     save();
@@ -145,6 +165,26 @@ export default function NotesApp({ notes }: { notes: Notes }) {
       window.removeEventListener("scroll", save);
     };
   }, [route]);
+
+  // 「已回到上次的位置」提示：5 秒后自动收起
+  useEffect(() => {
+    if (!resumed) return;
+    const timer = window.setTimeout(() => setResumed(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [resumed, route]);
+
+  // 往下滚了一屏多才显示「回到顶部」
+  useEffect(() => {
+    const update = () => setShowTop(window.scrollY > 600);
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    return () => window.removeEventListener("scroll", update);
+  }, []);
+
+  const scrollToTop = () => {
+    setResumed(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   // 读上次的侧栏状态、看过的最新一条更新日志
   useEffect(() => {
@@ -450,6 +490,27 @@ export default function NotesApp({ notes }: { notes: Notes }) {
           )}
         </div>
       </main>
+
+      {resumed && (
+        <div className="resume-toast-wrap">
+          <div className="resume-toast" role="status">
+            <span>已回到上次读到的位置</span>
+            <button type="button" onClick={scrollToTop}>
+              从头读
+            </button>
+            <button type="button" className="resume-toast-close" onClick={() => setResumed(false)} aria-label="关闭提示">
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+      {showTop && (
+        <button type="button" className="to-top" onClick={scrollToTop} title="回到顶部" aria-label="回到顶部">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
+        </button>
+      )}
 
       {focus && (
         <FocusBar

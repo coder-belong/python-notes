@@ -64,6 +64,39 @@ export function saveReading(reading: Reading): void {
   }
 }
 
+/** 每一节各自滚到哪：切回读过一半的节时接着读。{节的 id: 滚动位置} */
+const POSITIONS_KEY = "python-notes:positions";
+
+function loadPositions(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(POSITIONS_KEY);
+    if (raw === null) {
+      // 以前只记了最后读的那一节，第一次用时把它带过来
+      const last = loadReading();
+      return last && last.y > 0 ? { [last.id]: last.y } : {};
+    }
+    return JSON.parse(raw) as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+export function loadPosition(id: string): number | null {
+  return loadPositions()[id] ?? null;
+}
+
+/** y 传 0 表示从头读（比如这一节已经读到底了），直接删掉这条。 */
+export function savePosition(id: string, y: number): void {
+  try {
+    const all = loadPositions();
+    if (y > 0) all[id] = y;
+    else delete all[id];
+    localStorage.setItem(POSITIONS_KEY, JSON.stringify(all));
+  } catch {
+    // 同上：存不了就算了
+  }
+}
+
 /** 本地日期 YYYY-MM-DD（不用 toISOString，那是 UTC，晚上 8 点前后会跨天）。 */
 export function dayKey(d: Date = new Date()): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
