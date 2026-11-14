@@ -1925,6 +1925,8 @@ todo-api/
 
 ## 3.2 第一个接口 {#first-api}
 
+下面是一组 RESTful 风格的接口示例：同一个资源 `/users`，用不同的 HTTP 方法表示查、增、改、删。
+
 ```python
 # app/hello.py
 from typing import Annotated
@@ -1992,9 +1994,16 @@ uvicorn app.hello:app --reload
 | 类型是 `BaseModel` 子类 | JSON 请求体 | `{"name": "Tom", "age": 18}` |
 | `Annotated[str, Header()]` | 请求头 | `X-Token: abc` |
 
-- 有默认值是可选，没默认值是必填；必填的没传，或者类型不对（比如 `/users/abc`），自动返回 422。
+- **有默认值是可选，没默认值是必填**：`list_users` 的 `q`、`page` 都有默认值，直接访问 `/users` 也行，`q` 是 `None`、`page` 是 1；`get_user` 的 `user_id` 没默认值，必须传。
+- **必填的没传、或者类型不对，自动返回 422**，函数根本不会执行：
+
+  | 请求 | 为什么 422 |
+  |---|---|
+  | `GET /users/abc` | `user_id` 要 int，`abc` 不是数字 |
+  | `GET /users?page=abc` | `page` 要 int |
+  | `POST /users`，请求体只有 `{"name": "Tom"}` | `User` 里的 `age` 是必填，没传 |
+
 - RESTful：路径用名词复数表示资源，动作用 HTTP 方法表示，不写 `/getUser`、`/users/list` 这种。
-- 固定路径要写在 `{参数}` 路径前面，比如 `/users/me` 要写在 `/users/{user_id}` 前面，否则 `me` 会被当成 `user_id`。
 
 ## 3.3 请求体和响应：pydantic {#pydantic}
 
