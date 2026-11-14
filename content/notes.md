@@ -136,7 +136,7 @@ print(len(s))     # 6       长度
 **数字**：
 
 ```python
-print(7 / 2)     # 3.5   除法结果总是小数
+print(7 / 2)     # 3.6   除法结果总是小数
 print(7 // 2)    # 3     整除
 print(7 % 2)     # 1     取余
 print(2 ** 10)   # 1024  乘方
@@ -529,7 +529,7 @@ print(total)                                   # 333332833333500000
 
 作为函数唯一的参数时，外面那层括号可以省掉，所以写成 `sum(n * n for n in ...)`。
 
-第 3.8 节的数据库会话、第 3.10 节的 pytest fixture 都用 `yield` 写「先准备 → 交出去用 → 用完收尾」，原理就是这里的「暂停再继续」。
+第 3.9 节的数据库会话、第 3.11 节的 pytest fixture 都用 `yield` 写「先准备 → 交出去用 → 用完收尾」，原理就是这里的「暂停再继续」。
 
 ### 装饰器：给函数包一层
 
@@ -813,7 +813,7 @@ for a in [Dog("旺财", "柴犬"), Robot()]:
 
 - 继承适合「是一种」的关系：狗是一种动物。
 - 只是想复用几个函数，不一定要继承：写成普通函数，或者把另一个对象存成属性（组合）更简单。
-- 最常见的继承是框架要求的：`class BalanceError(Exception)`（第 1.11 节）、`class TaskCreate(BaseModel)`（pydantic，第 3.3 节）、`class Task(Base)`（SQLAlchemy，第 3.6 节）。
+- 最常见的继承是框架要求的：`class BalanceError(Exception)`（第 1.11 节）、`class TaskCreate(BaseModel)`（pydantic，第 3.3 节）、`class Task(Base)`（SQLAlchemy，第 3.7 节）。
 
 ## 1.10 dataclass：只存数据的类 {#dataclass}
 
@@ -1856,7 +1856,7 @@ finally:
 | `with httpx.Client() as client:` | 关闭网络连接（第 2.6 节） |
 | `async with httpx.AsyncClient() as client:` | 同上，异步版本 |
 | `async with asyncio.timeout(1):` | 超时就取消里面的代码（第 2.5 节） |
-| `with SessionLocal() as session:` | 关闭数据库会话（第 3.7 节） |
+| `with SessionLocal() as session:` | 关闭数据库会话（第 3.8 节） |
 
 **规则，记住就行**：
 
@@ -1912,7 +1912,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 ```
 
-第 3.8 节依赖注入里带 `yield` 的 `get_session` 也是一样：`yield` 前开数据库会话，`yield` 后关闭，FastAPI 在每个请求前后替你执行。
+第 3.9 节依赖注入里带 `yield` 的 `get_session` 也是一样：`yield` 前开数据库会话，`yield` 后关闭，FastAPI 在每个请求前后替你执行。
 
 ---
 
@@ -1922,11 +1922,11 @@ app = FastAPI(lifespan=lifespan)
 
 **学完这个阶段，你将会：**
 
-- 用 FastAPI 写接口，统一返回格式和错误处理（3.1～3.4）
-- 手写 SQL，再用 SQLAlchemy 在接口里增删改查（3.5～3.9）
-- 给接口写自动化测试，按业务拆分文件（3.10～3.11）
-- 做注册登录，让每个人只能看到自己的数据（3.12～3.13）
-- 用 Alembic 管理表结构的变化，把后端部署上线（3.14～3.15）
+- 用 FastAPI 写接口，统一返回格式和错误处理（3.1～3.5）
+- 手写 SQL，再用 SQLAlchemy 在接口里增删改查（3.6～3.10）
+- 给接口写自动化测试，按业务拆分文件（3.11～3.12）
+- 做注册登录，让每个人只能看到自己的数据（3.13～3.14）
+- 用 Alembic 管理表结构的变化，把后端部署上线（3.15～3.16）
 
 ## 3.1 项目准备 {#project-setup}
 
@@ -1946,7 +1946,7 @@ uv pip install fastapi "uvicorn[standard]" sqlalchemy pytest httpx python-dotenv
 | sqlalchemy | 用 Python 类操作数据库 |
 | pytest | 跑测试 |
 | httpx | 测试里的 `TestClient` 要用它 |
-| python-dotenv | 启动时读取 `.env` 文件里的配置（第 3.6 节） |
+| python-dotenv | 启动时读取 `.env` 文件里的配置（第 3.7 节） |
 
 `"uvicorn[standard]"` 要加引号，否则 zsh 会把方括号当通配符。
 
@@ -1959,7 +1959,8 @@ todo-api/
 │   ├── db.py          # 连数据库、会话
 │   ├── models.py      # 表定义
 │   ├── schemas.py     # 请求 / 响应的数据格式
-│   ├── errors.py      # 统一响应格式和错误
+│   ├── response.py    # 统一响应格式：success
+│   ├── errors.py      # 错误处理：fail 和异常处理器
 │   └── main.py        # 接口
 └── tests/
     ├── __init__.py
@@ -2168,7 +2169,7 @@ class TaskFilter(BaseModel):
 from datetime import datetime
 
 
-class Task:                          # 假装是从数据库查出来的一条任务（第 3.6 节会讲真的）
+class Task:                          # 假装是从数据库查出来的一条任务（第 3.7 节会讲真的）
     def __init__(self) -> None:
         self.id = 1
         self.title = "写笔记"
@@ -2195,21 +2196,84 @@ print(out)
 # ValidationError: Input should be a valid dictionary or instance of TaskOut
 ```
 
-第 3.9 节就是用 `TaskOut.model_validate(task)` 把数据库里查出来的任务转成返回给前端的格式。
+第 3.10 节就是用 `TaskOut.model_validate(task)` 把数据库里查出来的任务转成返回给前端的格式。
 
-## 3.4 统一响应和错误处理 {#errors}
+## 3.4 统一响应格式：success {#errors}
+
+前端调每个接口，都要判断成功还是失败、取出数据、失败时弹出提示。如果每个接口返回的格式都不一样，前端就得一个个特殊处理。所以项目里一般会约定一个**统一的响应格式**，所有接口都按它返回。
+
+这一节先定好格式，再写一个 `success()` 函数，成功时用它包装数据。失败怎么返回，下一节讲。
 
 **约定**：HTTP 状态码照实返回；响应体统一是 `{code, msg, data}`。
 
 | 情况 | HTTP 状态码 | 响应体 |
 |---|---|---|
 | 成功 | 200、201 | `{"code": 200, "msg": "ok", "data": 数据}` |
-| 失败 | 404、409…… | `{"code": -1, "msg": "提示文字", "data": null}` |
+| 失败 | 404、409…… | `{"code": -1, "msg": "提示文字", "data": null}`（下一节） |
+
+```python
+# app/response.py
+from __future__ import annotations
+
+
+def success(data: object = None, msg: str = "ok") -> dict:
+    """成功时把数据包一层：{"code": 200, "msg": msg, "data": data}"""
+    return {"code": 200, "msg": msg, "data": data}
+
+
+# success({"id": 1})          → {"code": 200, "msg": "ok", "data": {"id": 1}}
+# success(msg="删除成功")      → {"code": 200, "msg": "删除成功", "data": None}
+```
+
+**动手试**（不连数据库）：
+
+```python
+# errors_demo.py（放在 todo-api/ 下）
+from fastapi import FastAPI
+
+from app.response import success
+
+app = FastAPI()
+
+TASKS = {1: "写笔记"}          # 先用 dict 假装数据库
+
+
+@app.get("/tasks/{task_id}")
+def get_task(task_id: int) -> dict:
+    return success({"id": task_id, "title": TASKS[task_id]})
+
+
+@app.post("/tasks", status_code=201)
+def create_task(title: str) -> dict:
+    new_id = max(TASKS) + 1
+    TASKS[new_id] = title
+    return success({"id": new_id, "title": title}, msg="创建成功")
+```
+
+`uvicorn errors_demo:app --reload` 启动，实际结果：
+
+| 请求 | HTTP | 响应体 |
+|---|---|---|
+| `GET /tasks/1` | 200 | `{"code": 200, "msg": "ok", "data": {"id": 1, "title": "写笔记"}}` |
+| `POST /tasks?title=读书` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 2, "title": "读书"}}` |
+
+现在查一个不存在的任务，比如 `GET /tasks/99`，`TASKS[99]` 会报 `KeyError`，前端收到 500 和一段纯文本，不是约定的格式。下一节处理这个问题。
+
+## 3.5 错误处理 {#error-handling}
+
+接口出错时，也要按上一节的约定返回 `{"code": -1, "msg": "提示文字", "data": null}`。错误分两种：
+
+- **业务错误**：任务不存在、名字重复……由你在接口里主动抛出；
+- **不是你抛的错误**：前端传的参数不对、访问了不存在的接口、代码里有 bug，这些是 FastAPI 自己发现的。
+
+这一节先处理业务错误，再把第二种也拦截下来，最后附一张常用状态码表。
+
+### 业务错误：fail
 
 接口里只有一条规矩：**成功就 `return success(...)`，失败就 `raise fail(...)`**。
 
 ```python
-# app/errors.py
+# app/errors.py（新建）
 from __future__ import annotations
 
 from fastapi import FastAPI, Request
@@ -2223,12 +2287,7 @@ class ApiError(Exception):
         self.msg = msg           # 给用户看的提示
 
 
-# 1. 成功：return success(数据)
-def success(data: object = None, msg: str = "ok") -> dict:
-    return {"code": 200, "msg": msg, "data": data}
-
-
-# 2. 失败：raise fail(状态码, 提示)
+# 1. 失败：raise fail(状态码, 提示)
 def fail(status: int, msg: str) -> ApiError:
     return ApiError(status, msg)
 
@@ -2238,7 +2297,7 @@ def task_not_found() -> ApiError:
     return fail(404, "没有这个任务")
 
 
-# 3. 统一的错误处理器：任何接口抛出 ApiError，都由这里转成 JSON 响应
+# 2. 统一的错误处理器：任何接口抛出 ApiError，都由这里转成 JSON 响应
 #    install(app) 在启动时调用一次，只负责登记；之后每次有接口 raise fail(...)，
 #    FastAPI 都会自动调用 handle_api_error，接口里不用自己处理
 def install(app: FastAPI) -> None:
@@ -2253,9 +2312,8 @@ def install(app: FastAPI) -> None:
 
 在 `main.py` 里创建 app 之后调用一次：`errors.install(app)`。
 
-- **`success(data, msg)`**：成功时把数据包一层。`success(task)` 得到 `{"code": 200, "msg": "ok", "data": task}`；`success(msg="删除成功")` 得到 `{"code": 200, "msg": "删除成功", "data": null}`。
 - **`fail(status, msg)`**：生成一个错误，前面要加 `raise` 才会抛出去：`raise fail(409, "已经有同名任务了")`。
-- **为什么失败用 `raise` 而不是 `return`**：`raise` 会让函数立刻停下，而且不管嵌套几层都能直接抛到 FastAPI。比如第 3.9 节的 `load_task()` 是被接口调用的普通函数，它在里面 `raise task_not_found()`，接口不用再判断一次返回值。
+- **为什么失败用 `raise` 而不是 `return`**：`raise` 会让函数立刻停下，而且不管嵌套几层都能直接抛到 FastAPI。比如第 3.10 节的 `load_task()` 是被接口调用的普通函数，它在里面 `raise task_not_found()`，接口不用再判断一次返回值。
 - **`install()`**：启动时向 FastAPI 登记「遇到 `ApiError`，就调用 `handle_api_error` 生成 `{code: -1, msg, data: null}`」。`ApiError` 是 `fail()` 背后真正被抛出的异常类，接口里不用直接写它。
 
 **出错时代码怎么走**（以 `GET /tasks/99` 为例）：
@@ -2265,38 +2323,39 @@ def install(app: FastAPI) -> None:
 3. FastAPI 发现是 `ApiError`，调用启动时登记的 `handle_api_error`。
 4. 返回 404 和 `{"code": -1, "msg": "没有这个任务", "data": null}`。
 
-**先动手试**（不连数据库）：
+把上一节的 `errors_demo.py` 改成这样：
 
 ```python
-# errors_demo.py（放在 todo-api/ 下）
+# errors_demo.py
 from fastapi import FastAPI
 
 from app import errors
-from app.errors import fail, success, task_not_found
+from app.errors import fail, task_not_found
+from app.response import success
 
 app = FastAPI()
-errors.install(app)
+errors.install(app)            # 登记错误处理器
 
-TASKS = {1: "写笔记"}          # 先用 dict 假装数据库
+TASKS = {1: "写笔记"}
 
 
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int) -> dict:
     if task_id not in TASKS:
-        raise task_not_found()
+        raise task_not_found()                    # 不存在：404
     return success({"id": task_id, "title": TASKS[task_id]})
 
 
 @app.post("/tasks", status_code=201)
 def create_task(title: str) -> dict:
     if title in TASKS.values():
-        raise fail(409, "已经有同名任务了")
+        raise fail(409, "已经有同名任务了")         # 重名：409
     new_id = max(TASKS) + 1
     TASKS[new_id] = title
     return success({"id": new_id, "title": title}, msg="创建成功")
 ```
 
-`uvicorn errors_demo:app --reload` 启动，实际结果：
+实际结果：
 
 | 请求 | HTTP | 响应体 |
 |---|---|---|
@@ -2305,9 +2364,9 @@ def create_task(title: str) -> dict:
 | `POST /tasks?title=写笔记` | 409 | `{"code": -1, "msg": "已经有同名任务了", "data": null}` |
 | `POST /tasks?title=读书` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 2, "title": "读书"}}` |
 
-### 完整的错误拦截
+### 不是你抛的错误：全部拦截
 
-上面的 `install()` 只拦截了 `ApiError`。下面这些错误不是你 `raise fail(...)` 抛的，而是 FastAPI 自己发现的，所以不会经过 `handle_api_error`，返回的还是 FastAPI 的默认格式：
+上面的 `install()` 只拦截了 `ApiError`。参数不对、接口不存在、代码 bug 这些错误是 FastAPI 自己发现的，不会经过 `handle_api_error`，默认返回的是：
 
 | 情况 | 默认返回 |
 |---|---|
@@ -2315,7 +2374,7 @@ def create_task(title: str) -> dict:
 | 路径不存在、请求方法不对 | 404 `{"detail": "Not Found"}` / 405 `{"detail": "Method Not Allowed"}` |
 | 代码 bug | 500 纯文本 `Internal Server Error`，不是 JSON |
 
-前端按约定读 `res.msg` 时，这几种情况都会拿到 `undefined`。所以正式项目里，会在 `install()` 里把这几种错误也拦截下来，统一成 `{code, msg, data}`。把 `app/errors.py` 换成下面的完整版：
+在 `install()` 里把这几种错误也拦截下来。把 `app/errors.py` 换成下面的完整版：
 
 ```python
 # app/errors.py（完整版）
@@ -2332,10 +2391,6 @@ class ApiError(Exception):
         super().__init__(msg)
         self.status = status
         self.msg = msg
-
-
-def success(data: object = None, msg: str = "ok") -> dict:
-    return {"code": 200, "msg": msg, "data": data}
 
 
 def fail(status: int, msg: str) -> ApiError:
@@ -2404,7 +2459,7 @@ def boom() -> dict:
 | `DELETE /tasks/1` | 405 | `{"code": -1, "msg": "这个接口不支持这种请求方式", "data": null}` |
 | `GET /boom` | 500 | `{"code": -1, "msg": "服务出错了，请稍后再试", "data": null}` |
 
-参数校验失败用 422 还是 400，团队统一就行，很多项目用 400。如果改成 400，第 3.10 节测试里 `test_empty_title_rejected` 的 422 也要跟着改。
+参数校验失败用 422 还是 400，团队统一就行，很多项目用 400。如果改成 400，第 3.11 节测试里 `test_empty_title_rejected` 的 422 也要跟着改。
 
 **常用状态码**：
 
@@ -2418,11 +2473,11 @@ def boom() -> dict:
 | 422 | 参数校验没过（FastAPI 自动返回） |
 | 500 | 服务器出错 |
 
-## 3.5 SQL 基础：PostgreSQL {#sql-basics}
+## 3.6 SQL 基础：PostgreSQL {#sql-basics}
 
 下一节开始用 SQLAlchemy 操作数据库，写的是 Python，但发给数据库的还是 SQL。这一节先不碰 Python，直接在数据库里手写 SQL：建表、增删改查、关联、统计、索引、事务。会了这些，看 SQLAlchemy 打印出来的 SQL、排查慢查询、写统计报表都用得上。
 
-数据库用 **PostgreSQL**（简称 Postgres）：第 3.15 节部署用的 Neon 就是 Postgres，本地和线上用同一种最省事。最后对比一下它和 MySQL 的区别。
+数据库用 **PostgreSQL**（简称 Postgres）：第 3.16 节部署用的 Neon 就是 Postgres，本地和线上用同一种最省事。最后对比一下它和 MySQL 的区别。
 
 ### 装好、连上
 
@@ -2676,7 +2731,7 @@ INSERT INTO users (username) VALUES ('alice') ON CONFLICT (username) DO NOTHING;
 **怎么选**：
 - 新项目、Python 项目更多选 Postgres：类型和约束更严格，`jsonb`、`RETURNING`、`ON CONFLICT` 这些写后端很顺手；Neon、Supabase 等云服务也都是 Postgres。
 - MySQL 在国内互联网公司用得非常多，很多老项目、云厂商的默认选项是它。进了公司用哪个看团队。
-- 用 SQLAlchemy 时，大部分差异被它屏蔽了，换库主要是换连接地址（第 3.14 节有实操）。两个都会一点最好，会了 Postgres 再学 MySQL 很快。
+- 用 SQLAlchemy 时，大部分差异被它屏蔽了，换库主要是换连接地址（第 3.15 节有实操）。两个都会一点最好，会了 Postgres 再学 MySQL 很快。
 
 ### 下一节：SQL 交给 SQLAlchemy 写
 
@@ -2691,7 +2746,7 @@ INSERT INTO users (username) VALUES ('alice') ON CONFLICT (username) DO NOTHING;
 
 练习项目先用 SQLite：一个文件就是一个库，不用装服务。练完把连接地址换成 Postgres，代码基本不用改。
 
-## 3.6 连数据库：SQLAlchemy {#sqlalchemy}
+## 3.7 连数据库：SQLAlchemy {#sqlalchemy}
 
 **一个类 = 一张表，一个对象 = 一行，一个属性 = 一列。**
 
@@ -2780,9 +2835,9 @@ create_engine(DATABASE_URL)             连上数据库
 - `mapped_column(...)`：数据库里这一列的定义。
 - `default=_now`：插入时没给值，就调用 `_now()`。注意传的是函数本身，不加括号；写成 `default=datetime.now(UTC)` 会在程序启动时就算好一个固定时间，所有数据都一样。
 - `onupdate=_now`：这一行被修改、提交时，自动调用 `_now()` 更新这一列。`updated_at` 就靠它：新建时和创建时间基本一样（各调一次 `_now()`，可能差几微秒），之后每次改动都会刷新。
-- **表结构改了要删库重建**：`create_all` 只会建不存在的表，不会给已有的表加列。已经跑过旧版本的话，先删掉 `todo.db` 再启动，否则会报 `no such column: tasks.updated_at`。正式项目用 alembic 处理这种改动（第 3.14 节）。
+- **表结构改了要删库重建**：`create_all` 只会建不存在的表，不会给已有的表加列。已经跑过旧版本的话，先删掉 `todo.db` 再启动，否则会报 `no such column: tasks.updated_at`。正式项目用 alembic 处理这种改动（第 3.15 节）。
 
-## 3.7 增删改查：Session {#session}
+## 3.8 增删改查：Session {#session}
 
 **Session** 是你和数据库之间的一次「会话」：在里面查、加、改、删数据，它会记住你改了什么，等你 `commit()` 时一次性写进数据库。
 
@@ -2798,8 +2853,9 @@ from sqlalchemy import func, select
 
 from app import errors
 from app.db import Base, SessionLocal, engine
-from app.errors import fail, success
+from app.errors import fail
 from app.models import Task
+from app.response import success
 
 app = FastAPI()
 errors.install(app)
@@ -2914,9 +2970,9 @@ uvicorn crud_demo:app --reload
 
 想看 SQLAlchemy 实际发了什么 SQL：在 `db.py` 里改成 `create_engine(DATABASE_URL, echo=True)`，终端会打印每一条 SQL。你会看到 `add` 和改属性时什么都没发，`commit` 时才出现 `INSERT` / `UPDATE` / `DELETE`。
 
-**发现问题了吗**：每个接口都在重复 `with SessionLocal() as session:`、查不到就 `raise fail(404, ...)`。下一节用依赖注入把「开会话」交给 FastAPI，第 3.9 节再把「查不到就 404」抽成 `load_task()`。
+**发现问题了吗**：每个接口都在重复 `with SessionLocal() as session:`、查不到就 `raise fail(404, ...)`。下一节用依赖注入把「开会话」交给 FastAPI，第 3.10 节再把「查不到就 404」抽成 `load_task()`。
 
-## 3.8 依赖注入：拿到数据库会话 {#dependency-injection}
+## 3.9 依赖注入：拿到数据库会话 {#dependency-injection}
 
 每个接口都需要一个 Session，但不想每个接口都重复写「创建、提交、出错回滚、关闭」。把这套流程写成一个函数，接口参数里声明「我要一个 Session」，FastAPI 每次请求都会调用它，把结果传进来。这就是**依赖注入**。
 
@@ -2959,7 +3015,7 @@ def get_task(task_id: int, session: Db) -> dict:
 - **`Annotated[Session, Depends(db_session)]`**：「类型是 Session，值由 `db_session` 提供」。
 - **写接口里自己 `session.commit()`**：② 可能在响应已经发出去之后才执行，万一提交失败，前端会以为成功了。所以写数据的接口在返回前自己提交。
 
-## 3.9 完整的 todo 接口 {#todo-api}
+## 3.10 完整的 todo 接口 {#todo-api}
 
 | 方法 | 路径 | 作用 | 成功时 |
 |---|---|---|---|
@@ -2988,13 +3044,14 @@ from sqlalchemy.orm import Session
 
 from app import errors
 from app.db import Base, Db, engine
-from app.errors import fail, success, task_not_found
+from app.errors import fail, task_not_found
 from app.models import Task
+from app.response import success
 from app.schemas import TaskCreate, TaskList, TaskOut
 
 app = FastAPI(title="todo-api")
 errors.install(app)
-Base.metadata.create_all(engine)   # 练习用：启动时自动建表；正式项目用 alembic 管理表结构（第 3.14 节）
+Base.metadata.create_all(engine)   # 练习用：启动时自动建表；正式项目用 alembic 管理表结构（第 3.15 节）
 
 
 def load_task(session: Session, task_id: int) -> Task:
@@ -3059,7 +3116,7 @@ curl -X PATCH http://127.0.0.1:8000/tasks/1/done
 curl -i http://127.0.0.1:8000/tasks/99      # -i 显示状态码：404 + {"code": -1, "msg": "没有这个任务", "data": null}
 ```
 
-## 3.10 写测试：pytest {#pytest}
+## 3.11 写测试：pytest {#pytest}
 
 `TestClient` 不用启动服务，就能在代码里对 app 发请求。pytest 自动找 `test_` 开头的文件和函数来跑。
 
@@ -3155,9 +3212,9 @@ python -m pytest -q -k 404     # 只跑名字里带 404 的测试
 - **`app.dependency_overrides`**：测试时把某个依赖换掉，这里把真数据库换成内存库，跑完不留垃圾。
 - 内存库 `sqlite://` 要配 `StaticPool`，否则每个连接拿到的都是一个新的空库，会报 `no such table`。
 
-## 3.11 拆文件和配置 {#routers-settings}
+## 3.12 拆文件和配置 {#routers-settings}
 
-到 3.10 为止，所有接口都写在 `main.py` 里。接下来要加注册登录，接口会越来越多，先把结构理顺：**按业务拆成多个路由文件，配置集中到一个地方**。这一节只搬代码、不改功能，搬完 3.10 的测试应该原样通过。
+到 3.11 为止，所有接口都写在 `main.py` 里。接下来要加注册登录，接口会越来越多，先把结构理顺：**按业务拆成多个路由文件，配置集中到一个地方**。这一节只搬代码、不改功能，搬完 3.11 的测试应该原样通过。
 
 ```bash
 uv pip install pydantic-settings
@@ -3172,6 +3229,7 @@ todo-api/
 │   ├── db.py
 │   ├── models.py
 │   ├── schemas.py
+│   ├── response.py
 │   ├── errors.py
 │   ├── routers/           # 新增：按业务分的接口
 │   │   ├── __init__.py
@@ -3182,7 +3240,7 @@ todo-api/
 
 ### 配置：pydantic-settings
 
-3.6 节用 `load_dotenv()` + `os.environ.get(...)` 读配置。配置一多就有问题：读出来全是字符串，要自己转类型；同一个配置在好几个文件里各读一遍，默认值还可能写得不一样。
+3.7 节用 `load_dotenv()` + `os.environ.get(...)` 读配置。配置一多就有问题：读出来全是字符串，要自己转类型；同一个配置在好几个文件里各读一遍，默认值还可能写得不一样。
 
 `pydantic-settings` 用写 pydantic 模型的方式定义配置：字段名就是环境变量名，类型自动转换、校验，不对就启动失败。
 
@@ -3204,7 +3262,7 @@ class Settings(BaseSettings):
 settings = Settings()   # 整个项目共用这一个，别处 from app.config import settings
 ```
 
-- **读取顺序**：环境变量 → `.env` 文件 → 默认值。线上直接设环境变量，本地写 `.env`，代码不用改，和 3.6 节一样。
+- **读取顺序**：环境变量 → `.env` 文件 → 默认值。线上直接设环境变量，本地写 `.env`，代码不用改，和 3.7 节一样。
 - **自动转类型**：`DEBUG=true` 读进来就是 `True`，写成 `DEBUG=abc` 启动直接报错，不会带着错误的配置跑起来。
 - **`extra="ignore"`**：`.env` 里有这个类没定义的配置（比如给别的工具用的），忽略，不报错。
 
@@ -3224,7 +3282,7 @@ engine = create_engine(settings.database_url, echo=settings.debug)   # debug 时
 
 ### 拆路由：APIRouter
 
-`APIRouter` 是「一组接口」，写法和 `app` 一样（`@router.get`、`@router.post`），最后挂到 `app` 上。把 3.9 节 `main.py` 里的接口整个搬过来，`@app` 换成 `@router`，路径去掉 `/tasks` 前缀：
+`APIRouter` 是「一组接口」，写法和 `app` 一样（`@router.get`、`@router.post`），最后挂到 `app` 上。把 3.10 节 `main.py` 里的接口整个搬过来，`@app` 换成 `@router`，路径去掉 `/tasks` 前缀：
 
 ```python
 from __future__ import annotations
@@ -3234,8 +3292,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import Db
-from app.errors import fail, success, task_not_found
+from app.errors import fail, task_not_found
 from app.models import Task
+from app.response import success
 from app.schemas import TaskCreate, TaskList, TaskOut
 
 # prefix：这个文件里的路径都自动加上 /tasks；tags：/docs 里按这个分组
@@ -3305,7 +3364,7 @@ from app.routers import tasks
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    Base.metadata.create_all(engine)   # 启动时建表（第 3.14 节换成 alembic）
+    Base.metadata.create_all(engine)   # 启动时建表（第 3.15 节换成 alembic）
     yield
 
 
@@ -3326,7 +3385,7 @@ python -m pytest -q                 # 还是 5 passed：只是搬了位置，功
 
 以后再加一类业务（比如「标签」），就是新建 `routers/tags.py`，在 `main.py` 里多一行 `include_router`。
 
-## 3.12 注册登录：JWT {#auth}
+## 3.13 注册登录：JWT {#auth}
 
 现在谁都能调接口，所有人看到的也是同一份任务。这一节加上账号：注册、登录，登录后拿到一个 **token**，之后每次请求带上它，后端就知道「你是谁」。下一节再让每个人只看到自己的任务。
 
@@ -3477,8 +3536,9 @@ from fastapi import APIRouter
 from sqlalchemy import select
 
 from app.db import Db
-from app.errors import fail, success
+from app.errors import fail
 from app.models import User
+from app.response import success
 from app.schemas import AuthIn, TokenOut
 from app.security import CurrentUser, create_token, hash_password, verify_password
 
@@ -3512,7 +3572,7 @@ def me(user: CurrentUser) -> dict:           # 声明要 CurrentUser：没登录
 
 `main.py` 里挂上：`from app.routers import auth, tasks`，再加一行 `app.include_router(auth.router)`。`users` 是一张新表，启动时 `create_all` 会自动建上，不用删库。
 
-- **`current_user` 是一个依赖**：和 3.8 节的 `db_session` 一样，接口参数写 `user: CurrentUser`，FastAPI 就先执行它。没带 token、token 被改过、过期了，都会 `raise fail(401, ...)`，接口函数根本不会执行。它自己也依赖 `Db`，依赖可以一层套一层。
+- **`current_user` 是一个依赖**：和 3.9 节的 `db_session` 一样，接口参数写 `user: CurrentUser`，FastAPI 就先执行它。没带 token、token 被改过、过期了，都会 `raise fail(401, ...)`，接口函数根本不会执行。它自己也依赖 `Db`，依赖可以一层套一层。
 - **`HTTPBearer`**：FastAPI 自带的，负责从请求头 `Authorization: Bearer xxx` 里取出 `xxx`。用它还有个好处：`/docs` 右上角会出现 **Authorize** 按钮，填一次 token，之后点着试的请求都会自动带上。
 - **登录失败只说「用户名或密码错误」**：如果分别提示「用户不存在」「密码错误」，别人就能一个个试出哪些用户名注册过。
 - **注册成功直接返回 token**：等于注册完就登录了，前端不用再调一次登录接口。
@@ -3568,7 +3628,7 @@ def test_me_requires_token(client: TestClient) -> None:
     assert r.json()["msg"] == "登录无效，请重新登录"
 ```
 
-## 3.13 一对多和分页 {#relations-paging}
+## 3.14 一对多和分页 {#relations-paging}
 
 能登录了，但任务还是所有人共用一份。这一节给任务加上「属于谁」，每个接口只操作自己的任务；顺便把列表改成分页。
 
@@ -3647,8 +3707,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import Db
-from app.errors import fail, success, task_not_found
+from app.errors import fail, task_not_found
 from app.models import Task, User
+from app.response import success
 from app.schemas import TaskCreate, TaskList, TaskOut
 from app.security import CurrentUser
 
@@ -3734,7 +3795,7 @@ def delete_task(task_id: int, user: CurrentUser, session: Db) -> dict:
 | 3 | 10 | 20 | 第 21～30 条 |
 
 - **`Query(ge=1, le=100)`**：查询参数也能像 `Field` 一样加校验。`size` 不设上限的话，有人传 `size=1000000` 就能把数据库拖垮。
-- **`total` 和列表用同一组条件**：前端靠 `total` 算总页数。3.9 节的 `total` 数的是整张表，没带 `done` 筛选，其实是个 bug；现在两条查询共用 `conditions`，不会再对不上。
+- **`total` 和列表用同一组条件**：前端靠 `total` 算总页数。3.10 节的 `total` 数的是整张表，没带 `done` 筛选，其实是个 bug；现在两条查询共用 `conditions`，不会再对不上。
 - **一定要 `order_by`**：不排序的话，数据库不保证每次返回的顺序一样，翻页时可能有的数据重复出现、有的永远看不到。
 
 > 页数很深（比如第 10000 页）时，`OFFSET` 会越来越慢，因为数据库要先数过前面所有行。那种场景用「游标分页」：前端传上一页最后一条的 id，后端查 `where id < 那个 id`。一般的后台列表用 `page / size` 就够了。
@@ -3786,7 +3847,7 @@ def test_pagination(client: TestClient, auth: dict) -> None:
 
 `test_tasks.py` 开头要 `from tests.conftest import login`：fixture 能自动用，普通函数还是要 import。跑一下应该是 `12 passed`。
 
-## 3.14 数据库迁移：Alembic {#alembic}
+## 3.15 数据库迁移：Alembic {#alembic}
 
 前面每次改表都要删库重建，因为 `create_all` 只会建不存在的表，不会改已有的表。本地数据删了无所谓，**线上的数据是不能删的**。迁移工具解决的就是「表结构要改，数据要留着」：
 
@@ -3960,7 +4021,7 @@ uvicorn app.main:app --reload
 - 本地装 Postgres：Mac 上 `brew install postgresql@17`，或者直接用 Neon 这类云数据库的免费版，下一节部署也会用到。
 - 这一节的代码在 Postgres 上实际跑过：两个迁移都能执行，接口正常。有一点不同：返回的时间会带上数据库所在的时区，比如 `2026-11-12T19:58:42+08:00`，和 SQLite 返回的 `2026-11-12T11:58:42Z` 是同一个时刻，前端用 `new Date(...)` 解析结果一样。
 
-## 3.15 上线：CORS、中间件、部署 {#deploy}
+## 3.16 上线：CORS、中间件、部署 {#deploy}
 
 最后三件事：让浏览器里的前端能调到接口，给每个请求记日志，部署到线上。
 
@@ -4174,14 +4235,14 @@ def test_cors_preflight(client: TestClient) -> None:
 | 能力 | 在哪一节 |
 |---|---|
 | 接口、参数、请求体校验 | 3.2、3.3 |
-| 统一的响应格式和错误处理 | 3.4 |
-| 手写 SQL、Postgres 和 MySQL 的区别 | 3.5 |
-| 数据库增删改查、依赖注入 | 3.6～3.9 |
-| 自动化测试 | 3.10 |
-| 按业务拆文件、配置管理 | 3.11 |
-| 注册登录、密码哈希、JWT | 3.12 |
-| 数据隔离、一对多、分页 | 3.13 |
-| 数据库迁移、换 Postgres | 3.14 |
-| 跨域、请求日志、部署 | 3.15 |
+| 统一的响应格式和错误处理 | 3.4～3.5 |
+| 手写 SQL、Postgres 和 MySQL 的区别 | 3.6 |
+| 数据库增删改查、依赖注入 | 3.7～3.10 |
+| 自动化测试 | 3.11 |
+| 按业务拆文件、配置管理 | 3.12 |
+| 注册登录、密码哈希、JWT | 3.13 |
+| 数据隔离、一对多、分页 | 3.14 |
+| 数据库迁移、换 Postgres | 3.15 |
+| 跨域、请求日志、部署 | 3.16 |
 
 接下来的阶段四，就是在这样的后端里接入大模型。
