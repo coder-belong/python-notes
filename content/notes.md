@@ -2077,7 +2077,7 @@ class TaskCreate(BaseModel):
 
 class TaskOut(BaseModel):
     """返回给前端的一条任务。"""
-    model_config = ConfigDict(from_attributes=True)   # 允许直接从对象的属性读值（第 3.9 节用）
+    model_config = ConfigDict(from_attributes=True)   # 允许直接从对象创建，见本节末尾的补充
 
     id: int
     title: str
@@ -2085,24 +2085,84 @@ class TaskOut(BaseModel):
     note: str | None          # 没有默认值：必须给，但可以是 None
     created_at: datetime      # 输出 JSON 时自动转成 ISO 字符串
     updated_at: datetime
-
-
-class TaskList(BaseModel):
-    items: list[TaskOut]      # 模型可以嵌套
-    total: int
 ```
+
+**请求体：校验前端传来的数据**
+
+接口参数的类型写成 `TaskCreate`，FastAPI 就会从请求体读 JSON，按 `TaskCreate` 校验。校验通过才执行函数，`body` 拿到的是一个 `TaskCreate` 对象；不通过就直接返回 422，函数根本不会执行：
 
 ```python
-TaskCreate(title="写笔记")          # ✅
-TaskCreate(title="")                # ❌ ValidationError：至少 1 个字符
+@app.post("/tasks")
+def create_task(body: TaskCreate) -> dict:
+    print(body)                  # title='写笔记' note=None      是 TaskCreate 对象，不是字典
+    print(body.title, body.note) # 写笔记 None                  用点号取值
+    print(body.model_dump())     # {'title': '写笔记', 'note': None}   要字典就调 model_dump()
+    return {"title": body.title}
 
-body = TaskCreate(title="a")        # 得到的是 TaskCreate 对象，不是字典
-print(body)                         # title='a' note=None
-print(body.title)                   # a          对象用点号取值
-print(body.model_dump())            # {'title': 'a', 'note': None}   model_dump() 才转成字典
+
+# ✅ 请求体 {"title": "写笔记"}
+#    → 200 {"title": "写笔记"}
+
+# ❌ 请求体 {"title": ""}：title 至少 1 个字符
+#    → 422 {"detail": [{"type": "string_too_short", "loc": ["body", "title"], "msg": "String should have at least 1 character", ...}]}
+
+# ❌ 请求体 {"note": "x"}：没传必填的 title
+#    → 422 {"detail": [{"type": "missing", "loc": ["body", "title"], "msg": "Field required", ...}]}
+
+# ❌ 请求体 {"title": 123}：title 要字符串，传了数字
+#    → 422 {"detail": [{"type": "string_type", "loc": ["body", "title"], "msg": "Input should be a valid string", ...}]}
 ```
 
-**`from_attributes=True`：从对象直接转成 `TaskOut`**
+`loc` 说明是哪里出了错：`["body", "title"]` 就是请求体里的 `title`。下一节会把这种默认格式改成项目统一的 `{code, msg, data}`。
+
+**响应体：只返回模型里定义的字段**
+
+接口的返回类型写成 pydantic 模型，FastAPI 会按模型过滤一遍，模型里没有的字段不会返回给前端。直接返回 dict 就没有这一步：
+
+```python
+class UserOut(BaseModel):
+    id: int
+    username: str
+
+
+row = {"id": 1, "username": "tom", "password_hash": "$argon2id$..."}   # 从数据库查出来的一行
+
+
+@app.get("/a")
+def a() -> dict:                # 返回 dict：数据里有什么就返回什么
+    return row
+# 前端收到：{"id":1,"username":"tom","password_hash":"$argon2id$..."}   密码哈希也带出去了
+
+
+@app.get("/b")
+def b() -> UserOut:             # 返回类型写成 UserOut：按模型过滤
+    return row                  # 返回的还是同一个 row
+# 前端收到：{"id":1,"username":"tom"}                                  password_hash 被去掉了
+```
+
+所以请求体用 pydantic **校验**前端传来的数据，响应体用 pydantic **规定和过滤**返回给前端的数据。
+
+**pydantic 字段的常用写法**：上面 `TaskCreate`、`TaskOut` 里的字段只写了类型，还可以给字段加更多限制。下面这个 `TaskFilter` 是一个「查任务列表时的筛选条件」模型，演示几种常见的字段写法：
+
+```python
+from typing import Literal
+
+class TaskFilter(BaseModel):
+    status: Literal["todo", "doing", "done"]          # 只能是这几个值之一
+    page: int = Field(1, ge=1)                        # 默认 1，最小 1
+    size: int = Field(20, ge=1, le=100, description="每页条数")   # description 显示在 /docs 里
+```
+
+| `Field` 参数 | 作用 |
+|---|---|
+| 第一个位置参数 | 默认值（不写就是必填） |
+| `min_length` / `max_length` | 字符串长度 |
+| `ge` / `le` | 数字 大于等于 / 小于等于 |
+| `description` | 文档里的说明 |
+
+### 补充：`from_attributes=True`，从对象直接转成 `TaskOut`
+
+上面 `TaskOut` 里写的 `model_config = ConfigDict(from_attributes=True)`，作用是可以从一个对象直接创建 `TaskOut`：
 
 ```python
 from datetime import datetime
@@ -2136,33 +2196,6 @@ print(out)
 ```
 
 第 3.9 节就是用 `TaskOut.model_validate(task)` 把数据库里查出来的任务转成返回给前端的格式。
-
-在接口里，参数类型写成 `TaskCreate`，FastAPI 就从请求体读 JSON、校验，不通过自动返回 422，函数根本不会执行：
-
-```python
-@app.post("/tasks")
-def create_task(body: TaskCreate) -> dict:
-    print(body.title, body.note)     # 已经校验好，直接用点号取值
-    ...
-```
-
-**常用写法**：
-
-```python
-from typing import Literal
-
-class TaskFilter(BaseModel):
-    status: Literal["todo", "doing", "done"]          # 只能是这几个值之一
-    page: int = Field(1, ge=1)                        # 默认 1，最小 1
-    size: int = Field(20, ge=1, le=100, description="每页条数")   # description 显示在 /docs 里
-```
-
-| `Field` 参数 | 作用 |
-|---|---|
-| 第一个位置参数 | 默认值（不写就是必填） |
-| `min_length` / `max_length` | 字符串长度 |
-| `ge` / `le` | 数字 大于等于 / 小于等于 |
-| `description` | 文档里的说明 |
 
 ## 3.4 统一响应和错误处理 {#errors}
 
@@ -2935,6 +2968,15 @@ def get_task(task_id: int, session: Db) -> dict:
 | GET | `/tasks/{id}` | 详情；不存在则 404 | 200 |
 | PATCH | `/tasks/{id}/done` | 标记完成 | 200 |
 | DELETE | `/tasks/{id}` | 删除 | 200 |
+
+列表接口要同时返回「这一页的任务」和「总共几条」，在 `schemas.py` 末尾加一个模型：
+
+```python
+# app/schemas.py（末尾加上）
+class TaskList(BaseModel):
+    items: list[TaskOut]      # 模型可以嵌套：items 是 TaskOut 的列表
+    total: int
+```
 
 ```python
 # app/main.py
