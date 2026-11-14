@@ -1408,191 +1408,124 @@ Cursor / VS Code 装好 Python 插件后：
 
 ## 2.5 async / await {#async}
 
-`async def` 定义的是**异步函数**：遇到要等待的操作（网络请求、sleep）时，可以先让出去执行别的任务，等好了再回来。调大模型、同时请求好几个接口都会用到。
+后端程序大部分时间都在「等」：等接口返回、等数据库查询、等大模型回答。async 让程序在等一件事的时候，先去做别的事，不用干等。
 
-> **先看这里**：第一遍只要看懂下面这个例子和后面的 7 条规则，就够用到阶段四。后面标了「进阶」的小节，用到再看。
+### 先看效果：一个一个等 vs 一起等
+
+同样是 3 个「要等 1 秒」的任务。普通写法，一个等完再等下一个，一共 3 秒：
+
+```python
+import time
+
+
+def fetch(name: str) -> str:
+    time.sleep(1)                       # 模拟等接口返回 1 秒
+    return f"{name} 好了"
+
+
+start = time.perf_counter()
+results = [fetch("A"), fetch("B"), fetch("C")]   # 一个等完再等下一个
+print(results)                                   # ['A 好了', 'B 好了', 'C 好了']
+print(f"用时 {time.perf_counter() - start:.1f}s")  # 用时 3.0s
+```
+
+async 写法，3 个一起等，一共 1 秒：
 
 ```python
 import asyncio
 import time
 
 
-async def fetch(name: str, seconds: float) -> str:
-    await asyncio.sleep(seconds)       # 等待时让出去，别的任务可以先跑
+async def fetch(name: str) -> str:      # ① async def：定义异步函数
+    await asyncio.sleep(1)              # ② await：在这里等，等的时候让别的任务先跑
     return f"{name} 好了"
 
 
 async def main() -> None:
     start = time.perf_counter()
-    results = await asyncio.gather(    # 同时跑三个，等它们都完成
-        fetch("A", 1), fetch("B", 1), fetch("C", 1),
-    )
+    # ③ gather：三个一起开始、一起等，全部完成后按顺序返回结果列表
+    results = await asyncio.gather(fetch("A"), fetch("B"), fetch("C"))
     print(results)                                   # ['A 好了', 'B 好了', 'C 好了']
-    print(f"用时 {time.perf_counter() - start:.1f}s")  # 用时 1.0s，不是 3 秒
+    print(f"用时 {time.perf_counter() - start:.1f}s")  # 用时 1.0s
 
 
-asyncio.run(main())                    # 程序入口启动事件循环
+asyncio.run(main())                     # ④ 程序入口：启动 main，整个程序只写一次
 ```
 
-**规则，照着写就行**：
+### 规则，记住就行
 
 1. 异步函数用 `async def` 定义。
-2. 调用异步函数要拿结果，前面必须加 `await`：`result = await fetch("A", 1)`。
+2. 调用异步函数要拿结果，前面必须加 `await`：`result = await fetch("A")`。
 3. `await` 只能写在 `async def` 里面。
-4. 程序最外层用 `asyncio.run(main())` 启动，整个程序只写这一次。
-5. 几件事想同时等，用 `await asyncio.gather(a(), b(), c())`，结果按顺序放在列表里。
-6. 异步函数里要等一会儿，用 `await asyncio.sleep(秒)`，不能用 `time.sleep()`。
-7. 写 FastAPI 时不用写 `asyncio.run`，框架会替你启动；接口用普通 `def` 也可以。
+4. 几件事想一起等，用 `await asyncio.gather(a(), b(), c())`，结果按顺序放在列表里。
+5. 程序最外层用 `asyncio.run(main())` 启动，整个程序只写这一次。
+6. 异步函数里要等一会儿，用 `await asyncio.sleep(秒)`，不能用 `time.sleep()`，它会卡住所有任务。
+7. 写 FastAPI 时不用写 `asyncio.run`，框架会替你启动。
 
----
+### 常见错误
 
-**下面是进阶内容**：后台任务、超时、取消、限制并发、出错处理。第一遍可以跳过，做 AI 应用调大模型时再回来看。
-
-### create_task：先放到后台跑（进阶）
-
-`await` 一个异步函数会一直等它做完。想让它在后台先跑着、自己接着干别的，用 `asyncio.create_task`，需要结果时再 `await`：
+**忘了写 `await`**：函数不会执行，拿到的不是结果，而是一个「还没执行的协程对象」，还会出警告：
 
 ```python
 import asyncio
 
 
-async def download(name: str) -> str:
+async def fetch(name: str) -> str:
     await asyncio.sleep(1)
-    return f"{name} 下载完了"
+    return f"{name} 好了"
 
 
 async def main() -> None:
-    task = asyncio.create_task(download("a.zip"))   # 马上开始跑，不等
-    print("先干点别的")
-    result = await task                              # 现在才等它的结果
+    result = fetch("A")                 # 忘了写 await
     print(result)
 
 
 asyncio.run(main())
-# 先干点别的
-# a.zip 下载完了
+# <coroutine object fetch at 0x10a635240>
+# RuntimeWarning: coroutine 'fetch' was never awaited
 ```
 
-`gather` 其实就是帮你把多个异步函数都 `create_task`，再一起等。
+**在普通 `def` 里写 `await`**：直接报语法错误，程序跑不起来：
 
-### 超时：`asyncio.timeout`（进阶）
+```python
+import asyncio
 
-调接口、调大模型都可能卡住，一定要设超时：
+
+async def fetch(name: str) -> str:
+    await asyncio.sleep(1)
+    return f"{name} 好了"
+
+
+def main() -> None:                     # 普通 def，不是 async def
+    result = await fetch("A")
+# SyntaxError: 'await' outside async function
+```
+
+### 设置超时：`asyncio.timeout`
+
+调接口、调大模型都可能卡住，要设一个最长等待时间，超时就不等了：
 
 ```python
 import asyncio
 
 
 async def slow() -> str:
-    await asyncio.sleep(3)
+    await asyncio.sleep(3)              # 模拟一个要 3 秒的请求
     return "好了"
 
 
 async def main() -> None:
     try:
-        async with asyncio.timeout(1):     # 里面的代码超过 1 秒就取消
+        async with asyncio.timeout(1):  # 里面的代码超过 1 秒就取消
             print(await slow())
     except TimeoutError:
         print("超过 1 秒，不等了")
 
 
-asyncio.run(main())    # 超过 1 秒，不等了
+asyncio.run(main())                     # 超过 1 秒，不等了
 ```
 
-`asyncio.timeout` 是 Python 3.11 加的；老代码里常见的 `await asyncio.wait_for(slow(), timeout=1)` 是同一个意思。
-
-### 取消任务（进阶）
-
-用户关掉页面、点了「停止生成」，后台还在跑的任务要能停下来。`task.cancel()` 会在任务当前 `await` 的地方抛出 `CancelledError`：
-
-```python
-import asyncio
-
-
-async def worker() -> None:
-    try:
-        while True:
-            print("干活中")
-            await asyncio.sleep(0.4)
-    except asyncio.CancelledError:
-        print("被取消了，收尾")       # 关连接、存进度之类的清理放这里
-        raise                        # 清理完要接着抛出去，不能把取消吞掉
-
-
-async def main() -> None:
-    task = asyncio.create_task(worker())
-    await asyncio.sleep(1)
-    task.cancel()                    # 发出取消
-    try:
-        await task                   # 等它真的停下
-    except asyncio.CancelledError:
-        print("已经停了")
-
-
-asyncio.run(main())
-# 干活中
-# 干活中
-# 干活中
-# 被取消了，收尾
-# 已经停了
-```
-
-超时其实就是「到点自动 cancel」，所以超时和取消走的是同一套机制。
-
-### 限制同时跑几个：Semaphore（进阶）
-
-`gather` 一下子开 100 个请求，对方服务器可能直接把你限流。用 `Semaphore`（信号量）控制最多同时跑几个：
-
-```python
-import asyncio
-import time
-
-
-async def fetch(i: int, sem: asyncio.Semaphore) -> int:
-    async with sem:                  # 拿到名额才进去，最多 3 个同时在里面
-        await asyncio.sleep(1)
-        return i
-
-
-async def main() -> None:
-    sem = asyncio.Semaphore(3)
-    start = time.perf_counter()
-    results = await asyncio.gather(*(fetch(i, sem) for i in range(9)))
-    print(results)                                     # [0, 1, 2, 3, 4, 5, 6, 7, 8]
-    print(f"用时 {time.perf_counter() - start:.1f}s")    # 用时 3.0s：9 个任务，每次 3 个
-
-
-asyncio.run(main())
-```
-
-### 其中一个出错了怎么办（进阶）
-
-`gather` 里有一个任务抛错，`await gather(...)` 就会抛出这个错，其他任务的结果也拿不到。加上 `return_exceptions=True`，错误会和正常结果一起放进列表，自己挨个判断：
-
-```python
-import asyncio
-
-
-async def job(n: int) -> int:
-    if n == 2:
-        raise ValueError("2 号失败")
-    return n * 10
-
-
-async def main() -> None:
-    results = await asyncio.gather(job(1), job(2), job(3), return_exceptions=True)
-    for r in results:
-        if isinstance(r, Exception):
-            print("失败：", r)
-        else:
-            print("成功：", r)
-
-
-asyncio.run(main())
-# 成功： 10
-# 失败： 2 号失败
-# 成功： 30
-```
+`async with` 是 `with` 的异步版本（第 2.8 节）。超时后会抛出 `TimeoutError`，用 `try / except` 接住。
 
 ## 2.6 用 httpx 发 HTTP 请求 {#httpx}
 
@@ -1838,13 +1771,45 @@ asyncio.run(main())
 
 ## 2.8 with 和上下文管理器 {#context-manager}
 
-第 1.12 节用过 `with open(...)`：进入时拿到资源，离开时自动收尾，中途出错也会收尾。能放在 `with` 后面的对象叫**上下文管理器**。文件、httpx 的 `Client`、数据库会话、锁都是。
+有些东西用之前要打开，用完一定要关闭：文件、网络连接、数据库会话。`with` 的作用是**离开代码块时自动关闭**，不管是正常执行完还是中途出错。
 
-后端里到处都是这种「先准备、用完一定要收尾」的事：开数据库会话要关、开事务要提交或回滚、服务启动时建连接池、关闭时释放。这一节讲怎么自己写一个。
+### with 怎么用
 
-### 用 `@contextmanager` 写一个
+```python
+# with 写法：离开 with 时自动关闭文件
+with open("a.txt", "w", encoding="utf-8") as f:   # f 就是打开的文件
+    f.write("hi")
+# 走到这里，文件已经关了
 
-最常用的写法：写一个带 `yield` 的函数，加上 `@contextmanager`。`yield` 前面是「进入时做的事」，后面是「离开时做的事」，`yield` 出去的值就是 `as` 拿到的东西。
+# 不用 with 的等价写法：要自己用 try / finally 保证一定关闭
+f = open("a.txt", "w", encoding="utf-8")
+try:
+    f.write("hi")
+finally:
+    f.close()            # 中途出错也会执行
+```
+
+能放在 `with` 后面的对象叫**上下文管理器**。后面会经常见到这些：
+
+| 写法 | 离开时自动做什么 |
+|---|---|
+| `with open(...) as f:` | 关闭文件（第 1.12 节） |
+| `with httpx.Client() as client:` | 关闭网络连接（第 2.6 节） |
+| `async with httpx.AsyncClient() as client:` | 同上，异步版本 |
+| `async with asyncio.timeout(1):` | 超时就取消里面的代码（第 2.5 节） |
+| `with SessionLocal() as session:` | 关闭数据库会话（第 3.7 节） |
+
+**规则，记住就行**：
+
+1. 用完要关闭、要释放的东西，用 `with` 打开。
+2. `as` 后面的变量，就是打开后拿到的东西。
+3. 离开 `with` 时自动收尾，出错了也会。
+4. 异步的写 `async with`，只能写在 `async def` 里。
+5. 一次打开多个，用逗号隔开：`with open("a.txt") as src, open("b.txt", "w") as dst:`。
+
+### 自己写一个：@contextmanager
+
+写一个带 `yield` 的函数，加上 `@contextmanager`：`yield` 前面是进入 `with` 时做的事，后面是离开时做的事。
 
 ```python
 import time
@@ -1853,11 +1818,12 @@ from contextlib import contextmanager
 
 @contextmanager
 def timer(label: str):
-    start = time.perf_counter()          # 进入 with 时执行
+    start = time.perf_counter()     # ① 进入 with 时执行
     try:
-        yield                            # 在这里暂停，去执行 with 里面的代码
+        yield                       # ② 暂停在这里，去执行 with 里面的代码
     finally:
-        print(f"{label} 用了 {time.perf_counter() - start:.1f}s")   # 离开 with 时执行
+        # ③ with 里面的代码执行完（或者出错）后，回到这里执行
+        print(f"{label} 用了 {time.perf_counter() - start:.1f}s")
 
 
 with timer("睡一会"):
@@ -1865,94 +1831,11 @@ with timer("睡一会"):
 # 睡一会 用了 0.5s
 ```
 
-`yield` 外面要包 `try / finally`：`with` 里面出了错，错误会从 `yield` 那一行抛出来，不写 `finally` 的话收尾代码就跳过了。
+`yield` 外面要包 `try / finally`，否则 `with` 里面出错时，第 ③ 步会被跳过。
 
-### 出错时做不同的事：事务
+### FastAPI 里会见到的
 
-`yield` 外面也能用 `except`，出错时做一件事、没出错做另一件。数据库事务就是这个结构：全部成功才提交，有一步出错就回滚，然后把错误接着往外抛。
-
-```python
-from contextlib import contextmanager
-
-
-class FakeDB:                            # 假装是一个数据库连接
-    def commit(self) -> None:
-        print("提交")
-
-    def rollback(self) -> None:
-        print("回滚")
-
-    def close(self) -> None:
-        print("关闭连接")
-
-
-@contextmanager
-def transaction():
-    db = FakeDB()
-    try:
-        yield db                         # as 拿到的就是 db
-        db.commit()                      # with 里没出错才走到这里
-    except Exception:
-        db.rollback()
-        raise                            # 回滚完接着抛，不能把错误吞掉
-    finally:
-        db.close()
-
-
-with transaction() as db:
-    print("写入两条数据")
-# 写入两条数据
-# 提交
-# 关闭连接
-
-try:
-    with transaction() as db:
-        print("写入第一条")
-        raise ValueError("第二条数据不对")
-except ValueError as e:
-    print("出错了：", e)
-# 写入第一条
-# 回滚
-# 关闭连接
-# 出错了： 第二条数据不对
-```
-
-SQLAlchemy 的 `with session.begin():` 做的就是这件事。
-
-### 用类写：`__enter__` 和 `__exit__`
-
-`@contextmanager` 背后就是这两个方法：进入 `with` 时调用 `__enter__`，它的返回值给 `as`；离开时调用 `__exit__`。库的源码里常见这种写法，能看懂就行，自己写一般用 `@contextmanager`。
-
-```python
-import time
-
-
-class Timer:
-    def __enter__(self) -> "Timer":
-        self.start = time.perf_counter()
-        return self                      # 给 as
-
-    def __exit__(self, exc_type, exc, tb) -> None:   # 出错时三个参数是错误信息，没出错都是 None
-        self.seconds = time.perf_counter() - self.start
-
-
-with Timer() as t:
-    time.sleep(0.2)
-print(f"{t.seconds:.1f}s")    # 0.2s
-```
-
-### 一次开好几个
-
-```python
-with open("a.txt", encoding="utf-8") as src, open("b.txt", "w", encoding="utf-8") as dst:
-    dst.write(src.read())    # 两个文件都会自动关
-```
-
-### async 版本：`async with` 和 `@asynccontextmanager`
-
-进入、离开时要 `await` 的（异步建连接、异步关闭），用 `async with`，第 2.5、2.6 节的 `asyncio.timeout`、`httpx.AsyncClient` 都是。自己写就把 `@contextmanager` 换成 `@asynccontextmanager`，函数改成 `async def`。
-
-FastAPI 的 `lifespan` 就是这么写的：`yield` 之前是服务启动时做的事，之后是服务关闭时做的事。
+FastAPI 的 `lifespan` 就是一个异步的上下文管理器：`yield` 前是服务启动时做的事，`yield` 后是服务关闭时做的事。
 
 ```python
 from contextlib import asynccontextmanager
@@ -1970,7 +1853,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 ```
 
-第 3.8 节依赖注入里带 `yield` 的 `get_session`，也是同一个思路：`yield` 前开会话，`yield` 后关会话，只是由 FastAPI 在每个请求前后替你执行。
+第 3.8 节依赖注入里带 `yield` 的 `get_session` 也是一样：`yield` 前开数据库会话，`yield` 后关闭，FastAPI 在每个请求前后替你执行。
 
 ---
 
@@ -2579,7 +2462,7 @@ SELECT count(*) FROM tasks WHERE user_id = 1 AND done;   -- 1：回到改之前
 
 - 确定没问题就把 `ROLLBACK` 换成 `COMMIT`，改动才真正保存，别的连接才看得到。
 - 不写 `BEGIN` 时，每条语句自己就是一个事务，执行完自动提交。
-- 转账这类「扣 A 的钱、加 B 的钱」必须放在一个事务里，中间出错就回滚，不会出现只扣不加。第 2.8 节 `with` 里的 `commit` / `rollback`、SQLAlchemy 的 `session.commit()`，背后都是这个。
+- 转账这类「扣 A 的钱、加 B 的钱」必须放在一个事务里，中间出错就回滚，不会出现只扣不加。SQLAlchemy 的 `session.commit()` / `session.rollback()`，背后都是这个。
 - 手动练习时，改数据前先 `BEGIN`，看结果对了再 `COMMIT`，不对就 `ROLLBACK`，比直接改安全。
 
 ### 有就更新、没有就插入：upsert

@@ -26,7 +26,7 @@
 - [x] 用 httpx 发 HTTP 请求：同步 / 异步、超时、重试（第 2.6 节）
 - [x] 调试：看懂报错、断点、`pdb`（第 2.4 节）
 - [x] 线程、进程、协程的区别，GIL（第 2.7 节）
-- [x] with 和上下文管理器：`@contextmanager`、事务、`lifespan`（第 2.8 节）
+- [x] with 和上下文管理器：`@contextmanager`、`lifespan`（第 2.8 节）
 - [ ] Git、代码规范：Ruff 在第 2.2 节（次要：Git 平时一直在用）
 
 ## 阶段三：FastAPI 后端开发（第 5～6 周）
