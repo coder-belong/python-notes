@@ -311,16 +311,42 @@ print(users[1])                          # {'id': 2, 'name': 'Jerry', 'age': 20}
 
 ## 1.4 推导式：一行生成列表 / 字典 {#comprehensions}
 
+推导式就是「新建空列表 + for 循环 + append」的简写，每组上面是推导式，下面是等价的普通写法：
+
 ```python
 nums = [1, 2, 3, 4]
 
+# ① 每个数算平方
 squares = [n * n for n in nums]                 # [1, 4, 9, 16]
-evens = [n for n in nums if n % 2 == 0]         # [2, 4]   带过滤条件
 
+squares = []
+for n in nums:
+    squares.append(n * n)
+
+# ② 带过滤条件：只要偶数
+evens = [n for n in nums if n % 2 == 0]         # [2, 4]
+
+evens = []
+for n in nums:
+    if n % 2 == 0:
+        evens.append(n)
+
+# ③ 从字典列表里取一个字段
 rows = [{"id": 1, "name": "Tom"}, {"id": 2, "name": "Jerry"}]
 names = [r["name"] for r in rows]               # ['Tom', 'Jerry']
-by_id = {r["id"]: r["name"] for r in rows}      # {1: 'Tom', 2: 'Jerry'}  字典推导式
-print(squares, evens, names, by_id)
+
+names = []
+for r in rows:
+    names.append(r["name"])
+
+# ④ 字典推导式：用 {键: 值}
+by_id = {r["id"]: r["name"] for r in rows}      # {1: 'Tom', 2: 'Jerry'}
+
+by_id = {}
+for r in rows:
+    by_id[r["id"]] = r["name"]
+
+print(squares, evens, names, by_id)             # [1, 4, 9, 16] [2, 4] ['Tom', 'Jerry'] {1: 'Tom', 2: 'Jerry'}
 ```
 
 读法：`[n * n for n in nums]` = 「对 nums 里的每个 n，算出 n * n，放进新列表」。逻辑复杂时还是老老实实写 for 循环。
@@ -1703,18 +1729,31 @@ import httpx
 
 
 def get_with_retry(url: str, retries: int = 3) -> httpx.Response:
+    # 最多试 retries 次，attempt 依次是 1、2、3（从 1 开始数，打印「第 1 次」更自然）
     for attempt in range(1, retries + 1):
         try:
+            # ① 发请求，最多等 5 秒
             r = httpx.get(url, timeout=5)
-            if r.status_code < 500 and r.status_code != 429:   # 成功，或者重试也没用的错误
+
+            # ② 收到响应了：看值不值得重试
+            #    5xx（对方临时出错）、429（被限流）→ 等一会儿可能就好，要重试
+            #    其他（成功，或 404、401 这类请求本身有问题的）→ 重试也一样，直接返回
+            should_retry = r.status_code >= 500 or r.status_code == 429
+            if not should_retry:
                 return r
             print(f"第 {attempt} 次：{r.status_code}")
-        except httpx.TransportError as e:                       # 超时、连不上
-            print(f"第 {attempt} 次：{type(e).__name__}")
-        if attempt < retries:
-            time.sleep(2 ** (attempt - 1))                      # 等 1 秒、2 秒……越来越久
-    raise RuntimeError(f"重试 {retries} 次都失败了：{url}")
 
+        except httpx.TransportError as e:
+            # ③ 根本没收到响应：超时、断网、连不上，也要重试
+            print(f"第 {attempt} 次：{type(e).__name__}")   # 打印错误类型，比如 ConnectTimeout
+
+        # ④ 不是最后一次就等一会儿再试：1 秒、2 秒、4 秒……越等越久（指数退避）
+        #    对方已经忙不过来了，大家还马上一起重试只会更糟
+        if attempt < retries:
+            time.sleep(2 ** (attempt - 1))
+
+    # ⑤ 走到这里说明每次都失败了（成功的话上面早就 return 了）。次数要有上限，放弃并报错
+    raise RuntimeError(f"重试 {retries} 次都失败了：{url}")
 
 try:
     get_with_retry("https://httpbin.org/status/503")
@@ -1726,98 +1765,52 @@ except RuntimeError as e:
 # 重试 3 次都失败了：https://httpbin.org/status/503
 ```
 
-- **等待时间越来越长**（1、2、4 秒）叫指数退避：对方已经忙不过来了，大家还一起狂刷只会更糟。
-- **次数要有上限**：一直失败就放弃，把错误报出来。
-- 实际项目里可以用 `tenacity` 这类库，用装饰器写重试，原理和上面一样。
+实际项目里一般不自己写，而是用现成的库（比如 `tenacity`），或者用 SDK 自带的重试，OpenAI、Anthropic 的 SDK 都自带。这段代码的作用是让你知道它们背后在干什么。
 
 ## 2.7 线程、进程、协程和 GIL {#concurrency}
 
-「同时做好几件事」在 Python 里有三种办法。面试常问它们的区别，写代码时也要知道该用哪个。
+后端要同时处理很多请求，Python 里有三种办法：进程、线程、协程。先搞清楚它们是什么，再记住什么场景用哪个。
 
-### 三者的区别
+### 进程、线程、协程是什么
 
-| | 进程 | 线程 | 协程（async） |
-|---|---|---|---|
-| 是什么 | 一个独立运行的程序，有自己的内存 | 进程里的一条执行线路，同一个进程的线程共享内存 | 一个线程里的很多个任务，靠 `await` 主动让出 |
-| 谁来切换 | 操作系统 | 操作系统（随时可能切走） | 自己：只在 `await` 的地方切换 |
-| 开销 | 大（几十 MB 内存，启动慢） | 中 | 很小（开几万个都没问题） |
-| 能不能多核一起算 | 能 | **不能**（因为 GIL，见下面） | 不能（只有一个线程） |
-| 适合 | 大量计算 | 等待：网络、文件、数据库 | 大量等待：成百上千个网络请求 |
+- **进程**：一个运行起来的程序。你运行 `python app.py` 或者 `uvicorn app.main:app`，系统里就多了一个进程。每个进程有自己的内存，进程之间不共享数据。
+- **线程**：进程里真正执行代码的单位。一个进程至少有一个线程（主线程），也可以开多个，同一个进程里的线程共享内存。
+- **协程**：就是第 2.5 节的 `async def`。一个线程里可以跑很多个协程，某个协程执行到 `await` 开始等待时，就换另一个协程执行。
 
-### GIL：为什么 Python 多线程不能一起算
-
-GIL（全局解释器锁）是 CPython（就是我们平时用的 Python）里的一把锁：**同一时刻只有一个线程在执行 Python 代码**。所以开再多线程，纯计算的部分也是轮流跑，不会更快。
-
-但线程在**等待**的时候（等网络、等磁盘、`time.sleep`）会把锁放开，别的线程可以接着跑。所以：
-
-- **等待为主（IO 密集）**：多线程有用，等的时间能重叠起来。
-- **计算为主（CPU 密集）**：多线程没用，要用多进程：每个进程有自己的 GIL，可以真正用上多个 CPU 核。
-
-实际跑一下就知道了（这段要存成文件运行）：
-
-```python
-# cpu_demo.py
-import time
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-
-
-def count(n: int) -> int:          # 纯计算：从 0 加到 n
-    total = 0
-    for i in range(n):
-        total += i
-    return total
-
-
-def timed(label: str, run) -> None:
-    start = time.perf_counter()
-    run()
-    print(f"{label}：{time.perf_counter() - start:.1f}s")
-
-
-if __name__ == "__main__":          # 用多进程时必须写这一行
-    jobs = [20_000_000] * 4
-
-    timed("一个一个算", lambda: [count(n) for n in jobs])
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        timed("4 个线程", lambda: list(pool.map(count, jobs)))
-    with ProcessPoolExecutor(max_workers=4) as pool:
-        timed("4 个进程", lambda: list(pool.map(count, jobs)))
-```
+拿一个 FastAPI 后端来看，三者是一层套一层的关系：
 
 ```
-一个一个算：1.2s
-4 个线程：1.1s       ← 和一个一个算差不多：GIL 让线程只能轮流算
-4 个进程：0.3s       ← 4 个核一起算，快了 4 倍
+进程：uvicorn 运行的后端程序
+└── 线程：主线程
+    ├── 协程：请求 A    await 等数据库返回中
+    ├── 协程：请求 B    正在执行
+    └── 协程：请求 C    await 等大模型返回中
 ```
 
-（具体秒数看电脑，比例差不多。）多进程必须写 `if __name__ == "__main__":`：新进程启动时会重新导入这个文件，不加这个判断，每个新进程又会去开新进程。
+一个线程同一时刻只执行一个协程，但大部分时间请求都在等（等数据库、等接口），等的时候让给别的请求，所以一个线程就能同时应付很多请求。
 
-### 等待为主：线程池
+### GIL：Python 的一个限制
 
-同样是 5 个「等 1 秒」的任务，用线程池一起等，总共 1 秒：
+GIL 是 Python 里的一把锁，规定**同一个进程里，同一时刻只有一个线程在执行 Python 代码**。结果是：
 
-```python
-import time
-from concurrent.futures import ThreadPoolExecutor
+- **等待为主**（网络请求、读写数据库、读写文件）：多线程、协程都有用，等待的时间可以叠在一起。
+- **计算为主**（大循环、处理图片、数据分析）：多线程没用，开再多线程也是轮流算。要用**多进程**，每个进程有自己的 GIL，才能用上多个 CPU 核。
 
+写后端、调大模型几乎都是在「等」，所以 GIL 平时影响不大。
 
-def wait_io(i: int) -> int:
-    time.sleep(1)                   # 模拟等网络、等数据库
-    return i
+### 怎么选
 
+| 场景 | 用什么 |
+|---|---|
+| 写 FastAPI 接口、调接口、调大模型 | `async def` + `await`（第 2.5 节） |
+| FastAPI 接口里用的库只有同步版本 | 普通 `def`，FastAPI 会自动放到线程里跑 |
+| async 代码里要调用一个同步的慢函数 | `await asyncio.to_thread(函数, 参数)`，见下面的例子 |
+| 大量计算 | 多进程（`concurrent.futures` 的 `ProcessPoolExecutor`，用到再查） |
+| 很重、很慢的后台任务（比如生成视频） | 交给任务队列，接口立刻返回（阶段六） |
 
-start = time.perf_counter()
-with ThreadPoolExecutor(max_workers=5) as pool:
-    results = list(pool.map(wait_io, range(5)))
-print(results)                                     # [0, 1, 2, 3, 4]
-print(f"用时 {time.perf_counter() - start:.1f}s")    # 用时 1.0s，不是 5 秒
-```
+### 例子：async 里调用同步的慢函数
 
-`pool.map(函数, 列表)` 把列表里每个值交给一个线程去调用这个函数，结果按原来的顺序返回。
-
-### async 里要调用同步的慢函数：`asyncio.to_thread`
-
-有些库只有同步版本（比如某些 SDK、文件处理），直接在 `async def` 里调用会卡住事件循环。用 `asyncio.to_thread` 把它放到线程里跑，`await` 等结果：
+有些库只有同步版本，直接在 `async def` 里调用，等待期间整个线程都被卡住，别的请求也没法处理。用 `asyncio.to_thread` 把它放到另一个线程里跑：
 
 ```python
 import asyncio
@@ -1831,29 +1824,17 @@ def slow_sync(name: str) -> str:    # 一个只有同步版本的慢函数
 
 async def main() -> None:
     start = time.perf_counter()
+    # 两个慢函数分别放到两个线程里跑，await 等结果；等的时候不会卡住其他协程
     results = await asyncio.gather(
         asyncio.to_thread(slow_sync, "A"),
         asyncio.to_thread(slow_sync, "B"),
     )
     print(results)                                     # ['A 完成', 'B 完成']
-    print(f"用时 {time.perf_counter() - start:.1f}s")    # 用时 1.0s
+    print(f"用时 {time.perf_counter() - start:.1f}s")    # 用时 1.0s，两个一起等，不是 2 秒
 
 
 asyncio.run(main())
 ```
-
-### 怎么选
-
-| 场景 | 用什么 |
-|---|---|
-| 写 FastAPI 接口，用的库支持 async（httpx、异步数据库驱动） | `async def` + `await` |
-| 写 FastAPI 接口，用的库只有同步版本 | 普通 `def`，FastAPI 自动放到线程池里跑 |
-| async 代码里临时要调一个同步的慢函数 | `asyncio.to_thread` |
-| 脚本里要同时发一批请求、读一批文件 | 线程池，或者 async + `gather` |
-| 大量计算：图片处理、数据分析 | 多进程（`ProcessPoolExecutor`） |
-| 很重、很慢的后台任务（比如生成视频） | 交给单独的任务队列去跑，接口立刻返回（阶段六） |
-
-> Python 3.13 起有一个实验性的「无 GIL」版本，以后线程也许能多核一起算，但现在大部分项目和库还是按有 GIL 来写的。
 
 ## 2.8 with 和上下文管理器 {#context-manager}
 
