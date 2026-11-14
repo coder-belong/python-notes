@@ -106,10 +106,14 @@ uv run uvicorn app.main:app --reload --port 8000
 | `GET /auth/me` | 当前登录的是谁、是不是管理员 |
 | `POST /sync` | 发增量、拿回账号的全部学习记录 |
 | `GET /admin/users?today=2026-11-13` | 管理员看所有用户的学习时长（今天、近 7 天、累计、学习天数、学完几节、最近学习），不是管理员返回 403 |
+| `POST /guest/sync` | 没登录的访客上报每天的学习秒数（不用 token，发总数不是增量） |
+| `GET /admin/guests?today=2026-11-13` | 管理员看访客：总人数、今天来过几人、后来注册了几人，以及最近 200 个访客的时长 |
 
 线上要配的环境变量：`JWT_SECRET`（签 token 的密钥，一串随机字符）、`DATABASE_URL`（接 Neon 后自动有）、`ADMIN_USERNAMES`（可选，管理员用户名，逗号隔开，默认 `belong`）。
 
-**管理员**：用管理员账号登录后，点侧栏的账号图标，弹窗里多一个「所有用户的学习情况」按钮。是不是管理员只看用户名，所以管理员用户名一定要自己先注册掉，否则别人注册了这个名字就成了管理员。
+**访客限制**：没登录只能免费看 10 分钟（按学习时长算，页面在前台、有操作才计时），用完弹出关不掉的注册 / 登录框。限制只在前端，清掉浏览器数据或开无痕窗口能重新计时，它是引导注册的门槛，不是防破解的锁。访客在浏览器里有一个随机 id，注册或登录时一起发给后端，管理员能看到「这个访客后来注册成了谁」。
+
+**管理员**：用管理员账号登录后，点侧栏的账号图标，弹窗里多一个「所有用户的学习情况」按钮，下面还有访客的统计。是不是管理员只看用户名，所以管理员用户名一定要自己先注册掉，否则别人注册了这个名字就成了管理员。
 
 ## Markdown 的写法约定
 
@@ -134,13 +138,14 @@ src/lib/study-store.ts          学习记录、阅读位置的读写和格式化
 src/lib/legacy-ids.ts           旧版按标题生成的 id → 固定 id，打开页面时自动迁移学习记录
 src/lib/use-study.ts            学习计时、「学完了」、番茄数，登录后的同步
 src/lib/account.ts              调后端接口、登录信息和待同步记录的读写
+src/lib/guest.ts                访客：免费 10 分钟、访客 id 和时长、上报
 src/lib/prefs.ts                主题、字号的读写
 src/components/NotesApp.tsx     页面：按 # 切节、侧栏目录、上一节 / 下一节、快捷键、专注模式开关
 src/components/Home.tsx         首页
 src/components/Heatmap.tsx      学习热力图
 src/components/StudyPanel.tsx   学习统计入口和弹窗
 src/components/AccountPanel.tsx 账号入口和登录 / 注册弹窗
-src/components/AdminPanel.tsx   管理员：所有用户的学习情况
+src/components/AdminPanel.tsx   管理员：所有用户和访客的学习情况
 src/components/FocusBar.tsx     专注模式右上角的番茄钟、全屏按钮
 src/components/ThemeToggle.tsx  浅色 / 深色切换按钮和动画
 src/components/MoreMenu.tsx      「⋯」菜单：字号、更新日志、收起侧栏
@@ -149,8 +154,8 @@ src/components/SideResizer.tsx  拖动调侧栏宽度
 src/styles/globals.css          样式（构建时直接写进页面）
 scripts/single-html.mjs         把 out/ 打成一个 HTML
 backend/index.py                Vercel 的入口
-backend/app/main.py             接口：注册、登录、同步、管理员查看所有用户
-backend/app/models.py           表：用户、每天时长、每节时长和「学完了」、同步批次
+backend/app/main.py             接口：注册、登录、同步、访客上报、管理员查看所有用户和访客
+backend/app/models.py           表：用户、每天时长、每节时长和「学完了」、同步批次、访客和访客每天时长
 backend/app/security.py         密码哈希、JWT、「当前登录用户」「管理员」依赖
 backend/app/schemas.py          请求体校验
 backend/app/errors.py           统一响应格式 {code, msg, data}

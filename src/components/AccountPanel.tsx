@@ -109,17 +109,22 @@ const PERKS = ["家里、公司登录同一个账号，进度是同一份", "学
 
 const USERNAME_RULE = /^[\p{L}\p{N}_]{2,20}$/u;
 
-/** 点开入口后的弹窗：没登录是登录 / 注册表单，登录了是账号信息和同步状态。 */
+/**
+ * 点开入口后的弹窗：没登录是登录 / 注册表单，登录了是账号信息和同步状态。
+ * gate：访客的免费时间用完了，弹窗关不掉，注册或登录成功后才消失。
+ */
 export default function AccountPanel({
   study,
   onClose,
   onOpenAdmin,
+  gate = false,
 }: {
   study: Study;
   onClose: () => void;
   onOpenAdmin: () => void;
+  gate?: boolean;
 }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register">(gate ? "register" : "login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -144,10 +149,11 @@ export default function AccountPanel({
   }, [account]);
 
   useEffect(() => {
+    if (gate) return; // 挡住页面时 Esc 关不掉
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, gate]);
 
   const syncByHand = async () => {
     setManual("syncing");
@@ -183,11 +189,13 @@ export default function AccountPanel({
   const studiedDays = Object.values(data.days).filter((v) => v >= 60).length;
 
   return (
-    <div className="modal-backdrop pinned" onClick={onClose}>
+    <div className={`modal-backdrop pinned ${gate ? "gate" : ""}`} onClick={gate ? undefined : onClose}>
       <div className="modal account-modal" role="dialog" aria-label="账号" onClick={(e) => e.stopPropagation()}>
-        <button type="button" className="modal-close account-close" onClick={onClose} aria-label="关闭">
-          ×
-        </button>
+        {!gate && (
+          <button type="button" className="modal-close account-close" onClick={onClose} aria-label="关闭">
+            ×
+          </button>
+        )}
 
         {account ? (
           <div className="account-profile">
@@ -253,8 +261,14 @@ export default function AccountPanel({
           <form onSubmit={submit} className="account-form" noValidate>
             <div className="account-brand">
               <span className="account-logo">Py</span>
-              <h3>{mode === "login" ? "欢迎回来" : "创建账号"}</h3>
-              <p>{mode === "login" ? "登录后，学习进度在每台电脑上都一样" : "注册完直接登录，本机已有的记录会一起带上"}</p>
+              <h3>{gate ? "免费阅读的 10 分钟用完了" : mode === "login" ? "欢迎回来" : "创建账号"}</h3>
+              <p>
+                {gate
+                  ? "注册或登录后继续看，不限时间，进度还能在每台电脑上同步"
+                  : mode === "login"
+                    ? "登录后，学习进度在每台电脑上都一样"
+                    : "注册完直接登录，本机已有的记录会一起带上"}
+              </p>
             </div>
 
             <div className={`account-tabs ${mode}`} role="tablist">

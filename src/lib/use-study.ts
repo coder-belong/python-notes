@@ -17,6 +17,7 @@ import {
   type Delta,
   type SyncState,
 } from "./account";
+import { GUEST_LIMIT, guestSeconds, loadGuest, reportGuest, saveGuest, type GuestState } from "./guest";
 import { dayKey, emptyData, loadData, saveData, type StudyData } from "./study-store";
 
 /** 每批同步的随机 id（双击打开的 HTML 里 crypto.randomUUID 不一定能用，自己拼一个）。 */
@@ -47,6 +48,7 @@ export function useStudy(currentSection: string | null) {
   const [status, setStatus] = useState<StudyStatus>("studying");
   const [account, setAccount] = useState<Account | null>(null);
   const [sync, setSync] = useState<SyncStatus>({ state: "idle" });
+  const [guestSecs, setGuestSecs] = useState(0); // 没登录时，以访客身份已经看了多少秒
 
   const dataRef = useRef<StudyData>(data);
   const syncRef = useRef<SyncState>({ claimed: false, pending: emptyDelta(), inflight: null });
@@ -55,6 +57,7 @@ export function useStudy(currentSection: string | null) {
   const sectionRef = useRef<string | null>(currentSection);
   const lastActiveRef = useRef<number>(0);
   const unsavedRef = useRef(0);
+  const guestRef = useRef<GuestState | null>(null);
 
   useEffect(() => {
     sectionRef.current = currentSection;
@@ -66,17 +69,20 @@ export function useStudy(currentSection: string | null) {
     dataRef.current = saved;
     syncRef.current = loadSync();
     accountRef.current = loadAccount();
+    guestRef.current = loadGuest();
     lastActiveRef.current = Date.now();
     // 读 localStorage 只能放在 effect 里，读完再同步到 state
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setData(saved);
     setAccount(accountRef.current);
+    setGuestSecs(guestSeconds(guestRef.current));
     setLoaded(true);
   }, []);
 
   const flush = useCallback(() => {
     saveData(dataRef.current);
     saveSync(syncRef.current);
+    if (guestRef.current) saveGuest(guestRef.current);
     unsavedRef.current = 0;
   }, []);
 
@@ -150,7 +156,9 @@ export function useStudy(currentSection: string | null) {
   /** 登录或注册。注册成功后端直接返回 token，等于已经登录。 */
   const signIn = useCallback(
     async (mode: "login" | "register", username: string, password: string) => {
-      const a = await api<Account>(`/auth/${mode}`, { username, password });
+      // 没登录时带上访客 id，后端记下「这个访客后来注册 / 登录了」
+      const guest_id = accountRef.current ? undefined : guestRef.current?.id;
+      const a = await api<Account>(`/auth/${mode}`, { username, password, guest_id });
       setLoggedIn(a);
       await syncNow();
     },
@@ -174,6 +182,18 @@ export function useStudy(currentSection: string | null) {
     return () => window.clearInterval(timer);
   }, [loaded, account, syncNow]);
 
+  // 没登录：每分钟把访客的学习时长报给后端（管理员能看到）
+  useEffect(() => {
+    if (!loaded || account) return;
+    const report = () => {
+      const g = guestRef.current;
+      if (g && guestSeconds(g) > 0) void reportGuest(g);
+    };
+    report();
+    const timer = window.setInterval(report, SYNC_EVERY * 1000);
+    return () => window.clearInterval(timer);
+  }, [loaded, account]);
+
   // 记录用户操作，判断是否在学
   useEffect(() => {
     const markActive = () => {
@@ -185,6 +205,8 @@ export function useStudy(currentSection: string | null) {
       if (document.visibilityState === "hidden") {
         flush();
         void syncNow(true);
+        const g = guestRef.current;
+        if (!accountRef.current && g && guestSeconds(g) > 0) void reportGuest(g, true);
       } else markActive();
     };
     document.addEventListener("visibilitychange", onHide);
@@ -207,6 +229,14 @@ export function useStudy(currentSection: string | null) {
       if (next !== "studying") return;
 
       const today = dayKey();
+      // 没登录：记到访客时长上；10 分钟用完就不再计时（页面被挡住了）
+      const guest = guestRef.current;
+      if (!accountRef.current && guest) {
+        if (guestSeconds(guest) >= GUEST_LIMIT) return;
+        guest.days[today] = (guest.days[today] ?? 0) + 1;
+        setGuestSecs((s) => s + 1);
+      }
+
       const prev = dataRef.current;
       const section = sectionRef.current;
       const updated: StudyData = {
@@ -272,5 +302,8 @@ export function useStudy(currentSection: string | null) {
     syncNow,
     signIn,
     signOut,
+    guestSeconds: guestSecs,
+    /** 没登录、免费的 10 分钟用完了：要注册或登录才能继续看。 */
+    guestBlocked: loaded && !account && guestSecs >= GUEST_LIMIT,
   };
 }

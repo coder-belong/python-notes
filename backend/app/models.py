@@ -47,3 +47,24 @@ class SyncBatch(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     batch_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Guest(Base):
+    """没登录的访客。前端随机生成一个 id 存在浏览器里，用它统计访客学了多久。"""
+
+    __tablename__ = "guests"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())  # 第一次上报的时间
+    last_seen: Mapped[datetime] = mapped_column(server_default=func.now())  # 最近一次上报的时间
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None)  # 后来注册 / 登录成了哪个用户
+
+
+class GuestDay(Base):
+    """访客每天学了多少秒。"""
+
+    __tablename__ = "guest_days"
+
+    guest_id: Mapped[str] = mapped_column(ForeignKey("guests.id"), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    seconds: Mapped[int] = mapped_column(default=0)

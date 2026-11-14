@@ -17,6 +17,23 @@ type UserRow = {
   done_sections: number;
 };
 
+type GuestRow = {
+  id: string;
+  created_at: string | null;
+  total_seconds: number;
+  today_seconds: number;
+  last_day: string | null;
+  became: string | null; // 后来注册 / 登录成了哪个用户
+};
+
+type GuestData = {
+  total_guests: number;
+  today_guests: number;
+  converted: number;
+  total_seconds: number;
+  guests: GuestRow[];
+};
+
 type SortKey = "today_seconds" | "week_seconds" | "total_seconds" | "study_days" | "done_sections" | "last_day";
 
 const COLUMNS: { key: SortKey; label: string }[] = [
@@ -47,6 +64,7 @@ function dateText(iso: string | null): string {
 /** 管理员看所有用户的学习情况。只有管理员账号能打开，后端也会再检查一次。 */
 export default function AdminPanel({ token, me, onClose }: { token: string; me: string; onClose: () => void }) {
   const [users, setUsers] = useState<UserRow[] | null>(null);
+  const [guests, setGuests] = useState<GuestData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<SortKey>("total_seconds");
@@ -57,8 +75,12 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
     setError("");
     try {
       // 「今天」按管理员本地日期算，和每个人前端记录时用的日期一致
-      const data = await apiGet<{ users: UserRow[] }>(`/admin/users?today=${today}`, token);
+      const [data, guestData] = await Promise.all([
+        apiGet<{ users: UserRow[] }>(`/admin/users?today=${today}`, token),
+        apiGet<GuestData>(`/admin/guests?today=${today}`, token),
+      ]);
       setUsers(data.users);
+      setGuests(guestData);
     } catch (e) {
       setError(e instanceof Error ? e.message : "加载失败");
     } finally {
@@ -200,8 +222,55 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
           )}
         </section>
 
+
+        {guests && (
+          <section className="stats-box admin-box admin-guests">
+            <div className="admin-guests-head">
+              <h4>访客（没登录）</h4>
+              <span>
+                共 {guests.total_guests} 人 · 今天 {guests.today_guests} 人 · 后来注册 {guests.converted} 人 · 累计{" "}
+                {formatDuration(guests.total_seconds)}
+              </span>
+            </div>
+            {guests.guests.length === 0 ? (
+              <p className="hint">还没有访客。</p>
+            ) : (
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>访客</th>
+                      <th className="num">今天</th>
+                      <th className="num">累计</th>
+                      <th className="num">最近学习</th>
+                      <th className="num">首次访问</th>
+                      <th>后来注册为</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {guests.guests.map((g) => (
+                      <tr key={g.id}>
+                        <td className="dim" title={g.id}>
+                          #{g.id.slice(-6)}
+                        </td>
+                        <td className={`num ${g.today_seconds >= 60 ? "strong" : "dim"}`}>
+                          {g.today_seconds ? formatDuration(g.today_seconds) : "—"}
+                        </td>
+                        <td className="num">{g.total_seconds ? formatDuration(g.total_seconds) : "—"}</td>
+                        <td className={`num ${g.last_day === today ? "strong" : "dim"}`}>{dayText(g.last_day, today)}</td>
+                        <td className="num dim">{dateText(g.created_at)}</td>
+                        <td className={g.became ? "" : "dim"}>{g.became ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+
         <div className="stats-foot">
-          <span>每个人登录后每分钟同步一次，所以这里的数字可能比本人看到的慢一两分钟。没登录的人看不到。</span>
+          <span>每个人每分钟同步一次，所以这里的数字可能比本人看到的慢一两分钟。访客最多免费看 10 分钟，清掉浏览器数据会被当成新访客。</span>
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-"""接口：注册、登录、查当前用户、同步学习进度，以及管理员查看所有用户。"""
+"""接口：注册、登录、查当前用户、同步学习进度、访客上报时长，以及管理员查看所有用户和访客。"""
 
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
@@ -13,8 +13,8 @@ from sqlalchemy.orm import Session
 from . import errors
 from .db import Base, Db, engine
 from .errors import fail, success
-from .models import SectionStat, StudyDay, SyncBatch, User
-from .schemas import AuthIn, SyncIn
+from .models import Guest, GuestDay, SectionStat, StudyDay, SyncBatch, User
+from .schemas import AuthIn, GuestSyncIn, SyncIn
 from .security import AdminUser, CurrentUser, create_token, hash_password, is_admin, verify_password
 
 
@@ -42,6 +42,13 @@ def auth_result(user: User) -> dict:
     return {"token": create_token(user.id), "username": user.username}
 
 
+def link_guest(session: Session, guest_id: str | None, user: User) -> None:
+    """登录 / 注册前是访客的话，记下这个访客后来成了哪个用户（只记第一次）。"""
+    guest = session.get(Guest, guest_id) if guest_id else None
+    if guest is not None and guest.user_id is None:
+        guest.user_id = user.id
+
+
 @app.get("/")
 def health() -> dict:
     return success({"service": "python-notes-api"})
@@ -56,6 +63,7 @@ def register(body: AuthIn, session: Db) -> dict:
     user = User(username=body.username, password_hash=hash_password(body.password))
     session.add(user)
     session.commit()  # 先提交拿到 user.id，token 里要用
+    link_guest(session, body.guest_id, user)
     return success(auth_result(user), "注册成功")
 
 
@@ -65,6 +73,7 @@ def login(body: AuthIn, session: Db) -> dict:
     # 用户名不存在和密码错都报同一句话，不让别人试出哪些用户名注册过
     if user is None or not verify_password(body.password, user.password_hash):
         raise fail(401, "用户名或密码不对")
+    link_guest(session, body.guest_id, user)
     return success(auth_result(user), "登录成功")
 
 
@@ -119,6 +128,27 @@ def sync(body: SyncIn, user: CurrentUser, session: Db) -> dict:
             upsert(session, SectionStat, key, {"seconds": body.sections.get(sid, 0)}, set_)
         session.commit()
     return success(totals(session, user.id))
+
+
+@app.post("/guest/sync")
+def guest_sync(body: GuestSyncIn, session: Db) -> dict:
+    """没登录的访客上报学习时长，不需要 token。
+
+    发的是每天的总秒数，不是增量：访客的记录只在一个浏览器里，发重了取较大的那个就行，不会多算。
+    """
+    guest = session.get(Guest, body.guest_id)
+    if guest is None:
+        guest = Guest(id=body.guest_id)
+        session.add(guest)
+    else:
+        guest.last_seen = func.now()
+    for day, seconds in body.days.items():
+        row = session.get(GuestDay, (body.guest_id, day))
+        if row is None:
+            session.add(GuestDay(guest_id=body.guest_id, day=day, seconds=seconds))
+        elif seconds > row.seconds:
+            row.seconds = seconds
+    return success()
 
 
 def as_utc(t: datetime | None) -> str | None:
@@ -184,3 +214,62 @@ def admin_users(
     ]
     users.sort(key=lambda u: u["total_seconds"], reverse=True)
     return success({"today": today, "users": users})
+
+
+@app.get("/admin/guests")
+def admin_guests(
+    _admin: AdminUser,
+    session: Db,
+    today: Annotated[str | None, Query(pattern=r"^\d{4}-\d{2}-\d{2}$")] = None,
+) -> dict:
+    """访客（没登录）的学习情况：汇总数字，加上最近来过的 200 个访客。「今天」的算法同 /admin/users。"""
+    today = today or date.today().isoformat()
+    days = (
+        select(
+            GuestDay.guest_id,
+            func.sum(GuestDay.seconds).label("total"),
+            func.sum(case((GuestDay.day == today, GuestDay.seconds), else_=0)).label("today"),
+            func.max(case((GuestDay.seconds > 0, GuestDay.day))).label("last_day"),
+        )
+        .group_by(GuestDay.guest_id)
+        .subquery()
+    )
+    rows = session.execute(
+        select(Guest.id, Guest.created_at, User.username.label("became"), days)
+        .outerjoin(days, days.c.guest_id == Guest.id)
+        .outerjoin(User, User.id == Guest.user_id)
+        .order_by(Guest.last_seen.desc())
+        .limit(200)
+    ).all()
+
+    # 汇总数字按全部访客算，不受上面 200 条的限制
+    summary = session.execute(
+        select(
+            func.count(Guest.id),
+            func.count(Guest.user_id),  # count(列) 只数不是 NULL 的：后来注册 / 登录了的访客
+            func.coalesce(func.sum(days.c.total), 0),
+            func.count(case((days.c.today > 0, 1))),
+        ).outerjoin(days, days.c.guest_id == Guest.id)
+    ).one()
+
+    guests = [
+        {
+            "id": r.id,
+            "created_at": as_utc(r.created_at),
+            "total_seconds": r.total or 0,
+            "today_seconds": r.today or 0,
+            "last_day": r.last_day,
+            "became": r.became,
+        }
+        for r in rows
+    ]
+    return success(
+        {
+            "today": today,
+            "total_guests": summary[0],
+            "converted": summary[1],
+            "total_seconds": summary[2],
+            "today_guests": summary[3],
+            "guests": guests,
+        }
+    )

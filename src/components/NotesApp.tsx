@@ -13,6 +13,7 @@ import {
   saveReading,
   type Reading,
 } from "@/lib/study-store";
+import { GUEST_LIMIT } from "@/lib/guest";
 import { useStudy } from "@/lib/use-study";
 
 import AccountPanel, { AccountEntry } from "./AccountPanel";
@@ -432,11 +433,30 @@ export default function NotesApp({ notes }: { notes: Notes }) {
 
       <main>
         <div className="content">
-          {route === null && (
+          {study.loaded && !study.account && !study.guestBlocked && (
+            <div className="guest-bar">
+              <span>
+                访客模式：还能免费看 <b>{Math.ceil((GUEST_LIMIT - study.guestSeconds) / 60)} 分钟</b>
+                ，注册或登录后不限时间
+              </span>
+              <button type="button" className="link-btn" onClick={() => setAccountOpen(true)}>
+                注册 / 登录
+              </button>
+            </div>
+          )}
+
+          {study.guestBlocked && (
+            <div className="guest-gate">
+              <h2>免费阅读的 10 分钟用完了</h2>
+              <p>注册或登录后可以继续看，不限时间。</p>
+            </div>
+          )}
+
+          {route === null && !study.guestBlocked && (
             <Home notes={notes} groups={groups} done={study.data.done} reading={reading} studyDays={study.data.days} />
           )}
 
-          {section && (
+          {section && !study.guestBlocked && (
             <article key={section.id}>
               <div className="crumb">
                 <a href="#">首页</a>
@@ -538,7 +558,11 @@ export default function NotesApp({ notes }: { notes: Notes }) {
         />
       )}
       {statsOpen && <StudyPanel study={study} sections={sections} onClose={() => setStatsOpen(false)} />}
-      {accountOpen && (
+      {study.guestBlocked && (
+        // 免费时间用完：挡住页面的注册 / 登录弹窗，关不掉，登录成功后自动消失
+        <AccountPanel study={study} gate onClose={() => {}} onOpenAdmin={() => {}} />
+      )}
+      {accountOpen && !study.guestBlocked && (
         <AccountPanel
           study={study}
           onClose={() => setAccountOpen(false)}
