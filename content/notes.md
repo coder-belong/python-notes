@@ -649,6 +649,49 @@ print(c.count)     # 6
 print(c)           # Counter(clicks=6)
 ```
 
+**对象不是字典**：类创建出来的是对象，用点号取属性；字典用方括号取值，两种不能混用。
+
+```python
+c = Counter("clicks")                  # 对象
+d = {"name": "clicks", "count": 0}     # 字典
+
+c.name         # 'clicks'   对象：用点号
+d["name"]      # 'clicks'   字典：用方括号
+c["name"]      # TypeError: 'Counter' object is not subscriptable
+d.name         # AttributeError: 'dict' object has no attribute 'name'
+
+vars(c)        # {'name': 'clicks', 'count': 0}   对象转成字典
+```
+
+后面会用到的 dataclass（第 1.10 节）和 pydantic（第 3.3 节）创建出来的也是对象，各有自己转字典的方法：
+
+```python
+from dataclasses import asdict, dataclass
+
+from pydantic import BaseModel
+
+
+@dataclass
+class Point:
+    x: int
+    y: int
+
+
+p = Point(1, 2)
+print(p.x)              # 1                  点号取值
+print(asdict(p))        # {'x': 1, 'y': 2}   dataclass 用 asdict() 转字典
+
+
+class User(BaseModel):
+    name: str
+    age: int
+
+
+u = User(name="Tom", age=18)
+print(u.name)           # Tom                点号取值
+print(u.model_dump())   # {'name': 'Tom', 'age': 18}   pydantic 用 .model_dump() 转字典
+```
+
 **类方法 `@classmethod`**：不用先创建对象，直接用类调用。常用来提供「另一种创建对象的方式」。
 
 ```python
@@ -2052,10 +2095,47 @@ class TaskList(BaseModel):
 ```python
 TaskCreate(title="写笔记")          # ✅
 TaskCreate(title="")                # ❌ ValidationError：至少 1 个字符
-TaskCreate(title="a").model_dump()  # {'title': 'a', 'note': None}  转成 dict
+
+body = TaskCreate(title="a")        # 得到的是 TaskCreate 对象，不是字典
+print(body)                         # title='a' note=None
+print(body.title)                   # a          对象用点号取值
+print(body.model_dump())            # {'title': 'a', 'note': None}   model_dump() 才转成字典
 ```
 
-**`from_attributes=True`**：`TaskOut` 加了这个配置后，可以用 `TaskOut.model_validate(对象)` 直接从一个对象上按字段名读取同名属性来创建，不用一个个字段手写 `TaskOut(id=task.id, title=task.title, ...)`。第 3.9 节就用它把数据库里的 `Task` 转成返回给前端的 `TaskOut`。
+**`from_attributes=True`：从对象直接转成 `TaskOut`**
+
+```python
+from datetime import datetime
+
+
+class Task:                          # 假装是从数据库查出来的一条任务（第 3.6 节会讲真的）
+    def __init__(self) -> None:
+        self.id = 1
+        self.title = "写笔记"
+        self.done = False
+        self.note = None
+        self.created_at = datetime(2026, 11, 14, 10, 0)
+        self.updated_at = datetime(2026, 11, 14, 10, 0)
+        self.user_id = 7             # TaskOut 里没有这个字段，转换时会被丢掉
+
+
+task = Task()
+
+# 不用 from_attributes：一个个字段手写
+out = TaskOut(id=task.id, title=task.title, done=task.done, note=task.note,
+              created_at=task.created_at, updated_at=task.updated_at)
+
+# 用 from_attributes：按 TaskOut 的字段名，自动去 task 上读同名属性
+out = TaskOut.model_validate(task)
+print(out)
+# id=1 title='写笔记' done=False note=None created_at=datetime.datetime(2026, 11, 14, 10, 0) updated_at=...
+# 两种写法结果完全一样；user_id 不在 TaskOut 里，不会返回给前端
+
+# 没加 from_attributes=True 的模型，传对象进去会报错：
+# ValidationError: Input should be a valid dictionary or instance of TaskOut
+```
+
+第 3.9 节就是用 `TaskOut.model_validate(task)` 把数据库里查出来的任务转成返回给前端的格式。
 
 在接口里，参数类型写成 `TaskCreate`，FastAPI 就从请求体读 JSON、校验，不通过自动返回 422，函数根本不会执行：
 
