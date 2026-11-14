@@ -1951,13 +1951,17 @@ def get_user(user_id: int) -> dict:
 
 
 @app.post("/users", status_code=201)    # 新建：请求体 {"name": "Tom", "age": 18}
-def create_user(body: User) -> dict:
-    return {"created": body.model_dump()}
+def create_user(body: User) -> User:
+    # 直接返回 pydantic 对象就行：FastAPI 会先把它转成字典，再转成 JSON 返回给前端
+    # 前端收到：{"name": "Tom", "age": 18}
+    return body
 
 
 @app.put("/users/{user_id}")            # 修改：路径参数 + 请求体
 def update_user(user_id: int, body: User) -> dict:
-    return {"user_id": user_id, "updated": body.model_dump()}
+    # 字典里套 pydantic 对象也一样，FastAPI 整个转成 JSON
+    # 前端收到：{"user_id": 5, "updated": {"name": "Tom", "age": 18}}
+    return {"user_id": user_id, "updated": body}
 
 
 @app.delete("/users/{user_id}")         # 删除：路径参数
