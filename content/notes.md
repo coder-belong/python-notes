@@ -2311,12 +2311,6 @@ def install(app: FastAPI) -> None:
         )
 ```
 
-在 `main.py` 里创建 app 之后调用一次：`errors.install(app)`。
-
-- **`fail(status, msg)`**：生成一个错误，前面要加 `raise` 才会抛出去：`raise fail(409, "已经有同名任务了")`。
-- **为什么失败用 `raise` 而不是 `return`**：`raise` 会让函数立刻停下，而且不管嵌套几层都能直接抛到 FastAPI。比如第 3.10 节的 `load_task()` 是被接口调用的普通函数，它在里面 `raise task_not_found()`，接口不用再判断一次返回值。
-- **`install()`**：启动时向 FastAPI 登记「遇到 `ApiError`，就调用 `handle_api_error` 生成 `{code: -1, msg, data: null}`」。`ApiError` 是 `fail()` 背后真正被抛出的异常类，接口里不用直接写它。
-
 **出错时代码怎么走**（以 `GET /tasks/99` 为例）：
 
 1. 接口里执行 `raise task_not_found()`，函数立即中断。
@@ -2335,7 +2329,7 @@ from app.errors import fail, task_not_found
 from app.response import success
 
 app = FastAPI()
-errors.install(app)            # 登记错误处理器
+errors.install(app)            # 创建 app 之后调用一次：登记错误处理器（正式项目写在 main.py 里）
 
 TASKS = {1: "写笔记"}
 
@@ -2364,6 +2358,23 @@ def create_task(title: str) -> dict:
 | `GET /tasks/99` | 404 | `{"code": -1, "msg": "没有这个任务", "data": null}` |
 | `POST /tasks?title=写笔记` | 409 | `{"code": -1, "msg": "已经有同名任务了", "data": null}` |
 | `POST /tasks?title=读书` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 2, "title": "读书"}}` |
+
+**两个要点**：
+
+```python
+# ① 失败时固定写 raise fail(...)。fail() 只是生成一个错误，前面不写 raise 就什么都不会发生
+def check() -> str:
+    fail(409, "已经有同名任务了")        # 忘了写 raise
+    return "继续往下走了"
+
+print(check())                          # 继续往下走了      错误没抛出去，函数照常执行完
+
+
+# ② 一定要调用 errors.install(app)。不调用的话，FastAPI 不认识 fail 抛出的错误，会当成代码 bug
+app = FastAPI()                         # 没有 errors.install(app)
+# GET /tasks/99 → 500 Internal Server Error（纯文本，不是约定的格式）
+# 调用了 install → 404 {"code": -1, "msg": "没有这个任务", "data": null}
+```
 
 ### 不是你抛的错误：全部拦截
 
