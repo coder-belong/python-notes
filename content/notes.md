@@ -1970,8 +1970,11 @@ def delete_user(user_id: int) -> dict:
 
 
 @app.get("/me")                         # 请求头：X-Token: abc
+# Annotated[类型, 说明]：x_token 的类型是 str，Header() 说明它从「请求头」里取
+# 参数名 x_token 会自动对应请求头 X-Token：下划线换成横线，不分大小写
+# 没带这个请求头会返回 422
 def me(x_token: Annotated[str, Header()]) -> dict:
-    return {"token": x_token}
+    return {"token": x_token}           # 带了 X-Token: abc 时返回 {"token": "abc"}
 ```
 
 在 `todo-api/` 目录启动，然后打开 http://127.0.0.1:8000/docs 点着试（Try it out → Execute）：
