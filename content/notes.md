@@ -2493,26 +2493,45 @@ def boom() -> dict:
 
 ### 装好、连上
 
+**1. 装 Postgres 并建一个练习库**：
+
 ```bash
 brew install postgresql@17          # Mac；Windows 去官网下载安装包
 brew services start postgresql@17   # 后台启动，开机自动运行
-createdb learn                      # 建一个练习用的库
-psql learn                          # 进入命令行，之后的 SQL 都在这里敲
+createdb learn                      # 建一个练习用的库，名字叫 learn
+whoami                              # 看一下你的 Mac 用户名，下一步连接时要用
 ```
 
-不想装的话，用 Neon 免费版建一个库，复制它给的连接地址，`psql "postgresql://..."` 一样能连。
+**2. 装一个可视化工具**：用 [DBeaver](https://dbeaver.io/) 社区版，免费，Mac、Windows 都能用。
 
-psql 里几个常用命令（不是 SQL，不用分号）：
+```bash
+brew install --cask dbeaver-community   # Mac；Windows 去官网下载安装包
+```
 
-| 命令 | 作用 |
-|---|---|
-| `\dt` | 列出所有表 |
-| `\d tasks` | 看 `tasks` 的列、索引、外键 |
-| `\di` | 列出所有索引 |
-| `\x` | 切换竖着显示（列多时好看） |
-| `\q` | 退出 |
+**3. 在 DBeaver 里连上 learn 库**：
 
-SQL 语句以分号结尾，没写分号直接回车，psql 会等你继续输入。关键字大小写都行，习惯写大写。
+1. 打开 DBeaver，左上角点「新建数据库连接」（插头图标），选 **PostgreSQL**，下一步。
+2. 填连接信息：
+
+   | 项 | 填什么 |
+   |---|---|
+   | 主机 | `localhost` |
+   | 端口 | `5432` |
+   | 数据库 | `learn` |
+   | 用户名 | 上一步 `whoami` 显示的 Mac 用户名 |
+   | 密码 | 空着（brew 装的 Postgres 本机连接不用密码） |
+
+3. 点「测试连接」。第一次会提示下载驱动，点下载；显示「已连接」就对了，点完成。
+4. 左边列表里右键这个连接 → SQL 编辑器 → 新建 SQL 脚本，就可以在里面写 SQL 了。
+
+**4. 在 SQL 编辑器里执行**：
+
+- 光标放在某一条 SQL 上，按 `Cmd + Enter`（Windows 是 `Ctrl + Enter`）：只执行这一条，结果显示在下方的表格里。
+- 每条 SQL 以分号结尾，一个脚本里可以写很多条，按上面的方式一条一条执行。
+- 关键字大小写都行，习惯写大写。
+- 左边列表里展开 learn → 架构 → public → 表，能看到建好的表；点开一张表，可以直接看数据、列和索引。
+
+不想在本机装 Postgres，也可以用 Neon 免费版建一个库：在 DBeaver 里同样选 PostgreSQL，把 Neon 给的连接地址里的主机、数据库、用户名、密码分别填进去。
 
 ### 建表
 
@@ -2528,7 +2547,8 @@ CREATE TABLE tasks (
     user_id    integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,   -- 外键：必须是存在的用户
     title      varchar(100) NOT NULL,
     done       boolean NOT NULL DEFAULT false,
-    created_at timestamptz NOT NULL DEFAULT now()
+    created_at timestamptz NOT NULL DEFAULT now(),    -- 创建时间
+    updated_at timestamptz NOT NULL DEFAULT now()     -- 更新时间：插入时是当前时间，之后每次修改要自己更新
 );
 ```
 
@@ -2537,6 +2557,7 @@ CREATE TABLE tasks (
 - **约束**：`NOT NULL`、`UNIQUE`、`REFERENCES` 都是数据库替你把关，不合规的数据直接拒绝写入，比只在代码里检查可靠。
 - **外键** `REFERENCES users(id)`：`tasks.user_id` 必须是 `users` 里存在的 id。`ON DELETE CASCADE`：删用户时，他的任务一起删掉。
 - `timestamptz` 是带时区的时间，存的是一个绝对时刻，Postgres 里存时间优先用它。
+- **`updated_at` 不会自动变**：`DEFAULT now()` 只在插入时生效，之后修改这一行时，要在 `UPDATE` 里自己写上 `updated_at = now()`（见下面「改」）。用 SQLAlchemy 时可以让它自动更新（第 3.7 节）。
 
 ### 增删改查
 
@@ -2566,7 +2587,7 @@ SELECT id, title FROM tasks WHERE title LIKE '%笔记%';     -- 1 | 写笔记
 SELECT id, title FROM tasks ORDER BY id LIMIT 2 OFFSET 2;  -- 3 | 买菜、4 | 跑步
 
 -- 改
-UPDATE tasks SET done = true WHERE id = 1;
+UPDATE tasks SET done = true, updated_at = now() WHERE id = 1;   -- 顺手更新 updated_at
 
 -- 删
 DELETE FROM tasks WHERE id = 4;
@@ -2591,22 +2612,23 @@ INSERT INTO users (username) VALUES ('alice');
 任务表里只有 `user_id`，要显示用户名就得把两张表拼起来：
 
 ```sql
--- JOIN：两边都对得上的才出现。t、u 是表的简写
-SELECT u.username, t.title, t.done
-FROM tasks t
-JOIN users u ON u.id = t.user_id
-ORDER BY t.id;
+-- JOIN（内连接）：两边都对得上的才出现
+SELECT u.username, t.title, t.done   -- ③ 最后取这三列
+FROM tasks t                          -- ① 从 tasks 出发，t 是 tasks 的简写
+JOIN users u ON u.id = t.user_id      -- ② 每条任务按 user_id 找到它的用户，拼成一行；u 是 users 的简写
+ORDER BY t.id;                        -- ④ 按任务 id 排序
 --  username | title  | done
 -- ----------+--------+------
 --  alice    | 写笔记 | t
 --  alice    | 学 SQL | f
 --  bob      | 买菜   | f
+-- carol 没有任务，对不上，不出现
 
--- LEFT JOIN：左边的表全保留，右边对不上的填 NULL
+-- LEFT JOIN（左连接）：左边的表（FROM 后面那张）每行都出现，右边对不上的列填 NULL
 SELECT u.username, t.title
-FROM users u
-LEFT JOIN tasks t ON t.user_id = u.id
-ORDER BY u.id, t.id;
+FROM users u                          -- ① 这次从 users 出发，users 是左边的表
+LEFT JOIN tasks t ON t.user_id = u.id -- ② 每个用户找自己的任务：有几条拼几行，一条都没有也留一行，t 的列全是 NULL
+ORDER BY u.id, t.id;                  -- ③ 先按用户排，同一个用户再按任务排
 --  username | title
 -- ----------+--------
 --  alice    | 写笔记
@@ -2615,7 +2637,54 @@ ORDER BY u.id, t.id;
 --  carol    |            ← carol 没有任务，title 是 NULL
 ```
 
-「列出所有用户，包括还没数据的」就用 `LEFT JOIN`，用 `JOIN` 会把 carol 漏掉。
+规则记住就行：
+
+1. `JOIN` 就是 `INNER JOIN`：只留两边都对得上的行。
+2. `LEFT JOIN`：左边的表全留，右边没有就是 NULL。「列出所有用户，包括还没数据的」就用它，用 `JOIN` 会把 carol 漏掉。
+3. `ON` 写拼接条件，一般是「外键 = 主键」。
+4. 两张表有同名列（比如都有 `id`）时，必须写 `t.id`、`u.id` 区分。
+
+**逗号写法（老式多表查询）就是内连接**，结果和上面的 `JOIN` 一模一样：
+
+```sql
+-- FROM 后面用逗号列多张表，拼接条件写在 WHERE 里
+SELECT u.username, t.title, t.done
+FROM users u, tasks t
+WHERE u.id = t.user_id
+ORDER BY t.id;
+--  username | title  | done
+-- ----------+--------+------
+--  alice    | 写笔记 | t
+--  alice    | 学 SQL | f
+--  bob      | 买菜   | f
+-- 和 JOIN 一样，carol 不出现；想要 carol 只能用 LEFT JOIN
+
+-- 漏写 WHERE：每个用户和每条任务两两组合，3 × 3 = 9 行
+SELECT u.username, t.title FROM users u, tasks t ORDER BY u.id, t.id;
+--  username | title
+-- ----------+--------
+--  alice    | 写笔记
+--  alice    | 学 SQL
+--  alice    | 买菜
+--  bob      | 写笔记
+--  bob      | 学 SQL
+--  bob      | 买菜
+--  carol    | 写笔记
+--  carol    | 学 SQL
+--  carol    | 买菜
+```
+
+`LEFT JOIN` 的常见用法：找出「没有任务的用户」：
+
+```sql
+SELECT u.username
+FROM users u
+LEFT JOIN tasks t ON t.user_id = u.id   -- carol 拼出来那行，t 的列都是 NULL
+WHERE t.id IS NULL;                     -- 只留对不上的行（判断 NULL 要用 IS NULL，不能写 = NULL）
+--  username
+-- ----------
+--  carol
+```
 
 ### 分组统计：GROUP BY
 
@@ -2672,7 +2741,7 @@ EXPLAIN ANALYZE SELECT id, title FROM tasks WHERE title = '任务 299999';
 ```
 
 - `Seq Scan` 是全表扫描，`Index Scan` 是走索引。同一条查询从 7.6 毫秒变成 0.02 毫秒，数据越多差得越多。
-- 主键和 `UNIQUE` 会自动建索引（`\di` 能看到 `users_username_key`）。**Postgres 不会给外键自动建索引**，`tasks.user_id` 经常拿来筛选，要自己建：`CREATE INDEX ON tasks (user_id);`。
+- 主键和 `UNIQUE` 会自动建索引（DBeaver 里展开 `users` 表的「索引」能看到 `users_username_key`）。**Postgres 不会给外键自动建索引**，`tasks.user_id` 经常拿来筛选，要自己建：`CREATE INDEX ON tasks (user_id);`。
 - 经常一起筛选的列可以建联合索引：`CREATE INDEX ON tasks (user_id, done);`，查询条件里带上最左边的 `user_id` 才能充分用上它。
 - 索引不是越多越好：每次写入都要同步更新索引，表也会变大。给 `WHERE`、`JOIN`、`ORDER BY` 里常用的列建。
 - 分页用 `OFFSET` 时，数据库其实要先数过前面那些行再扔掉，`OFFSET 100000` 会越来越慢。数据很多时改成「上一页最后一个 id 之后的 20 条」：`WHERE id < 上一页最小id ORDER BY id DESC LIMIT 20`。
@@ -2729,6 +2798,7 @@ INSERT INTO users (username) VALUES ('alice') ON CONFLICT (username) DO NOTHING;
 | | PostgreSQL | MySQL |
 |---|---|---|
 | 自增主键 | `serial` 或 `GENERATED ALWAYS AS IDENTITY` | `AUTO_INCREMENT` |
+| 修改时自动更新时间 | 不支持，`UPDATE` 时自己写 `updated_at = now()`，或者用触发器 | 列定义加 `ON UPDATE CURRENT_TIMESTAMP` 就行 |
 | 插入后拿新行 | `RETURNING id, ...` | 不支持，用 `LAST_INSERT_ID()` 拿 id 再查一次 |
 | upsert | `ON CONFLICT (列) DO UPDATE SET ...` / `DO NOTHING` | `ON DUPLICATE KEY UPDATE ...`，不能指定按哪个约束 |
 | 按条件计数 | `count(*) FILTER (WHERE ...)` | `sum(CASE WHEN ... THEN 1 ELSE 0 END)` |
