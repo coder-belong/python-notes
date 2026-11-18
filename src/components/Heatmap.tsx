@@ -1,17 +1,29 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { dayKey, formatDuration } from "@/lib/study-store";
+import { dayKey, formatDuration, STUDIED_DAY_SECONDS } from "@/lib/study-store";
 
-/** 每天学了多久 → 颜色深浅 0~4 档。 */
+/** 每天学了多久 → 颜色深浅 0~4 档：不满 10 分钟不亮，10～20 分、20～40 分、40～60 分、1 小时以上。 */
 function level(seconds: number): number {
-  if (seconds < 60) return 0;
-  if (seconds < 15 * 60) return 1;
-  if (seconds < 30 * 60) return 2;
+  if (seconds < STUDIED_DAY_SECONDS) return 0;
+  if (seconds < 20 * 60) return 1;
+  if (seconds < 40 * 60) return 2;
   if (seconds < 60 * 60) return 3;
   return 4;
 }
+
+/** 悬停提示的文字：「11月18日 周二 · 学了 25 分」。 */
+function tipText(key: string, seconds: number): string {
+  const d = new Date(`${key}T00:00:00`);
+  const date = `${d.getMonth() + 1}月${d.getDate()}日 周${"日一二三四五六"[d.getDay()]}`;
+  if (seconds <= 0) return `${date} · 没学`;
+  const spent = `学了 ${formatDuration(seconds)}`;
+  return seconds < STUDIED_DAY_SECONDS ? `${date} · ${spent}（不满 10 分钟，不点亮）` : `${date} · ${spent}`;
+}
+
+/** align：靠近屏幕左右边时提示框往里靠，不超出屏幕。 */
+type Tip = { text: string; x: number; y: number; align: "center" | "left" | "right" };
 
 const ROW_LABELS = ["一", "", "三", "", "五", "", "日"];
 
@@ -24,6 +36,17 @@ type Props = {
 /** 学习热力图：一格一天，一列一周（周一在上），颜色越深学得越久。 */
 export default function Heatmap({ days, weeks = 53 }: Props) {
   const scroller = useRef<HTMLDivElement>(null);
+  const [tip, setTip] = useState<Tip | null>(null);
+
+  // 鼠标移到某一格上：在格子正上方显示提示（用 fixed 定位，不会被横向滚动的容器裁掉）
+  const showTip = (e: React.MouseEvent) => {
+    const cell = (e.target as HTMLElement).closest<HTMLElement>("i[data-day]");
+    if (!cell) return setTip(null);
+    const r = cell.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const align = x < 160 ? "left" : x > window.innerWidth - 160 ? "right" : "center";
+    setTip({ text: tipText(cell.dataset.day!, Number(cell.dataset.sec)), x, y: r.top, align });
+  };
 
   // 放不下时可以横向滚动，默认滚到最右边（最近的日子）
   useEffect(() => {
@@ -52,7 +75,7 @@ export default function Heatmap({ days, weeks = 53 }: Props) {
       const key = dayKey(date);
       const seconds = days[key] ?? 0;
       const future = key > todayKey;
-      if (!future && seconds >= 60) studiedDays++;
+      if (!future && seconds >= STUDIED_DAY_SECONDS) studiedDays++;
       if (!future) total += seconds;
       col.push({ key, seconds, future });
     }
@@ -65,8 +88,12 @@ export default function Heatmap({ days, weeks = 53 }: Props) {
 
   return (
     <div className="heatmap">
-      <div className="heatmap-scroll" ref={scroller}>
-        <div className="heatmap-grid" style={{ gridTemplateColumns: `auto repeat(${weeks}, minmax(var(--cell), 1fr))` }}>
+      <div className="heatmap-scroll" ref={scroller} onScroll={() => setTip(null)}>
+        <div
+          className="heatmap-grid"
+          onMouseOver={showTip}
+          onClick={showTip}
+          onMouseLeave={() => setTip(null)} style={{ gridTemplateColumns: `auto repeat(${weeks}, minmax(var(--cell), 1fr))` }}>
           <span />
           {months.map((m, i) => (
             <span key={i} className="heatmap-month">
@@ -78,9 +105,14 @@ export default function Heatmap({ days, weeks = 53 }: Props) {
           ))}
         </div>
       </div>
+      {tip && (
+        <div className={`heatmap-tip ${tip.align}`} style={{ left: tip.x, top: tip.y }} role="tooltip">
+          {tip.text}
+        </div>
+      )}
       <div className="heatmap-foot">
         <span>
-          最近 {weeks} 周学了 <b>{studiedDays}</b> 天，共 <b>{formatDuration(total)}</b>
+          最近 {weeks} 周有 <b>{studiedDays}</b> 天学满 10 分钟，共 <b>{formatDuration(total)}</b>
         </span>
         <span className="heatmap-legend">
           少
@@ -115,7 +147,8 @@ function Row({
           <i
             key={c.key}
             className={`lv${level(c.seconds)}${c.key === todayKey ? " today" : ""}`}
-            title={`${c.key}：${c.seconds >= 60 ? formatDuration(c.seconds) : "没学"}`}
+            data-day={c.key}
+            data-sec={c.seconds}
           />
         );
       })}

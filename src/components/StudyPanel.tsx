@@ -5,7 +5,15 @@ import { useEffect, useState } from "react";
 import Heatmap from "./Heatmap";
 
 import type { Section } from "@/lib/notes";
-import { dayKey, formatClock, formatDuration, lastDays, longestStreak, streak } from "@/lib/study-store";
+import {
+  dayKey,
+  formatClock,
+  formatDuration,
+  lastDays,
+  longestStreak,
+  streak,
+  STUDIED_DAY_SECONDS,
+} from "@/lib/study-store";
 import type { useStudy } from "@/lib/use-study";
 
 type Study = ReturnType<typeof useStudy>;
@@ -46,7 +54,7 @@ export default function StudyPanel({ study, sections, onClose }: Props) {
   const todayKey = dayKey();
   const today = data.days[todayKey] ?? 0;
   const totalSeconds = Object.values(data.days).reduce((a, b) => a + b, 0);
-  const studiedDays = Object.values(data.days).filter((s) => s >= 60).length;
+  const studiedDays = Object.values(data.days).filter((s) => s >= STUDIED_DAY_SECONDS).length;
   const week = lastDays(7);
   const weekSeconds = week.reduce((a, d) => a + (data.days[d] ?? 0), 0);
   const weekMax = Math.max(60, ...week.map((d) => data.days[d] ?? 0));

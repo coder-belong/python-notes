@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { apiGet } from "@/lib/account";
-import { formatDuration } from "@/lib/study-store";
+import { formatDuration, STUDIED_DAY_SECONDS } from "@/lib/study-store";
 import type { useStudy } from "@/lib/use-study";
 
 type Study = ReturnType<typeof useStudy>;
@@ -186,7 +186,7 @@ export default function AccountPanel({
   const passOk = password.length >= 6;
   const totalSeconds = Object.values(data.days).reduce((a, b) => a + b, 0);
   const doneCount = Object.values(data.done).filter(Boolean).length;
-  const studiedDays = Object.values(data.days).filter((v) => v >= 60).length;
+  const studiedDays = Object.values(data.days).filter((v) => v >= STUDIED_DAY_SECONDS).length;
 
   return (
     <div className={`modal-backdrop pinned ${gate ? "gate" : ""}`} onClick={gate ? undefined : onClose}>

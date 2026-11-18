@@ -1694,6 +1694,33 @@ h2.page-title {
   color: var(--text);
 }
 
+.heatmap-grid i[data-day]:hover {
+  outline: 1.5px solid var(--muted);
+  outline-offset: 1px;
+}
+
+/* 悬停提示：fixed 定位在格子正上方 */
+.heatmap-tip {
+  position: fixed;
+  z-index: 50;
+  transform: translate(-50%, calc(-100% - 8px));
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.heatmap-tip.left {
+  transform: translate(-12px, calc(-100% - 8px));
+}
+
+.heatmap-tip.right {
+  transform: translate(calc(-100% + 12px), calc(-100% - 8px));
+}
+
 .heatmap-legend {
   display: flex;
   align-items: center;

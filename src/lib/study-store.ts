@@ -115,13 +115,16 @@ export function lastDays(n: number): string[] {
   return out;
 }
 
-/** 连续学习天数：从今天往前数，每天至少学 1 分钟才算；今天还没学就从昨天开始数。 */
+/** 一天学满多久才算「学过」：热力图点亮、连续天数、学习天数都按这个。 */
+export const STUDIED_DAY_SECONDS = 10 * 60;
+
+/** 连续学习天数：从今天往前数，每天至少学 10 分钟才算；今天还没学满就从昨天开始数。 */
 export function streak(days: Record<string, number>): number {
   const now = new Date();
   let count = 0;
   for (let i = 0; i < 3650; i++) {
     const key = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i));
-    if ((days[key] ?? 0) >= 60) count++;
+    if ((days[key] ?? 0) >= STUDIED_DAY_SECONDS) count++;
     else if (i === 0) continue;
     else break;
   }
@@ -145,10 +148,10 @@ export function formatClock(seconds: number): string {
   return [h, m, s].map((n) => String(n).padStart(2, "0")).join(":");
 }
 
-/** 最长连续学习天数（每天至少学 1 分钟才算）。 */
+/** 最长连续学习天数（每天至少学 10 分钟才算）。 */
 export function longestStreak(days: Record<string, number>): number {
   const studied = Object.keys(days)
-    .filter((k) => days[k] >= 60)
+    .filter((k) => days[k] >= STUDIED_DAY_SECONDS)
     .sort();
   let best = 0;
   let run = 0;
