@@ -3560,8 +3560,10 @@ python -m pytest -q -k 404     # 只跑名字里带 404 的测试
 
 到 3.11 为止，所有接口都写在 `main.py` 里。接下来要加注册登录，接口会越来越多，先把结构理顺：**按业务拆成多个路由文件，配置集中到一个地方**。这一节只搬代码、不改功能，搬完 3.11 的测试应该原样通过。
 
+先装一个新包，下面「配置」那部分要用（在 `todo-api/` 目录、激活了 `.venv` 的终端里执行）：
+
 ```bash
-uv pip install pydantic-settings
+uv pip install pydantic-settings   # 用写 pydantic 模型的方式读配置（环境变量、.env）
 ```
 
 拆完的目录（后面几节在这个基础上加文件）：
@@ -3747,8 +3749,10 @@ python -m pytest -q                 # 还是 5 passed：只是搬了位置，功
 
 现在谁都能调接口，所有人看到的也是同一份任务。这一节加上账号：注册、登录，登录后拿到一个 **token**，之后每次请求带上它，后端就知道「你是谁」。下一节再让每个人只看到自己的任务。
 
+先装两个新包：
+
 ```bash
-uv pip install pyjwt "pwdlib[argon2]"
+uv pip install pyjwt "pwdlib[argon2]"   # pyjwt：生成、校验 token；pwdlib[argon2]：给密码算哈希
 ```
 
 ### 几种登录方式
@@ -4270,7 +4274,7 @@ def test_pagination(client: TestClient, auth: dict) -> None:   # auth：上面 f
 迁移脚本要提交到 git，和代码一起走。
 
 ```bash
-uv pip install alembic
+uv pip install alembic         # 装数据库迁移工具
 alembic init migrations        # 在 todo-api/ 下生成 alembic.ini 和 migrations/ 目录
 ```
 
