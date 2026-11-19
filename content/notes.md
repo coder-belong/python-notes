@@ -3017,8 +3017,6 @@ def list_tasks() -> dict:
         return success([to_dict(t) for t in tasks])    # 每个都转成 dict 再返回
 ```
 
-就两步：`select(Task)` 说「我要查 Task 表」，`session.scalars(...).all()` 去数据库执行，拿回一个 `Task` 列表；然后转成 dict 返回。
-
 **② 加一个筛选：只看没完成的**。在 `select` 后面加 `.where(...)`，相当于 SQL 的 `WHERE`：
 
 ```python
@@ -3183,17 +3181,43 @@ def db_session() -> Iterator[Session]:
 Db = Annotated[Session, Depends(db_session)]   # 起个短名字，接口里写 session: Db 就行
 ```
 
-接口里使用：
-
-```python
-@app.get("/tasks/{task_id}")
-def get_task(task_id: int, session: Db) -> dict:
-    ...   # session 已经准备好了，直接用
-```
-
 - **`yield`**：函数执行到 `yield` 时交出一个值并暂停，之后从暂停的地方接着跑。执行顺序：① → 接口函数 → ② 或 ③ → ④。
 - **`Annotated[Session, Depends(db_session)]`**：「类型是 Session，值由 `db_session` 提供」。
 - **写接口里自己 `session.commit()`**：② 可能在响应已经发出去之后才执行，万一提交失败，前端会以为成功了。所以写数据的接口在返回前自己提交。
+
+接口里使用：参数写 `session: Db`，FastAPI 每次请求先调用 `db_session()` 开好会话再传进来，接口里不用再写 `with SessionLocal() as session:`。拿第 3.8 节的「查一条」和「增」改一下：
+
+```python
+# crud_demo.py（改成用依赖注入）
+from app.db import Db
+
+
+# 查一条：GET /tasks/1（只读，不用 commit）
+@app.get("/tasks/{task_id}")
+def get_task(task_id: int, session: Db) -> dict:
+    task = session.get(Task, task_id)        # session 已经准备好了，直接用
+    if task is None:
+        raise fail(404, "没有这个任务")
+    return success(to_dict(task))
+    # 返回后 db_session 接着跑 ②（这里没改数据，提交了也没事）和 ④ 关闭
+
+
+# 增：POST /tasks?title=写笔记（写数据，返回前自己 commit）
+@app.post("/tasks", status_code=201)
+def create_task(title: str, session: Db, note: str | None = None) -> dict:
+    same = session.scalars(select(Task).where(Task.title == title)).one_or_none()
+    if same is not None:
+        raise fail(409, "已经有同名任务了")   # 抛异常 → db_session 走 ③ 回滚，再 ④ 关闭
+
+    task = Task(title=title, note=note)
+    session.add(task)
+    session.commit()                          # 自己提交：提交失败会直接报错，前端不会收到「创建成功」
+    return success(to_dict(task), msg="创建成功")
+```
+
+和第 3.8 节比，接口里少了一层 `with`，开会话、出错回滚、关闭都交给了 `db_session`。返回的响应体和第 3.8 节完全一样。
+
+`session: Db` 没有默认值，要写在有默认值的参数（`note: str | None = None`）前面，这是 Python 函数参数的规定。
 
 ## 3.10 完整的 todo 接口 {#todo-api}
 
