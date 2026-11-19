@@ -3267,6 +3267,10 @@ class TaskList(BaseModel):
     total: int
 ```
 
+下面按「准备、查列表、增、查一条、改、删」分块写，几块代码依次放进同一个文件 `app/main.py`。
+
+### 准备：导入、建 app、抽出 load_task
+
 ```python
 # app/main.py
 from __future__ import annotations
@@ -3293,8 +3297,15 @@ def load_task(session: Session, task_id: int) -> Task:
     if task is None:
         raise task_not_found()
     return task
+```
 
+- **`load_task`**：第 3.8 节里「查一条、改、删」都在重复「`session.get` → 是 None 就 404」，抽成一个函数，后面三个接口各用一行就行。
+- 接口参数都写 `session: Db`（第 3.9 节），不再写 `with SessionLocal() as session:`。
 
+### 查列表：GET /tasks
+
+```python
+# app/main.py（接着写）
 @app.get("/tasks")
 def list_tasks(session: Db, done: bool | None = None, limit: int = 20) -> dict:
     stmt = select(Task).order_by(Task.id.desc()).limit(limit)
@@ -3304,8 +3315,16 @@ def list_tasks(session: Db, done: bool | None = None, limit: int = 20) -> dict:
     total = session.scalar(select(func.count()).select_from(Task))
     items = [TaskOut.model_validate(t) for t in tasks]   # 数据库对象 → 响应格式
     return success(TaskList(items=items, total=total or 0))
+```
 
+- 比第 3.8 节多了三样：`.order_by(Task.id.desc())` 新的排前面，`.limit(limit)` 最多取几条，`total` 数一共几条。
+- **`TaskOut.model_validate(task)`**：把数据库里的 `Task` 对象转成返回给前端的 `TaskOut`（第 3.3 节加了 `from_attributes=True` 才能这样用），作用和第 3.8 节的 `to_dict` 一样。
+- **为什么不能直接 `success(task)`**：`Task` 是 SQLAlchemy 的数据库对象，FastAPI 不知道怎么把它转成 JSON，会报错返回 500。转成 `TaskOut` 还有一个好处：只输出 `TaskOut` 里定义的字段，以后表里加了不该给前端看的列，也不会被带出去。
 
+### 增：POST /tasks
+
+```python
+# app/main.py（接着写）
 @app.post("/tasks", status_code=201)
 def create_task(body: TaskCreate, session: Db) -> dict:
     if session.scalar(select(Task).where(Task.title == body.title, Task.done.is_(False))):
@@ -3314,21 +3333,39 @@ def create_task(body: TaskCreate, session: Db) -> dict:
     session.add(task)
     session.commit()         # 写接口自己提交：提交失败就报错，不会被当成成功
     return success(TaskOut.model_validate(task), msg="创建成功")
+```
 
+- 参数从第 3.8 节的 `?title=...` 换成了请求体 `body: TaskCreate`（第 3.3 节），标题长度这些校验交给 pydantic。
+- 只拦「同名的**未完成**任务」：已经完成的同名任务不算冲突。`.where(条件1, 条件2)` 是「且」。
+- **返回的时间有两种写法**：刚创建的任务返回 `"created_at": "2026-11-19T09:34:33.379495Z"`，从库里查出来的返回 `"2026-11-19T17:34:09.370014+08:00"`。创建时返回的是 Python 里 `_now()` 算的 UTC 时间；查询时 Postgres 按自己设置的时区（装的时候跟电脑一样，国内是 `Asia/Shanghai`）换算好再返回。两种写法是同一个时刻，前端用 `new Date(...)` 解析结果一样。
 
+### 查一条：GET /tasks/1
+
+```python
+# app/main.py（接着写）
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int, session: Db) -> dict:
     return success(TaskOut.model_validate(load_task(session, task_id)))
+```
 
+查不到时 `load_task` 里直接抛 404，这里不用再判断。
 
+### 改：PATCH /tasks/1/done
+
+```python
+# app/main.py（接着写）
 @app.patch("/tasks/{task_id}/done")
 def finish_task(task_id: int, session: Db) -> dict:
     task = load_task(session, task_id)
     task.done = True         # 改属性就行，提交时自动生成 UPDATE
     session.commit()
     return success(TaskOut.model_validate(task))
+```
 
+### 删：DELETE /tasks/1
 
+```python
+# app/main.py（接着写）
 # 删除成功返回 200 而不是 204：204 表示「没有响应体」，而我们约定每个响应都有 {code, msg, data}
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: int, session: Db) -> dict:
@@ -3337,9 +3374,7 @@ def delete_task(task_id: int, session: Db) -> dict:
     return success(msg="删除成功")
 ```
 
-- **`TaskOut.model_validate(task)`**：把数据库里的 `Task` 对象转成返回给前端的 `TaskOut`（第 3.3 节加了 `from_attributes=True` 才能这样用）。
-- **为什么不能直接 `success(task)`**：`Task` 是 SQLAlchemy 的数据库对象，FastAPI 不知道怎么把它转成 JSON，会报错返回 500。转成 `TaskOut` 还有一个好处：只输出 `TaskOut` 里定义的字段，以后表里加了不该给前端看的列，也不会被带出去。
-- **返回的时间有两种写法**：刚创建的任务返回 `"created_at": "2026-11-19T09:34:33.379495Z"`，从库里查出来的返回 `"2026-11-19T17:34:09.370014+08:00"`。创建时返回的是 Python 里 `_now()` 算的 UTC 时间；查询时 Postgres 按自己设置的时区（装的时候跟电脑一样，国内是 `Asia/Shanghai`）换算好再返回。两种写法是同一个时刻，前端用 `new Date(...)` 解析结果一样。
+### 启动试一下
 
 启动：`uvicorn app.main:app --reload`，到 `/docs` 里点着试，或者用 curl：
 
