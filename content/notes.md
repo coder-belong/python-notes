@@ -2951,7 +2951,7 @@ class Task(Base):
 ```python
 # crud_demo.py（放在 todo-api/ 下）：每个接口演示一种数据库操作
 from fastapi import FastAPI
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app import errors
 from app.db import Base, SessionLocal, engine
@@ -2996,29 +2996,56 @@ def create_task(title: str, note: str | None = None) -> dict:
         return success(to_dict(task), msg="创建成功")
 ```
 
-| 请求 | HTTP | 返回的 data / msg |
+| 请求 | HTTP | 响应体 |
 |---|---|---|
-| `POST /tasks?title=写笔记` | 201 | `{"id": 1, "title": "写笔记", "done": false, "note": null}` |
-| `POST /tasks?title=读书` | 201 | `{"id": 2, "title": "读书", ...}` |
-| `POST /tasks?title=跑步&note=5 公里` | 201 | `{"id": 3, "title": "跑步", "note": "5 公里", ...}` |
-| `POST /tasks?title=读书` | 409 | 已经有同名任务了 |
+| `POST /tasks?title=写笔记` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 1, "title": "写笔记", "done": false, "note": null}}` |
+| `POST /tasks?title=读书` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 2, "title": "读书", "done": false, "note": null}}` |
+| `POST /tasks?title=跑步&note=5 公里` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 3, "title": "跑步", "done": false, "note": "5 公里"}}` |
+| `POST /tasks?title=读书` | 409 | `{"code": -1, "msg": "已经有同名任务了", "data": null}` |
 
 ### 查：列表和单条
 
+查列表分三步看，一次只多一样东西。
+
+**① 先查全部**（先看懂，不用写进文件）：
+
+```python
+@app.get("/tasks")
+def list_tasks() -> dict:
+    with SessionLocal() as session:
+        tasks = session.scalars(select(Task)).all()     # 查出所有任务，相当于 SELECT * FROM tasks
+        return success([to_dict(t) for t in tasks])    # 每个都转成 dict 再返回
+```
+
+就两步：`select(Task)` 说「我要查 Task 表」，`session.scalars(...).all()` 去数据库执行，拿回一个 `Task` 列表；然后转成 dict 返回。
+
+**② 加一个筛选：只看没完成的**。在 `select` 后面加 `.where(...)`，相当于 SQL 的 `WHERE`：
+
+```python
+select(Task).where(Task.done == False)     # SELECT * FROM tasks WHERE done = false
+```
+
+**③ 让前端决定要不要筛选**：把 `done` 做成可选参数，传了 `?done=false` 才加条件，不传就查全部。写进文件的是这个版本：
+
 ```python
 # crud_demo.py（接着写）
-# 查列表：GET /tasks?done=false
+# 查列表：GET /tasks 或 GET /tasks?done=false
 @app.get("/tasks")
 def list_tasks(done: bool | None = None) -> dict:
     with SessionLocal() as session:
-        stmt = select(Task).order_by(Task.id.desc())     # 按 id 倒序
-        if done is not None:
-            stmt = stmt.where(Task.done == done)          # 可以一步步加条件
-        tasks = session.scalars(stmt).all()               # 执行查询，拿到对象列表
-        total = session.scalar(select(func.count()).select_from(Task))   # 计数，只取一个值
-        return success({"items": [to_dict(t) for t in tasks], "total": total})
+        stmt = select(Task)                       # 先说要查 Task 表（这时还没查）
+        if done is not None:                      # 前端传了 done 才加条件
+            stmt = stmt.where(Task.done == done)
+        tasks = session.scalars(stmt).all()       # 这时才真正去数据库查
+        return success([to_dict(t) for t in tasks])
+```
 
+`stmt` 是「查询语句」的意思：`select(...)`、`.where(...)` 只是在拼这条语句，`session.scalars(stmt)` 才把它发给数据库。所以可以先拼好、再按条件往上加，最后查一次。
 
+排序（`.order_by`）、只取几条（`.limit`）、数总数，都是在这个基础上再加，第 3.10 节用到时再讲。
+
+```python
+# crud_demo.py（接着写）
 # 查一条：GET /tasks/1
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int) -> dict:
@@ -3029,11 +3056,11 @@ def get_task(task_id: int) -> dict:
         return success(to_dict(task))
 ```
 
-| 请求 | HTTP | 返回的 data / msg |
+| 请求 | HTTP | 响应体 |
 |---|---|---|
-| `GET /tasks` | 200 | 3 条，id 倒序：跑步、读书、写笔记；`total: 3` |
-| `GET /tasks/1` | 200 | `{"id": 1, "title": "写笔记", ...}` |
-| `GET /tasks/99` | 404 | 没有这个任务 |
+| `GET /tasks` | 200 | `{"code": 200, "msg": "ok", "data": [{"id": 1, "title": "写笔记", "done": false, "note": null}, {"id": 2, "title": "读书", "done": false, "note": null}, {"id": 3, "title": "跑步", "done": false, "note": "5 公里"}]}` |
+| `GET /tasks/1` | 200 | `{"code": 200, "msg": "ok", "data": {"id": 1, "title": "写笔记", "done": false, "note": null}}` |
+| `GET /tasks/99` | 404 | `{"code": -1, "msg": "没有这个任务", "data": null}` |
 
 ### 改：改属性 + commit
 
@@ -3051,10 +3078,10 @@ def finish_task(task_id: int) -> dict:
         return success(to_dict(task), msg="已完成")
 ```
 
-| 请求 | HTTP | 返回的 data / msg |
+| 请求 | HTTP | 响应体 |
 |---|---|---|
-| `PATCH /tasks/1/done` | 200 | `{"id": 1, "done": true, ...}` |
-| `GET /tasks?done=false` | 200 | 只剩跑步、读书 |
+| `PATCH /tasks/1/done` | 200 | `{"code": 200, "msg": "已完成", "data": {"id": 1, "title": "写笔记", "done": true, "note": null}}` |
+| `GET /tasks?done=false` | 200 | `{"code": 200, "msg": "ok", "data": [{"id": 2, "title": "读书", "done": false, "note": null}, {"id": 3, "title": "跑步", "done": false, "note": "5 公里"}]}` |
 
 ### 删：delete + commit
 
@@ -3072,14 +3099,12 @@ def delete_task(task_id: int) -> dict:
         return success(msg="删除成功")
 ```
 
-| 请求 | HTTP | 返回的 data / msg |
+| 请求 | HTTP | 响应体 |
 |---|---|---|
-| `DELETE /tasks/2` | 200 | 删除成功 |
-| `GET /tasks` | 200 | 剩跑步、写笔记，`total: 2` |
+| `DELETE /tasks/2` | 200 | `{"code": 200, "msg": "删除成功", "data": null}` |
+| `GET /tasks` | 200 | `{"code": 200, "msg": "ok", "data": [{"id": 1, "title": "写笔记", "done": true, "note": null}, {"id": 3, "title": "跑步", "done": false, "note": "5 公里"}]}` |
 
 ### 小结
-
-数据存在 Postgres 的 `todo` 库里，重启服务数据还在，在 DBeaver 里打开 `tasks` 表也能看到；想清空就 `dropdb todo && createdb todo`。
 
 常用写法：
 
@@ -3097,7 +3122,33 @@ def delete_task(task_id: int) -> dict:
 | 删除 | `session.delete(obj)` |
 | 提交 / 撤销 | `session.commit()` / `session.rollback()` |
 
-想看 SQLAlchemy 实际发了什么 SQL：在 `db.py` 里改成 `create_engine(DATABASE_URL, echo=True)`，终端会打印每一条 SQL。你会看到 `add` 和改属性时什么都没发，`commit` 时才出现 `INSERT` / `UPDATE` / `DELETE`。
+**想看 SQLAlchemy 实际发了什么 SQL**：在 `db.py` 里给 `create_engine` 加上 `echo=True`：
+
+```python
+# app/db.py
+engine = create_engine(DATABASE_URL, echo=True)   # echo=True：把每条 SQL 打印到终端，调试用，上线前去掉
+```
+
+重启服务，调一次 `POST /tasks?title=写笔记`，终端会打出这样的内容（简化过，去掉了时间、参数这些细节）：
+
+```text
+BEGIN (implicit)                                  ← with 开会话，开始一个事务
+SELECT tasks.id, tasks.title, ... FROM tasks
+WHERE tasks.title = ?                             ← 查同名：session.scalars(...) 立刻就查了
+INSERT INTO tasks (title, done, note, ...) VALUES (?, ?, ?, ...)   ← commit 时才插入
+COMMIT                                            ← 真正写进数据库
+```
+
+`session.add(task)` 那一行什么 SQL 都没发，`INSERT` 是到 `commit()` 才出现的。改和删也一样：
+
+```text
+PATCH /tasks/1/done                    DELETE /tasks/1
+SELECT ... WHERE tasks.id = ?          SELECT ... WHERE tasks.id = ?    ← session.get 立刻查
+UPDATE tasks SET done=? WHERE ...      DELETE FROM tasks WHERE ...      ← commit 时才发
+COMMIT                                 COMMIT
+```
+
+`?` 是参数的占位符，真正的值（比如 `'写笔记'`）会在下一行单独打印出来。用 Postgres 时占位符长得不一样（类似 `%(title)s`），意思相同。
 
 **发现问题了吗**：每个接口都在重复 `with SessionLocal() as session:`、查不到就 `raise fail(404, ...)`。下一节用依赖注入把「开会话」交给 FastAPI，第 3.10 节再把「查不到就 404」抽成 `load_task()`。
 
