@@ -1684,19 +1684,16 @@ import httpx
 
 
 async def main() -> None:
-    async with httpx.AsyncClient(base_url="https://httpbin.org", timeout=10) as client:
-        start = time.perf_counter()
+    async with httpx.AsyncClient(base_url="https://httpbin.org", timeout=10) as client:   # 异步版的 Client，用 async with
+        start = time.perf_counter()                       # 记下开始时间
         for _ in range(3):                                # 一个一个发：等完一个再发下一个
-            await client.get("/delay/1")
+            await client.get("/delay/1")                  # 这个接口故意等 1 秒才返回
         print(f"一个一个发：{time.perf_counter() - start:.1f}s")
 
         start = time.perf_counter()
-        # 循环 3 次准备 3 个请求（_ 表示循环变量用不到）；没 await，请求还没发出去
-        # requests = [未发出的请求, 未发出的请求, 未发出的请求]
-        requests = [client.get("/delay/1") for _ in range(3)]
-        # *requests 把列表拆开传给 gather，等于 gather(请求1, 请求2, 请求3)：一起发出、一起等
-        responses = await asyncio.gather(*requests)
-        print([r.status_code for r in responses])
+        requests = [client.get("/delay/1") for _ in range(3)]   # 准备 3 个请求；没 await，还没发出去（_ 表示用不到循环变量）
+        responses = await asyncio.gather(*requests)       # *requests 拆开传入，等于 gather(请求1, 请求2, 请求3)：一起发、一起等
+        print([r.status_code for r in responses])         # 结果顺序和传入顺序一样
         print(f"同时发：{time.perf_counter() - start:.1f}s")
 
 
@@ -1721,34 +1718,24 @@ import httpx
 
 
 def get_with_retry(url: str, retries: int = 3) -> httpx.Response:
-    # 最多试 retries 次，attempt 依次是 1、2、3（从 1 开始数，打印「第 1 次」更自然）
-    for attempt in range(1, retries + 1):
+    for attempt in range(1, retries + 1):                 # attempt 依次是 1、2、3，打印「第 1 次」更自然
         try:
-            # ① 发请求，最多等 5 秒
-            r = httpx.get(url, timeout=5)
-
-            # ② 收到响应了：看值不值得重试
-            #    5xx（对方临时出错）、429（被限流）→ 等一会儿可能就好，要重试
-            #    其他（成功，或 404、401 这类请求本身有问题的）→ 重试也一样，直接返回
-            should_retry = r.status_code >= 500 or r.status_code == 429
-            if not should_retry:
-                return r
+            r = httpx.get(url, timeout=5)                 # ① 发请求，最多等 5 秒
+            should_retry = r.status_code >= 500 or r.status_code == 429   # ② 5xx、429 值得重试
+            if not should_retry:                          # 成功，或 404、401 这类重试也没用的
+                return r                                  # 直接返回
             print(f"第 {attempt} 次：{r.status_code}")
 
-        except httpx.TransportError as e:
-            # ③ 根本没收到响应：超时、断网、连不上，也要重试
+        except httpx.TransportError as e:                 # ③ 根本没收到响应：超时、断网、连不上
             print(f"第 {attempt} 次：{type(e).__name__}")   # 打印错误类型，比如 ConnectTimeout
 
-        # ④ 不是最后一次就等一会儿再试：1 秒、2 秒、4 秒……越等越久（指数退避）
-        #    对方已经忙不过来了，大家还马上一起重试只会更糟
-        if attempt < retries:
-            time.sleep(2 ** (attempt - 1))
+        if attempt < retries:                             # ④ 不是最后一次就等一会儿再试
+            time.sleep(2 ** (attempt - 1))                # 等 1、2、4 秒……越等越久（指数退避）
 
-    # ⑤ 走到这里说明每次都失败了（成功的话上面早就 return 了）。次数要有上限，放弃并报错
-    raise RuntimeError(f"重试 {retries} 次都失败了：{url}")
+    raise RuntimeError(f"重试 {retries} 次都失败了：{url}")   # ⑤ 每次都失败才会走到这里，放弃并报错
 
 try:
-    get_with_retry("https://httpbin.org/status/503")
+    get_with_retry("https://httpbin.org/status/503")      # 这个地址固定返回 503
 except RuntimeError as e:
     print(e)
 # 第 1 次：503
@@ -1756,6 +1743,11 @@ except RuntimeError as e:
 # 第 3 次：503
 # 重试 3 次都失败了：https://httpbin.org/status/503
 ```
+
+- **② 哪些值得重试**：5xx（对方临时出错）、429（被限流）等一会儿可能就好；成功、或者 404、401 这类请求本身有问题的，重试也一样，直接返回。
+- **③ 没收到响应也要重试**：超时、断网、连不上都会抛 `httpx.TransportError`。
+- **④ 为什么越等越久**：对方已经忙不过来了，大家还马上一起重试只会更糟。
+- **⑤ 次数要有上限**：成功的话上面早就 `return` 了，走到最后说明每次都失败，不能无限重试。
 
 实际项目里一般不自己写，而是用现成的库（比如 `tenacity`），或者用 SDK 自带的重试，OpenAI、Anthropic 的 SDK 都自带。这段代码的作用是让你知道它们背后在干什么。
 
@@ -1970,60 +1962,77 @@ todo-api/
 
 ## 3.2 第一个接口 {#first-api}
 
-下面是一组 RESTful 风格的接口示例：同一个资源 `/users`，用不同的 HTTP 方法表示查、增、改、删。
+下面是一组 RESTful 风格的接口示例：同一个资源 `/users`，用不同的 HTTP 方法表示查、增、改、删。分几块写进同一个文件 `app/hello.py`。
+
+**准备：建 app、定义请求体**
 
 ```python
 # app/hello.py
 from typing import Annotated
 
-from fastapi import FastAPI, Header
-from pydantic import BaseModel
+from fastapi import FastAPI, Header             # Header：从请求头取参数（最后一块用）
+from pydantic import BaseModel                  # 定义请求体的格式（下一节细讲）
 
-app = FastAPI()
-
-
-class User(BaseModel):
-    name: str
-    age: int
+app = FastAPI()                                 # 创建应用，下面的接口都挂在它上面
 
 
-@app.get("/users")                      # 列表：查询参数 /users?q=tom&page=2
-def list_users(q: str | None = None, page: int = 1) -> dict:
-    return {"q": q, "page": page}
-
-
-@app.get("/users/{user_id}")            # 详情：路径参数 /users/5
-def get_user(user_id: int) -> dict:
-    return {"user_id": user_id}
-
-
-# status_code=201：成功时返回 201 Created（新建成功），不写默认是 200
-@app.post("/users", status_code=201)    # 新建：请求体 {"name": "Tom", "age": 18}
-def create_user(body: User) -> User:
-    # 直接返回 pydantic 对象就行：FastAPI 会先把它转成字典，再转成 JSON 返回给前端
-    # 前端收到：{"name": "Tom", "age": 18}
-    return body
-
-
-@app.put("/users/{user_id}")            # 修改：路径参数 + 请求体
-def update_user(user_id: int, body: User) -> dict:
-    # 字典里套 pydantic 对象也一样，FastAPI 整个转成 JSON
-    # 前端收到：{"user_id": 5, "updated": {"name": "Tom", "age": 18}}
-    return {"user_id": user_id, "updated": body}
-
-
-@app.delete("/users/{user_id}")         # 删除：路径参数
-def delete_user(user_id: int) -> dict:
-    return {"deleted": user_id}
-
-
-@app.get("/me")                         # 请求头：X-Token: abc
-# Annotated[类型, 说明]：x_token 的类型是 str，Header() 说明它从「请求头」里取
-# 参数名 x_token 会自动对应请求头 X-Token：下划线换成横线，不分大小写
-# 没带这个请求头会返回 422
-def me(x_token: Annotated[str, Header()]) -> dict:
-    return {"token": x_token}           # 带了 X-Token: abc 时返回 {"token": "abc"}
+class User(BaseModel):                          # 请求体格式：{"name": "Tom", "age": 18}
+    name: str                                   # 必填，字符串
+    age: int                                    # 必填，整数
 ```
+
+**查：列表和详情**
+
+```python
+# app/hello.py（接着写）
+@app.get("/users")                              # 列表：GET /users?q=tom&page=2
+def list_users(q: str | None = None, page: int = 1) -> dict:   # 普通参数 = 查询参数；有默认值，不传也行
+    return {"q": q, "page": page}               # 访问 /users 返回 {"q": null, "page": 1}
+
+
+@app.get("/users/{user_id}")                    # 详情：GET /users/5
+def get_user(user_id: int) -> dict:             # 名字和路径里的 {user_id} 一样 = 路径参数，自动转成 int
+    return {"user_id": user_id}                 # {"user_id": 5}
+```
+
+**增：请求体**
+
+```python
+# app/hello.py（接着写）
+@app.post("/users", status_code=201)            # 新建：成功返回 201 Created，不写默认是 200
+def create_user(body: User) -> User:            # 类型是 BaseModel 子类 = 从 JSON 请求体读
+    return body                                 # 直接返回 pydantic 对象，FastAPI 转成 JSON：{"name": "Tom", "age": 18}
+```
+
+**改：路径参数 + 请求体**
+
+```python
+# app/hello.py（接着写）
+@app.put("/users/{user_id}")                    # 修改：PUT /users/5，请求体 {"name": "Tom", "age": 18}
+def update_user(user_id: int, body: User) -> dict:   # 两种参数可以一起用
+    return {"user_id": user_id, "updated": body}     # 字典里套 pydantic 对象也行：{"user_id": 5, "updated": {"name": "Tom", "age": 18}}
+```
+
+**删：路径参数**
+
+```python
+# app/hello.py（接着写）
+@app.delete("/users/{user_id}")                 # 删除：DELETE /users/5
+def delete_user(user_id: int) -> dict:
+    return {"deleted": user_id}                 # {"deleted": 5}
+```
+
+**请求头：Header()**
+
+```python
+# app/hello.py（接着写）
+@app.get("/me")                                 # GET /me，带请求头 X-Token: abc
+def me(x_token: Annotated[str, Header()]) -> dict:   # 类型是 str，Header() 说明从请求头取；没带就返回 422
+    return {"token": x_token}                   # {"token": "abc"}
+```
+
+- **`Annotated[类型, 说明]`**：`x_token` 的类型是 `str`，`Header()` 说明它从「请求头」里取。
+- **参数名怎么对应请求头**：`x_token` 自动对应 `X-Token`，下划线换成横线，不分大小写。
 
 在 `todo-api/` 目录启动，然后打开 http://127.0.0.1:8000/docs 点着试（Try it out → Execute）：
 
@@ -2319,35 +2328,45 @@ def install(app: FastAPI) -> None:
 3. FastAPI 发现是 `ApiError`，调用启动时登记的 `handle_api_error`。
 4. 返回 404 和 `{"code": -1, "msg": "没有这个任务", "data": null}`。
 
-把上一节的 `api_demo.py` 改成这样：
+把上一节的 `api_demo.py` 改成这样，分三块写进同一个文件：
+
+**准备：建 app、登记错误处理器**
 
 ```python
 # api_demo.py
 from fastapi import FastAPI
 
 from app import errors
-from app.errors import fail, task_not_found
-from app.response import success
+from app.errors import fail, task_not_found      # 业务错误：上面 errors.py 里定义的
+from app.response import success                 # 成功的统一格式（第 3.4 节）
 
 app = FastAPI()
 errors.install(app)            # 创建 app 之后调用一次：登记错误处理器（正式项目写在 main.py 里）
 
-TASKS = {1: "写笔记"}
+TASKS = {1: "写笔记"}          # 先用字典假装数据库：id → 标题
+```
 
+**查一条：不存在就 404**
 
+```python
+# api_demo.py（接着写）
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int) -> dict:
-    if task_id not in TASKS:
-        raise task_not_found()                    # 不存在：404
-    return success({"id": task_id, "title": TASKS[task_id]})
+    if task_id not in TASKS:                     # 字典里没有这个 id
+        raise task_not_found()                   # 抛 404，函数到这里就结束了
+    return success({"id": task_id, "title": TASKS[task_id]})   # 有就正常返回
+```
 
+**新建：重名就 409**
 
+```python
+# api_demo.py（接着写）
 @app.post("/tasks", status_code=201)
 def create_task(title: str) -> dict:
-    if title in TASKS.values():
-        raise fail(409, "已经有同名任务了")         # 重名：409
-    new_id = max(TASKS) + 1
-    TASKS[new_id] = title
+    if title in TASKS.values():                  # 已经有同样的标题
+        raise fail(409, "已经有同名任务了")        # 抛 409，后面不会执行
+    new_id = max(TASKS) + 1                      # 现有最大 id + 1 当新 id
+    TASKS[new_id] = title                        # 存进字典
     return success({"id": new_id, "title": title}, msg="创建成功")
 ```
 
@@ -2387,71 +2406,91 @@ app = FastAPI()                         # 没有 errors.install(app)
 | 路径不存在、请求方法不对 | 404 `{"detail": "Not Found"}` / 405 `{"detail": "Method Not Allowed"}` |
 | 代码 bug | 500 纯文本 `Internal Server Error`，不是 JSON |
 
-在 `install()` 里把这几种错误也拦截下来。把 `app/errors.py` 换成下面的完整版：
+在 `install()` 里把这几种错误也拦截下来。把 `app/errors.py` 换成下面的完整版，分五块写进同一个文件。
+
+**开头：导入、业务错误、统一的错误格式**
 
 ```python
 # app/errors.py（完整版）
 from __future__ import annotations
 
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.exceptions import RequestValidationError      # ② 参数校验失败时 FastAPI 抛的异常
+from fastapi.responses import JSONResponse                 # 自己决定状态码和响应体
+from starlette.exceptions import HTTPException as StarletteHTTPException   # ③ 404 / 405 时框架抛的异常
 
 
-class ApiError(Exception):
+class ApiError(Exception):                      # 业务错误，和上面新建的版本一样
     def __init__(self, status: int, msg: str) -> None:
-        super().__init__(msg)
-        self.status = status
-        self.msg = msg
+        super().__init__(msg)                   # 打印这个异常时显示 msg
+        self.status = status                    # HTTP 状态码：404、409……
+        self.msg = msg                          # 给用户看的提示
 
 
-def fail(status: int, msg: str) -> ApiError:
+def fail(status: int, msg: str) -> ApiError:    # 接口里 raise fail(状态码, 提示)
     return ApiError(status, msg)
 
 
-def task_not_found() -> ApiError:
+def task_not_found() -> ApiError:               # 常用的错误写成函数
     return fail(404, "没有这个任务")
 
 
 def error_response(status: int, msg: str) -> JSONResponse:
     """所有错误都用这一个格式返回。"""
-    return JSONResponse(status_code=status, content={"code": -1, "msg": msg, "data": None})
+    return JSONResponse(status_code=status, content={"code": -1, "msg": msg, "data": None})   # 下面 4 个处理器都调它
+```
 
+**`error_response()`**：4 个处理器都用它返回，保证格式完全一样。
 
+**① 业务错误：接口里 raise fail(...)**
+
+```python
+# app/errors.py（接着写）
 def install(app: FastAPI) -> None:
     """统一的错误拦截：不管哪种错误，前端收到的都是 {code: -1, msg, data: null}。"""
 
-    # ① 业务错误：接口里 raise fail(...)
-    @app.exception_handler(ApiError)
-    async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:
-        return error_response(exc.status, exc.msg)
+    @app.exception_handler(ApiError)             # 登记：抛出 ApiError 时调用下面这个函数
+    async def handle_api_error(request: Request, exc: ApiError) -> JSONResponse:   # exc 就是接口里 raise 的那个对象
+        return error_response(exc.status, exc.msg)   # 状态码和提示都来自 fail(...) 的两个参数
+```
 
-    # ② 参数校验失败：缺字段、类型不对、长度超限……
-    @app.exception_handler(RequestValidationError)
+**② 参数校验失败：缺字段、类型不对、长度超限……**
+
+```python
+    # app/errors.py（接着写，仍在 install() 里面）
+    @app.exception_handler(RequestValidationError)   # 参数没通过校验时，FastAPI 抛这个异常
     async def handle_validation(request: Request, exc: RequestValidationError) -> JSONResponse:
         first = exc.errors()[0]           # 可能有好几条，只取第一条
         field = first["loc"][-1]          # 出错的位置，如 ["body", "title"]，取最后一个 → "title"
-        return error_response(422, f"{field}：{first['msg']}")
-
-    # ③ 框架报的 HTTP 错误：路径不存在 404、请求方法不对 405
-    @app.exception_handler(StarletteHTTPException)
-    async def handle_http(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-        msgs = {404: "没有这个接口", 405: "这个接口不支持这种请求方式"}
-        return error_response(exc.status_code, msgs.get(exc.status_code, str(exc.detail)))
-
-    # ④ 兜底：上面都没接住的异常，基本就是代码 bug
-    @app.exception_handler(Exception)
-    async def handle_unknown(request: Request, exc: Exception) -> JSONResponse:
-        # 完整的报错堆栈 uvicorn 会打印在终端里，这里不把细节给前端
-        return error_response(500, "服务出错了，请稍后再试")
+        return error_response(422, f"{field}：{first['msg']}")   # 返回 422 和「title：Field required」这样的提示
 ```
 
-- **4 个处理器**：FastAPI 根据异常的类型，交给对应的处理器。`ApiError` 也是 `Exception` 的子类，但它有专门的 ①，所以走 ①；只有前面三个都没接住的异常，才会落到兜底的 ④。
-- **`error_response()`**：4 个处理器都用它返回，保证格式完全一样。
-- **② 里的 `first["loc"]`**：出错的位置，比如 `["body", "title"]`、`["path", "task_id"]`、`["query", "page"]`，最后一个元素就是字段名。
+`first["loc"]` 是出错的位置，比如 `["body", "title"]`、`["path", "task_id"]`、`["query", "page"]`，最后一个元素就是字段名。
+
+**③ 框架报的 HTTP 错误：路径不存在 404、请求方法不对 405**
+
+```python
+    # app/errors.py（接着写，仍在 install() 里面）
+    @app.exception_handler(StarletteHTTPException)   # 访问了不存在的路径、用错了请求方法时抛这个异常
+    async def handle_http(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        msgs = {404: "没有这个接口", 405: "这个接口不支持这种请求方式"}   # 状态码 → 中文提示
+        return error_response(exc.status_code, msgs.get(exc.status_code, str(exc.detail)))   # 其他状态码就用原来的英文说明
+```
+
+用 FastAPI 自带的 `raise HTTPException(404, ...)` 抛出的错误，也会被 ③ 接住。
+
+**④ 兜底：上面都没接住的异常，基本就是代码 bug**
+
+```python
+    # app/errors.py（接着写，仍在 install() 里面）
+    @app.exception_handler(Exception)            # Exception 是所有异常的父类，什么都能接住
+    async def handle_unknown(request: Request, exc: Exception) -> JSONResponse:
+        # 完整的报错堆栈 uvicorn 会打印在终端里，这里不把细节给前端
+        return error_response(500, "服务出错了，请稍后再试")   # 只给一句通用提示
+```
+
+- **4 个处理器怎么分工**：FastAPI 根据异常的类型，交给对应的处理器。`ApiError` 也是 `Exception` 的子类，但它有专门的 ①，所以走 ①；只有前面三个都没接住的异常，才会落到兜底的 ④。
 - **④ 不把报错细节给前端**：报错信息里可能有代码路径、SQL 语句等内部细节。前端只拿到一句通用提示，完整报错去运行 uvicorn 的终端里看。
-- 用 FastAPI 自带的 `raise HTTPException(404, ...)` 抛出的错误，也会被 ③ 接住。
 
 在 `api_demo.py` 末尾临时加一个会出错的接口，用来试 ④：
 
@@ -3386,6 +3425,14 @@ curl -i http://127.0.0.1:8000/tasks/99      # -i 显示状态码：404 + {"code"
 
 ## 3.11 写测试：pytest {#pytest}
 
+**先说这一节的定位**：测试不是学 Python 语法的重点，赶时间可以先跳过，做项目时再回来看。但它也不是可有可无：
+
+- **它解决什么问题**：接口写完，你会去 `/docs` 里一个个点着试。改了一处代码，就得把所有接口再点一遍，接口一多根本点不过来。测试就是把「点着试」写成代码，以后改了任何地方，跑一条命令，几秒钟就知道有没有改坏别的东西。
+- **什么时候最有用**：改代码、重构、加新功能的时候。尤其是 AI 应用，改一句 prompt 或一段逻辑，很容易影响到没想到的地方。
+- **工作里会不会用**：正经的后端项目基本都有测试，面试也常问「你的项目怎么保证质量」。能写出这一节这种接口测试，就够应付大多数场景了。
+
+这一节只讲最常用的一种：**接口测试**，也就是像前端一样发请求，检查返回的状态码和响应体对不对。目标是能看懂、能照着写，不用追求覆盖所有情况。
+
 `TestClient` 不用启动服务，就能在代码里对 app 发请求。pytest 自动找 `test_` 开头的文件和函数来跑。
 
 下面按「准备、fixture、五个测试」分块写，几块代码依次放进同一个文件 `tests/test_tasks.py`。
@@ -3550,15 +3597,16 @@ todo-api/
 `pydantic-settings` 用写 pydantic 模型的方式定义配置：字段名就是环境变量名，类型自动转换、校验，不对就启动失败。
 
 ```python
+# app/config.py（新建）
 from __future__ import annotations
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
+class Settings(BaseSettings):                 # 继承 BaseSettings：字段从环境变量读
     """所有配置都在这里：先读环境变量，没有再读 .env，都没有用默认值。"""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")   # 也读 .env；不认识的配置忽略
 
     database_url: str = "postgresql+psycopg://localhost:5432/todo"   # 对应环境变量 DATABASE_URL（不区分大小写）
     debug: bool = False                       # DEBUG=true 会自动转成 True
@@ -3580,19 +3628,22 @@ from __future__ import annotations
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-from app.config import settings
+from app.config import settings              # 不用再 load_dotenv、os.environ.get
 
 engine = create_engine(settings.database_url, echo=settings.debug)   # debug 时打印每条 SQL
 ```
 
 ### 拆路由：APIRouter
 
-`APIRouter` 是「一组接口」，写法和 `app` 一样（`@router.get`、`@router.post`），最后挂到 `app` 上。把 3.10 节 `main.py` 里的接口整个搬过来，`@app` 换成 `@router`，路径去掉 `/tasks` 前缀：
+`APIRouter` 是「一组接口」，写法和 `app` 一样（`@router.get`、`@router.post`），最后挂到 `app` 上。把 3.10 节 `main.py` 里的接口整个搬过来，`@app` 换成 `@router`，路径去掉 `/tasks` 前缀。接口内容和 3.10 节一模一样，注释只标出变了的地方。
+
+**`app/routers/tasks.py` 开头：建 router、搬 load_task**
 
 ```python
+# app/routers/tasks.py（新建）
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter                  # 用 APIRouter 代替 FastAPI
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -3602,59 +3653,69 @@ from app.models import Task
 from app.response import success
 from app.schemas import TaskCreate, TaskList, TaskOut
 
-# prefix：这个文件里的路径都自动加上 /tasks；tags：/docs 里按这个分组
-router = APIRouter(prefix="/tasks", tags=["任务"])
+router = APIRouter(prefix="/tasks", tags=["任务"])   # prefix：路径都自动加上 /tasks；tags：/docs 里按这个分组
 
 
-def load_task(session: Session, task_id: int) -> Task:
-    task = session.get(Task, task_id)
+def load_task(session: Session, task_id: int) -> Task:   # 从 main.py 原样搬过来
+    task = session.get(Task, task_id)          # 按主键查一条
     if task is None:
-        raise task_not_found()
+        raise task_not_found()                 # 查不到就 404
     return task
+```
 
+**查：列表和详情**
 
-@router.get("")                      # 完整路径 = prefix + "" = /tasks
+```python
+# app/routers/tasks.py（接着写）
+@router.get("")                                # @app 换成 @router；完整路径 = prefix + "" = /tasks
 def list_tasks(session: Db, done: bool | None = None, limit: int = 20) -> dict:
-    stmt = select(Task).order_by(Task.id.desc()).limit(limit)
+    stmt = select(Task).order_by(Task.id.desc()).limit(limit)   # SELECT * FROM tasks ORDER BY id DESC LIMIT 20
     if done is not None:
-        stmt = stmt.where(Task.done == done)
-    tasks = session.scalars(stmt).all()
-    total = session.scalar(select(func.count()).select_from(Task))
-    items = [TaskOut.model_validate(t) for t in tasks]
+        stmt = stmt.where(Task.done == done)   # 传了 done 才加 WHERE done = ...
+    tasks = session.scalars(stmt).all()        # 真正查询
+    total = session.scalar(select(func.count()).select_from(Task))   # SELECT count(*) FROM tasks
+    items = [TaskOut.model_validate(t) for t in tasks]   # Task → TaskOut
     return success(TaskList(items=items, total=total or 0))
 
 
-@router.post("", status_code=201)
+@router.get("/{task_id}")                      # 完整路径 = /tasks/{task_id}
+def get_task(task_id: int, session: Db) -> dict:
+    return success(TaskOut.model_validate(load_task(session, task_id)))
+```
+
+**增、改、删**
+
+```python
+# app/routers/tasks.py（接着写）
+@router.post("", status_code=201)              # POST /tasks
 def create_task(body: TaskCreate, session: Db) -> dict:
-    if session.scalar(select(Task).where(Task.title == body.title, Task.done.is_(False))):
+    if session.scalar(select(Task).where(Task.title == body.title, Task.done.is_(False))):   # 有同名的未完成任务
         raise fail(409, "已经有一条同名的未完成任务")
     task = Task(title=body.title, note=body.note)
     session.add(task)
-    session.commit()
+    session.commit()                           # INSERT
     return success(TaskOut.model_validate(task), msg="创建成功")
 
 
-@router.get("/{task_id}")            # 完整路径 = /tasks/{task_id}
-def get_task(task_id: int, session: Db) -> dict:
-    return success(TaskOut.model_validate(load_task(session, task_id)))
-
-
-@router.patch("/{task_id}/done")
+@router.patch("/{task_id}/done")               # PATCH /tasks/{task_id}/done
 def finish_task(task_id: int, session: Db) -> dict:
     task = load_task(session, task_id)
     task.done = True
-    session.commit()
+    session.commit()                           # UPDATE
     return success(TaskOut.model_validate(task))
 
 
-@router.delete("/{task_id}")
+@router.delete("/{task_id}")                   # DELETE /tasks/{task_id}
 def delete_task(task_id: int, session: Db) -> dict:
     session.delete(load_task(session, task_id))
-    session.commit()
+    session.commit()                           # DELETE
     return success(msg="删除成功")
 ```
 
+**`app/main.py`：只剩创建 app、挂路由**
+
 ```python
+# app/main.py（整个换成这样）
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
@@ -3664,18 +3725,18 @@ from fastapi import FastAPI
 
 from app import errors
 from app.db import Base, engine
-from app.routers import tasks
+from app.routers import tasks                  # 导入 routers/tasks.py 这个模块
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:   # 服务启动、关闭时执行（第 2.8 节）
     Base.metadata.create_all(engine)   # 启动时建表（第 3.15 节换成 alembic）
-    yield
+    yield                              # yield 之前：启动时跑；之后：关闭时跑（这里没有）
 
 
-app = FastAPI(title="todo-api", lifespan=lifespan)
-errors.install(app)
-app.include_router(tasks.router)       # 把路由挂到 app 上
+app = FastAPI(title="todo-api", lifespan=lifespan)   # 把 lifespan 交给 app
+errors.install(app)                    # 登记错误处理器
+app.include_router(tasks.router)       # 把路由挂到 app 上，不挂就是 404
 ```
 
 ```bash
@@ -3760,81 +3821,94 @@ class User(Base):
 ```python
 class AuthIn(BaseModel):
     """注册、登录的请求体。"""
-    username: str = Field(min_length=2, max_length=20, pattern=r"^\w+$")   # 字母、数字、下划线、汉字
-    password: str = Field(min_length=6, max_length=128)
+    username: str = Field(min_length=2, max_length=20, pattern=r"^\w+$")   # 2～20 个字；\w 是字母、数字、下划线、汉字
+    password: str = Field(min_length=6, max_length=128)                    # 至少 6 位
 
 
-class TokenOut(BaseModel):
-    token: str
-    username: str
+class TokenOut(BaseModel):                     # 注册、登录成功后返回的 data
+    token: str                                 # 前端存起来，之后每次请求带上
+    username: str                              # 页面上显示用
 ```
 
-密码和 token 的处理单独放一个文件：
+密码和 token 的处理单独放一个文件 `app/security.py`，分三块写。
+
+**开头和密码：只存哈希**
 
 ```python
+# app/security.py（新建）
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-import jwt
+import jwt                                     # pyjwt：生成、校验 token
 from fastapi import Depends
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pwdlib import PasswordHash
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer   # 从请求头取 Bearer token
+from pwdlib import PasswordHash                # 密码哈希
 
 from app.config import settings
 from app.db import Db
 from app.errors import fail
 from app.models import User
 
-# ---------- 密码：只存哈希 ----------
 password_hash = PasswordHash.recommended()     # 用 Argon2 算法
 
 
-def hash_password(password: str) -> str:
+def hash_password(password: str) -> str:       # 注册时用：明文 → 哈希，存进数据库
     return password_hash.hash(password)        # 每次结果都不一样：里面带了随机的盐
 
 
-def verify_password(password: str, hashed: str) -> bool:
+def verify_password(password: str, hashed: str) -> bool:   # 登录时用：输入的密码和存的哈希对不对得上
     return password_hash.verify(password, hashed)
+```
 
+**token：登录后发给前端，之后每次请求带上**
 
-# ---------- token：登录后发给前端，之后每次请求带上 ----------
+```python
+# app/security.py（接着写）
 def create_token(user_id: int) -> str:
-    payload = {
+    payload = {                                # token 里放的内容（谁都能解开看，只放 id）
         "sub": str(user_id),                                            # 这个 token 属于谁
         "exp": datetime.now(UTC) + timedelta(days=settings.token_days),  # 过期时间，过期后 decode 会报错
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+    return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")   # 用密钥签名，得到 eyJ... 这样的字符串
+```
 
+**current_user：从请求头认出当前用户**
 
-# auto_error=False：没带 token 时不让 FastAPI 自己报 403，交给下面统一返回 401
-bearer = HTTPBearer(auto_error=False)
+```python
+# app/security.py（接着写）
+bearer = HTTPBearer(auto_error=False)          # auto_error=False：没带 token 时不让 FastAPI 自己报 403，交给下面统一返回 401
 
 
 def current_user(
-    session: Db,
-    cred: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
+    session: Db,                               # 依赖里还能再用依赖：拿数据库会话
+    cred: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],   # 请求头里的 token，没带就是 None
 ) -> User:
     """依赖：从请求头 Authorization: Bearer <token> 解析出当前用户，不对就 401。"""
-    if cred is None:
+    if cred is None:                           # 没带 token
         raise fail(401, "请先登录")
     try:
-        payload = jwt.decode(cred.credentials, settings.jwt_secret, algorithms=["HS256"])
-    except jwt.ExpiredSignatureError:
+        payload = jwt.decode(cred.credentials, settings.jwt_secret, algorithms=["HS256"])   # 验签名、验过期，通过才拿到内容
+    except jwt.ExpiredSignatureError:          # 过期了
         raise fail(401, "登录已过期，请重新登录") from None
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError:              # 被改过、格式不对
         raise fail(401, "登录无效，请重新登录") from None
-    user = session.get(User, int(payload["sub"]))
+    user = session.get(User, int(payload["sub"]))   # SELECT * FROM users WHERE id = ...
     if user is None:                                   # token 是对的，但用户已经被删了
         raise fail(401, "账号不存在，请重新登录")
-    return user
+    return user                                # 接口里的 user 参数拿到的就是它
 
 
 CurrentUser = Annotated[User, Depends(current_user)]   # 接口里写 user: CurrentUser 就要求登录
 ```
 
+注册、登录接口放在 `app/routers/auth.py`：
+
+**开头**
+
 ```python
+# app/routers/auth.py（新建）
 from __future__ import annotations
 
 from fastapi import APIRouter
@@ -3847,29 +3921,39 @@ from app.response import success
 from app.schemas import AuthIn, TokenOut
 from app.security import CurrentUser, create_token, hash_password, verify_password
 
-router = APIRouter(prefix="/auth", tags=["账号"])
+router = APIRouter(prefix="/auth", tags=["账号"])   # 路径都以 /auth 开头，/docs 里归到「账号」
+```
 
+**注册：POST /auth/register**
 
+```python
+# app/routers/auth.py（接着写）
 @router.post("/register", status_code=201)
 def register(body: AuthIn, session: Db) -> dict:
-    if session.scalar(select(User).where(User.username == body.username)):
+    if session.scalar(select(User).where(User.username == body.username)):   # SELECT ... WHERE username = 'tom'，已经有了
         raise fail(409, "这个用户名已经被注册了")
-    user = User(username=body.username, password_hash=hash_password(body.password))
+    user = User(username=body.username, password_hash=hash_password(body.password))   # 存哈希，不存明文
     session.add(user)
-    session.commit()
-    # 注册成功直接发 token，等于已经登录，前端不用再调一次登录
-    return success(TokenOut(token=create_token(user.id), username=user.username), msg="注册成功")
+    session.commit()                           # INSERT INTO users ...，之后 user.id 有值
+    return success(TokenOut(token=create_token(user.id), username=user.username), msg="注册成功")   # 直接发 token，等于已经登录
+```
 
+**登录：POST /auth/login**
 
+```python
+# app/routers/auth.py（接着写）
 @router.post("/login")
 def login(body: AuthIn, session: Db) -> dict:
-    user = session.scalar(select(User).where(User.username == body.username))
-    # 用户不存在和密码错误返回同一句话：不告诉别人「这个用户名是存在的」
-    if user is None or not verify_password(body.password, user.password_hash):
-        raise fail(401, "用户名或密码错误")
+    user = session.scalar(select(User).where(User.username == body.username))   # 按用户名查，查不到是 None
+    if user is None or not verify_password(body.password, user.password_hash):   # 用户不存在、密码错，都走这里
+        raise fail(401, "用户名或密码错误")      # 两种情况同一句话：不告诉别人「这个用户名是存在的」
     return success(TokenOut(token=create_token(user.id), username=user.username), msg="登录成功")
+```
 
+**当前用户：GET /auth/me**
 
+```python
+# app/routers/auth.py（接着写）
 @router.get("/me")
 def me(user: CurrentUser) -> dict:           # 声明要 CurrentUser：没登录进不来
     return success({"id": user.id, "username": user.username})
@@ -3895,40 +3979,45 @@ def me(user: CurrentUser) -> dict:           # 声明要 CurrentUser：没登录
 
 **测试**：`client` 这个 fixture 现在两个测试文件都要用，从 `test_tasks.py` 挪到 `tests/conftest.py`。`conftest.py` 是 pytest 约定的文件名，里面的 fixture 同一目录的所有测试文件都能直接用，不用 import。
 
+**`tests/test_auth.py`**，四个测试：
+
 ```python
+# tests/test_auth.py（新建）
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient     # client 由 conftest.py 里的 fixture 提供，不用 import
 
 
-def test_register_login_me(client: TestClient) -> None:
+def test_register_login_me(client: TestClient) -> None:   # 注册 → 用 token 查自己 → 再登录一次
     r = client.post("/auth/register", json={"username": "tom", "password": "123456"})
     assert r.status_code == 201
-    token = r.json()["data"]["token"]
+    token = r.json()["data"]["token"]          # 拿到注册返回的 token
 
-    r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})   # headers= 带上请求头
     assert r.json()["data"]["username"] == "tom"
 
     r = client.post("/auth/login", json={"username": "tom", "password": "123456"})
     assert r.status_code == 200
+```
 
-
-def test_wrong_password(client: TestClient) -> None:
+```python
+# tests/test_auth.py（接着写）
+def test_wrong_password(client: TestClient) -> None:   # 密码错误
     client.post("/auth/register", json={"username": "tom", "password": "123456"})
     r = client.post("/auth/login", json={"username": "tom", "password": "wrong-pass"})
     assert r.status_code == 401
     assert r.json()["msg"] == "用户名或密码错误"
 
 
-def test_duplicate_username(client: TestClient) -> None:
+def test_duplicate_username(client: TestClient) -> None:   # 用户名重复
     client.post("/auth/register", json={"username": "tom", "password": "123456"})
     r = client.post("/auth/register", json={"username": "tom", "password": "654321"})
     assert r.status_code == 409
 
 
-def test_me_requires_token(client: TestClient) -> None:
-    assert client.get("/auth/me").json()["msg"] == "请先登录"
-    r = client.get("/auth/me", headers={"Authorization": "Bearer abc"})
+def test_me_requires_token(client: TestClient) -> None:   # 不带 token、带假 token
+    assert client.get("/auth/me").json()["msg"] == "请先登录"   # 没带
+    r = client.get("/auth/me", headers={"Authorization": "Bearer abc"})   # abc 不是合法的 token
     assert r.status_code == 401
     assert r.json()["msg"] == "登录无效，请重新登录"
 ```
@@ -3956,15 +4045,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 
 class User(Base):
-    ...
-    # 一对多：一个用户有多条任务。不是表里的列，是 Python 里方便取关联数据用的
-    tasks: Mapped[list[Task]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    ...                                                               # 原来的字段不变
+    tasks: Mapped[list[Task]] = relationship(back_populates="user", cascade="all, delete-orphan")   # 用户 → 他的所有任务（不是表里的列）
 
 
 class Task(Base):
-    ...
-    # 外键：这条任务属于哪个用户，值是 users 表的 id；index=True 加索引，按用户查更快
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    ...                                                               # 原来的字段不变
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)   # 外键：属于哪个用户；加索引，按用户查更快
     ...
     user: Mapped[User] = relationship(back_populates="tasks")          # 反过来：任务 → 用户
 ```
@@ -3998,16 +4085,21 @@ session.delete(tom)                       # 删 tom，他的两条任务也跟�
 class TaskList(BaseModel):
     items: list[TaskOut]      # 模型可以嵌套
     total: int                # 符合条件的一共多少条（不是这一页的条数）
-    page: int
-    size: int
+    page: int                 # 当前第几页
+    size: int                 # 每页几条
 ```
 
+`app/routers/tasks.py` 改成下面这样，分四块。
+
+**开头：load_task 多传一个 user**
+
 ```python
+# app/routers/tasks.py（整个换成这样）
 from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query           # Query：给查询参数加校验（分页用）
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -4016,71 +4108,83 @@ from app.errors import fail, task_not_found
 from app.models import Task, User
 from app.response import success
 from app.schemas import TaskCreate, TaskList, TaskOut
-from app.security import CurrentUser
+from app.security import CurrentUser           # 要求登录（第 3.13 节）
 
 router = APIRouter(prefix="/tasks", tags=["任务"])
 
 
 def load_task(session: Session, task_id: int, user: User) -> Task:
     """取自己的一条任务。别人的任务也当成不存在：返回 404，不告诉对方「有这条，但不是你的」。"""
-    task = session.get(Task, task_id)
-    if task is None or task.user_id != user.id:
-        raise task_not_found()
+    task = session.get(Task, task_id)          # SELECT * FROM tasks WHERE id = ...
+    if task is None or task.user_id != user.id:   # 不存在，或者不是自己的
+        raise task_not_found()                 # 都返回 404
     return task
+```
 
+**查列表：只查自己的，带分页**
 
+```python
+# app/routers/tasks.py（接着写）
 @router.get("")
 def list_tasks(
-    user: CurrentUser,
+    user: CurrentUser,                                   # 当前登录的用户，没登录就 401
     session: Db,
     done: bool | None = None,
     page: Annotated[int, Query(ge=1)] = 1,              # 第几页，从 1 开始
     size: Annotated[int, Query(ge=1, le=100)] = 20,     # 每页几条，最多 100，防止一次拉太多
 ) -> dict:
-    conditions = [Task.user_id == user.id]               # 只查自己的
+    conditions = [Task.user_id == user.id]               # 只查自己的：WHERE user_id = 1
     if done is not None:
-        conditions.append(Task.done == done)
+        conditions.append(Task.done == done)             # 再加 AND done = ...
 
-    total = session.scalar(select(func.count()).select_from(Task).where(*conditions))   # 总数和列表用同一组条件
+    total = session.scalar(select(func.count()).select_from(Task).where(*conditions))   # SELECT count(*) ... WHERE 同一组条件
     stmt = (
         select(Task)
-        .where(*conditions)
-        .order_by(Task.id.desc())
-        .offset((page - 1) * size)                       # 跳过前面几页
-        .limit(size)
+        .where(*conditions)                              # 同一组条件
+        .order_by(Task.id.desc())                        # ORDER BY id DESC
+        .offset((page - 1) * size)                       # OFFSET：跳过前面几页
+        .limit(size)                                     # LIMIT：这一页取几条
     )
-    items = [TaskOut.model_validate(t) for t in session.scalars(stmt)]
+    items = [TaskOut.model_validate(t) for t in session.scalars(stmt)]   # 执行查询，每条转成 TaskOut
     return success(TaskList(items=items, total=total or 0, page=page, size=size))
+```
 
+**增：同名只在自己的任务里查**
 
+```python
+# app/routers/tasks.py（接着写）
 @router.post("", status_code=201)
 def create_task(body: TaskCreate, user: CurrentUser, session: Db) -> dict:
-    same = select(Task).where(Task.user_id == user.id, Task.title == body.title, Task.done.is_(False))
+    same = select(Task).where(Task.user_id == user.id, Task.title == body.title, Task.done.is_(False))   # 自己的、同名、未完成
     if session.scalar(same):
         raise fail(409, "已经有一条同名的未完成任务")
-    task = Task(user_id=user.id, title=body.title, note=body.note)
+    task = Task(user_id=user.id, title=body.title, note=body.note)   # 新任务属于当前用户
     session.add(task)
-    session.commit()
+    session.commit()                                     # INSERT
     return success(TaskOut.model_validate(task), msg="创建成功")
+```
 
+**查一条、改、删：都走 load_task**
 
+```python
+# app/routers/tasks.py（接着写）
 @router.get("/{task_id}")
 def get_task(task_id: int, user: CurrentUser, session: Db) -> dict:
-    return success(TaskOut.model_validate(load_task(session, task_id, user)))
+    return success(TaskOut.model_validate(load_task(session, task_id, user)))   # 别人的任务也是 404
 
 
 @router.patch("/{task_id}/done")
 def finish_task(task_id: int, user: CurrentUser, session: Db) -> dict:
-    task = load_task(session, task_id, user)
+    task = load_task(session, task_id, user)            # 先确认是自己的
     task.done = True
-    session.commit()
+    session.commit()                                     # UPDATE
     return success(TaskOut.model_validate(task))
 
 
 @router.delete("/{task_id}")
 def delete_task(task_id: int, user: CurrentUser, session: Db) -> dict:
-    session.delete(load_task(session, task_id, user))
-    session.commit()
+    session.delete(load_task(session, task_id, user))   # 先确认是自己的，再删
+    session.commit()                                     # DELETE
     return success(msg="删除成功")
 ```
 
@@ -4113,41 +4217,52 @@ def delete_task(task_id: int, user: CurrentUser, session: Db) -> dict:
 # tests/conftest.py（末尾加上）
 def login(client: TestClient, username: str = "tom") -> dict:
     """注册一个用户，返回带 token 的请求头。"""
-    r = client.post("/auth/register", json={"username": username, "password": "123456"})
-    return {"Authorization": f"Bearer {r.json()['data']['token']}"}
+    r = client.post("/auth/register", json={"username": username, "password": "123456"})   # 注册就直接拿到 token
+    return {"Authorization": f"Bearer {r.json()['data']['token']}"}   # 返回请求头，用法：headers=login(client)
 
 
 @pytest.fixture
-def auth(client: TestClient) -> dict:
+def auth(client: TestClient) -> dict:          # 测试参数里写 auth，就拿到 tom 的请求头
     return login(client)
 ```
 
 原来的测试都改成带上 `headers=auth`（比如 `client.post("/tasks", json={...}, headers=auth)`），再加三个新的：
 
+**没登录：401**
+
 ```python
+# tests/test_tasks.py（末尾加上）
 def test_requires_login(client: TestClient) -> None:
-    r = client.get("/tasks")
+    r = client.get("/tasks")                   # 不带 headers
     assert r.status_code == 401
+```
 
+**两个用户互相看不到**
 
+```python
+# tests/test_tasks.py（接着写）
 def test_users_cannot_see_each_other(client: TestClient) -> None:
-    tom, jerry = login(client, "tom"), login(client, "jerry")
-    task_id = client.post("/tasks", json={"title": "tom 的任务"}, headers=tom).json()["data"]["id"]
+    tom, jerry = login(client, "tom"), login(client, "jerry")   # 注册两个用户，拿到各自的请求头
+    task_id = client.post("/tasks", json={"title": "tom 的任务"}, headers=tom).json()["data"]["id"]   # tom 建一条
 
     assert client.get("/tasks", headers=jerry).json()["data"]["total"] == 0      # 列表里看不到
     assert client.get(f"/tasks/{task_id}", headers=jerry).status_code == 404     # 直接猜 id 也拿不到
     assert client.delete(f"/tasks/{task_id}", headers=jerry).status_code == 404  # 删不掉
     assert client.get(f"/tasks/{task_id}", headers=tom).status_code == 200       # 自己还在
+```
 
+**分页**
 
-def test_pagination(client: TestClient, auth: dict) -> None:
+```python
+# tests/test_tasks.py（接着写）
+def test_pagination(client: TestClient, auth: dict) -> None:   # auth：上面 fixture 给的 tom 的请求头
     for i in range(1, 26):                                   # 建 25 条
         client.post("/tasks", json={"title": f"任务{i}"}, headers=auth)
-    data = client.get("/tasks", params={"page": 2, "size": 10}, headers=auth).json()["data"]
+    data = client.get("/tasks", params={"page": 2, "size": 10}, headers=auth).json()["data"]   # 第 2 页，每页 10 条
     assert data["total"] == 25
     assert [t["title"] for t in data["items"]][:2] == ["任务15", "任务14"]   # 倒序，第 2 页从第 11 条开始
-    assert len(client.get("/tasks", params={"page": 3, "size": 10}, headers=auth).json()["data"]["items"]) == 5
-    assert client.get("/tasks", params={"size": 500}, headers=auth).status_code == 422
+    assert len(client.get("/tasks", params={"page": 3, "size": 10}, headers=auth).json()["data"]["items"]) == 5   # 最后一页只剩 5 条
+    assert client.get("/tasks", params={"size": 500}, headers=auth).status_code == 422   # 超过 100 条，校验不通过
 ```
 
 `test_tasks.py` 开头要 `from tests.conftest import login`：fixture 能自动用，普通函数还是要 import。跑一下应该是 `12 passed`。
@@ -4314,9 +4429,9 @@ $ alembic history
 ```python
 from fastapi.middleware.cors import CORSMiddleware
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
+app.add_middleware(                      # 给 app 加一个中间件
+    CORSMiddleware,                      # FastAPI 自带的跨域中间件，会自动回答 OPTIONS 预检
+    allow_origins=settings.cors_origins, # 允许哪些前端网址，从配置里读
     allow_methods=["*"],                 # 所有请求方法
     allow_headers=["*"],                 # 所有请求头，包括 Authorization
 )
@@ -4325,8 +4440,7 @@ app.add_middleware(
 `app/config.py` 加一个配置，线上把前端的正式网址写进去：
 
 ```python
-    # 允许哪些前端网址跨域调用；环境变量里写成 JSON：CORS_ORIGINS='["https://todo.example.com"]'
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: list[str] = ["http://localhost:5173"]   # 允许跨域的前端网址；环境变量写成 JSON：CORS_ORIGINS='["https://todo.example.com"]'
 ```
 
 - **`allow_origins` 写具体网址，不要图省事写 `["*"]`**。本笔记站的后端写的是 `*`，因为它的 token 在请求头里、不用 Cookie，任何网页都拿不到别人的 token，开放也没风险。用 Cookie 登录的项目绝不能写 `*`（这种情况浏览器也不允许）。
@@ -4343,18 +4457,18 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import Request, Response
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")   # 日志格式：时间 级别 内容（第 2.3 节）
 logger = logging.getLogger("todo-api")
 
 
-@app.middleware("http")
-async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-    start = time.perf_counter()
+@app.middleware("http")                          # 登记成中间件：每个 HTTP 请求都会经过它
+async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:   # call_next：调用它就是「交给后面处理」
+    start = time.perf_counter()                  # 接口执行前：记下开始时间
     response = await call_next(request)          # 交给后面的路由去处理，拿到响应
-    ms = (time.perf_counter() - start) * 1000
-    logger.info("%s %s → %s %.0fms", request.method, request.url.path, response.status_code, ms)
+    ms = (time.perf_counter() - start) * 1000    # 接口执行后：算出用了多少毫秒
+    logger.info("%s %s → %s %.0fms", request.method, request.url.path, response.status_code, ms)   # 打印：GET /tasks → 200 3ms
     response.headers["X-Response-Time"] = f"{ms:.0f}ms"   # 也可以改响应：加个响应头
-    return response
+    return response                              # 把响应交回去，发给前端
 ```
 
 ```
@@ -4364,9 +4478,12 @@ async def log_requests(request: Request, call_next: Callable[[Request], Awaitabl
 
 `call_next(request)` 之前的代码在接口执行**前**跑，之后的在接口执行**后**跑，和 2.8 节 `yield` 前后是一个意思。日志用 2.3 节的 `logging`，不用 `print`：线上能按级别过滤，也能统一收集。
 
-完整的 `main.py`：
+完整的 `main.py`，分四块：
+
+**开头：导入、日志**
 
 ```python
+# app/main.py（整个换成这样）
 from __future__ import annotations
 
 import logging
@@ -4380,40 +4497,51 @@ from app import errors
 from app.config import settings
 from app.routers import auth, tasks
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")   # 日志格式
 logger = logging.getLogger("todo-api")
 
 app = FastAPI(title="todo-api")         # 不再 create_all：表结构交给 alembic
-errors.install(app)
+errors.install(app)                     # 登记错误处理器
+```
 
-# 跨域：允许这些网址的前端页面调接口
-app.add_middleware(
+**跨域**
+
+```python
+# app/main.py（接着写）
+app.add_middleware(                     # 跨域：允许这些网址的前端页面调接口
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=settings.cors_origins,  # 从配置里读允许的网址
     allow_methods=["*"],                 # 所有请求方法
     allow_headers=["*"],                 # 所有请求头，包括 Authorization
 )
+```
 
+**中间件：给每个请求记日志**
 
-# 中间件：每个请求进来、出去都会经过这里
-@app.middleware("http")
+```python
+# app/main.py（接着写）
+@app.middleware("http")                          # 每个请求进来、出去都会经过这里
 async def log_requests(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-    start = time.perf_counter()
+    start = time.perf_counter()                  # 接口执行前
     response = await call_next(request)          # 交给后面的路由去处理，拿到响应
-    ms = (time.perf_counter() - start) * 1000
+    ms = (time.perf_counter() - start) * 1000    # 接口执行后：用了多少毫秒
     logger.info("%s %s → %s %.0fms", request.method, request.url.path, response.status_code, ms)
     response.headers["X-Response-Time"] = f"{ms:.0f}ms"   # 也可以改响应：加个响应头
     return response
+```
+
+**挂路由、健康检查**
+
+```python
+# app/main.py（接着写）
+app.include_router(auth.router)          # /auth/...
+app.include_router(tasks.router)         # /tasks/...
 
 
-app.include_router(auth.router)
-app.include_router(tasks.router)
-
-
-@app.get("/", tags=["健康检查"])
+@app.get("/", tags=["健康检查"])         # GET /，/docs 里单独一组
 def health() -> dict:
     """部署后先访问这个，确认服务起来了。"""
-    return errors.success({"status": "ok"})
+    return errors.success({"status": "ok"})   # {"code": 200, "msg": "ok", "data": {"status": "ok"}}
 ```
 
 加一个 `/` 接口当**健康检查**：部署完先访问它，返回 `ok` 说明服务起来了；也可以交给监控定时访问。
@@ -4438,12 +4566,11 @@ from app.main import app  # noqa: F401
 ```python
     vercel: bool = False                      # Vercel 上会自动设置 VERCEL=1
 
-    @model_validator(mode="after")
+    @model_validator(mode="after")            # 所有字段读完之后再执行这个检查
     def check_secret(self) -> Settings:
-        # 线上还在用开发密钥，等于谁都能伪造 token：直接启动失败，比悄悄上线好
-        if self.vercel and self.jwt_secret == DEV_SECRET:
-            raise ValueError("线上必须设置 JWT_SECRET 环境变量")
-        return self
+        if self.vercel and self.jwt_secret == DEV_SECRET:   # 线上还在用开发密钥，等于谁都能伪造 token
+            raise ValueError("线上必须设置 JWT_SECRET 环境变量")   # 直接启动失败，比悄悄上线好
+        return self                           # 检查通过，原样返回
 ```
 
 `app/db.py` 里，在 Vercel 上不用连接池：
@@ -4454,8 +4581,7 @@ from sqlalchemy.pool import NullPool
 engine = create_engine(
     settings.database_url,
     echo=settings.debug,                                 # debug 时打印每条 SQL
-    # Vercel 上每个请求可能是一个新的函数实例，自己维护连接池没意义还占连接：用完就关
-    poolclass=NullPool if settings.vercel else None,     # None = 用默认的连接池
+    poolclass=NullPool if settings.vercel else None,     # Vercel 上不用连接池，用完就关；None = 用默认的连接池
 )
 ```
 
@@ -4482,29 +4608,31 @@ DATABASE_URL='postgresql+psycopg://...线上地址...' alembic upgrade head
 **测试**：加两个，确认健康检查和 CORS 生效（应该是 `14 passed`）：
 
 ```python
+# tests/test_main.py（新建）
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
 
-def test_health(client: TestClient) -> None:
+def test_health(client: TestClient) -> None:              # 健康检查和日志中间件
     r = client.get("/")
     assert r.json()["data"] == {"status": "ok"}
-    assert r.headers["X-Response-Time"].endswith("ms")
+    assert r.headers["X-Response-Time"].endswith("ms")     # 中间件加的响应头，比如 "3ms"
+```
 
-
-def test_cors_preflight(client: TestClient) -> None:
-    # 浏览器跨域发带 Authorization 的请求前，会先发一个 OPTIONS「预检」
+```python
+# tests/test_main.py（接着写）
+def test_cors_preflight(client: TestClient) -> None:      # 模拟浏览器跨域前发的 OPTIONS 预检
     headers = {
-        "Origin": "http://localhost:5173",
-        "Access-Control-Request-Method": "POST",
-        "Access-Control-Request-Headers": "authorization,content-type",
+        "Origin": "http://localhost:5173",                 # 前端页面所在的网址
+        "Access-Control-Request-Method": "POST",           # 接下来想发 POST
+        "Access-Control-Request-Headers": "authorization,content-type",   # 想带这些请求头
     }
     r = client.options("/tasks", headers=headers)
     assert r.status_code == 200
-    assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert r.headers["access-control-allow-origin"] == "http://localhost:5173"   # 后端回答：这个网址可以
 
-    r = client.options("/tasks", headers={**headers, "Origin": "https://evil.example.com"})
+    r = client.options("/tasks", headers={**headers, "Origin": "https://evil.example.com"})   # 换一个不在名单里的网址
     assert "access-control-allow-origin" not in r.headers      # 不在名单里的网址拿不到许可
 ```
 

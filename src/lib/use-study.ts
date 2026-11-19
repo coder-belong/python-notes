@@ -17,7 +17,7 @@ import {
   type Delta,
   type SyncState,
 } from "./account";
-import { GUEST_LIMIT, guestSeconds, loadGuest, reportGuest, saveGuest, type GuestState } from "./guest";
+import { GUEST_LIMIT, GUEST_LIMIT_ON, guestSeconds, loadGuest, reportGuest, saveGuest, type GuestState } from "./guest";
 import { dayKey, emptyData, loadData, saveData, type StudyData } from "./study-store";
 
 /** 每批同步的随机 id（双击打开的 HTML 里 crypto.randomUUID 不一定能用，自己拼一个）。 */
@@ -315,6 +315,6 @@ export function useStudy(currentSection: string | null) {
     signOut,
     guestSeconds: guestSecs,
     /** 没登录、免费的 10 分钟用完了：要注册或登录才能继续看。 */
-    guestBlocked: loaded && !account && guestSecs >= GUEST_LIMIT,
+    guestBlocked: GUEST_LIMIT_ON && loaded && !account && guestSecs >= GUEST_LIMIT,
   };
 }

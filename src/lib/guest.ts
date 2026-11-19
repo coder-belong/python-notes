@@ -12,6 +12,9 @@ import { api } from "./account";
 /** 访客能免费看多少秒。 */
 export const GUEST_LIMIT = 10 * 60;
 
+/** 本地开发（npm run dev）时不限时，方便自己测试；npm run build 打出来的 HTML 照常限制。 */
+export const GUEST_LIMIT_ON = process.env.NODE_ENV !== "development";
+
 export type GuestState = {
   id: string; // 随机生成，后端用它区分不同访客
   days: Record<string, number>; // 日期（本地）→ 当天以访客身份学了多少秒

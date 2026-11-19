@@ -13,7 +13,7 @@ import {
   saveReading,
   type Reading,
 } from "@/lib/study-store";
-import { GUEST_LIMIT } from "@/lib/guest";
+import { GUEST_LIMIT, GUEST_LIMIT_ON } from "@/lib/guest";
 import { useStudy } from "@/lib/use-study";
 
 import AccountPanel, { AccountEntry } from "./AccountPanel";
@@ -440,7 +440,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
 
       <main>
         <div className="content">
-          {study.loaded && !study.account && !study.guestBlocked && (
+          {GUEST_LIMIT_ON && study.loaded && !study.account && !study.guestBlocked && (
             <div className="guest-bar">
               <span>
                 访客模式：还能免费看 <b>{Math.ceil((GUEST_LIMIT - study.guestSeconds) / 60)} 分钟</b>
