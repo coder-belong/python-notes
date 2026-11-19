@@ -2958,16 +2958,15 @@ from app.db import Base, SessionLocal, engine
 from app.errors import fail
 from app.models import Task
 from app.response import success
+from app.schemas import TaskOut              # 第 3.3 节定义的「返回给前端的一条任务」
 
 app = FastAPI()
 errors.install(app)
 Base.metadata.create_all(engine)           # 建表（表已存在就跳过）
-
-
-def to_dict(task: Task) -> dict:
-    """数据库对象 → 返回给前端的 dict。"""
-    return {"id": task.id, "title": task.title, "done": task.done, "note": task.note}
 ```
+
+- **`TaskOut.model_validate(task)`**：下面每个接口都用它把数据库里的 `Task` 对象转成返回给前端的 `TaskOut`（第 3.3 节末尾讲过，`TaskOut` 加了 `from_attributes=True` 才能这样用）。
+- **为什么不能直接 `success(task)`**：`Task` 是 SQLAlchemy 的数据库对象，FastAPI 不知道怎么把它转成 JSON，会报错返回 500。转成 `TaskOut` 还有一个好处：只输出 `TaskOut` 里定义的字段，以后表里加了不该给前端看的列，也不会被带出去。
 
 四块都写完后，在 `todo-api/` 目录启动，到 `/docs` 里按顺序试。每块下面是按顺序实际执行的结果：
 
@@ -2993,15 +2992,17 @@ def create_task(title: str, note: str | None = None) -> dict:
         task = Task(title=title, note=note)
         session.add(task)                  # 只是记下「要插入」，还没写进数据库
         session.commit()                   # 真正写进数据库，task.id 这时有值了
-        return success(to_dict(task), msg="创建成功")
+        return success(TaskOut.model_validate(task), msg="创建成功")
 ```
 
 | 请求 | HTTP | 响应体 |
 |---|---|---|
-| `POST /tasks?title=写笔记` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 1, "title": "写笔记", "done": false, "note": null}}` |
-| `POST /tasks?title=读书` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 2, "title": "读书", "done": false, "note": null}}` |
-| `POST /tasks?title=跑步&note=5 公里` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 3, "title": "跑步", "done": false, "note": "5 公里"}}` |
+| `POST /tasks?title=写笔记` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 1, "title": "写笔记", "done": false, "note": null, "created_at": "2026-11-19T09:34:33.379495Z", "updated_at": "2026-11-19T09:34:33.379498Z"}}` |
+| `POST /tasks?title=读书` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 2, "title": "读书", "done": false, "note": null, "created_at": "2026-11-19T09:34:35.120331Z", "updated_at": "2026-11-19T09:34:35.120334Z"}}` |
+| `POST /tasks?title=跑步&note=5 公里` | 201 | `{"code": 200, "msg": "创建成功", "data": {"id": 3, "title": "跑步", "done": false, "note": "5 公里", "created_at": "2026-11-19T09:34:37.845102Z", "updated_at": "2026-11-19T09:34:37.845105Z"}}` |
 | `POST /tasks?title=读书` | 409 | `{"code": -1, "msg": "已经有同名任务了", "data": null}` |
+
+时间是示例，按你实际运行的时刻。**返回的时间有两种写法**：刚创建的任务返回 `2026-11-19T09:34:33.379495Z`，从库里查出来的返回 `2026-11-19T17:34:33.379495+08:00`。创建时返回的是 Python 里 `_now()` 算的 UTC 时间（`Z` 结尾）；查询时 Postgres 按自己设置的时区（装的时候跟电脑一样，国内是 `Asia/Shanghai`）换算好再返回。两种写法是同一个时刻，前端用 `new Date(...)` 解析结果一样。
 
 ### 查：列表和单条
 
@@ -3014,7 +3015,7 @@ def create_task(title: str, note: str | None = None) -> dict:
 def list_tasks() -> dict:
     with SessionLocal() as session:
         tasks = session.scalars(select(Task)).all()     # 查出所有任务，相当于 SELECT * FROM tasks
-        return success([to_dict(t) for t in tasks])    # 每个都转成 dict 再返回
+        return success([TaskOut.model_validate(t) for t in tasks])    # 每个都转成 TaskOut 再返回
 ```
 
 **② 加一个筛选：只看没完成的**。在 `select` 后面加 `.where(...)`，相当于 SQL 的 `WHERE`：
@@ -3035,7 +3036,7 @@ def list_tasks(done: bool | None = None) -> dict:
         if done is not None:                      # 前端传了 done 才加条件
             stmt = stmt.where(Task.done == done)
         tasks = session.scalars(stmt).all()       # 这时才真正去数据库查
-        return success([to_dict(t) for t in tasks])
+        return success([TaskOut.model_validate(t) for t in tasks])
 ```
 
 `stmt` 是「查询语句」的意思：`select(...)`、`.where(...)` 只是在拼这条语句，`session.scalars(stmt)` 才把它发给数据库。所以可以先拼好、再按条件往上加，最后查一次。
@@ -3051,13 +3052,13 @@ def get_task(task_id: int) -> dict:
         task = session.get(Task, task_id)                 # 按主键查，没有就是 None
         if task is None:
             raise fail(404, "没有这个任务")
-        return success(to_dict(task))
+        return success(TaskOut.model_validate(task))
 ```
 
 | 请求 | HTTP | 响应体 |
 |---|---|---|
-| `GET /tasks` | 200 | `{"code": 200, "msg": "ok", "data": [{"id": 1, "title": "写笔记", "done": false, "note": null}, {"id": 2, "title": "读书", "done": false, "note": null}, {"id": 3, "title": "跑步", "done": false, "note": "5 公里"}]}` |
-| `GET /tasks/1` | 200 | `{"code": 200, "msg": "ok", "data": {"id": 1, "title": "写笔记", "done": false, "note": null}}` |
+| `GET /tasks` | 200 | `{"code": 200, "msg": "ok", "data": [{"id": 1, "title": "写笔记", "done": false, "note": null, "created_at": "2026-11-19T17:34:33.379495+08:00", "updated_at": "2026-11-19T17:34:33.379498+08:00"}, {"id": 2, "title": "读书", "done": false, "note": null, "created_at": "2026-11-19T17:34:35.120331+08:00", "updated_at": "2026-11-19T17:34:35.120334+08:00"}, {"id": 3, "title": "跑步", "done": false, "note": "5 公里", "created_at": "2026-11-19T17:34:37.845102+08:00", "updated_at": "2026-11-19T17:34:37.845105+08:00"}]}` |
+| `GET /tasks/1` | 200 | `{"code": 200, "msg": "ok", "data": {"id": 1, "title": "写笔记", "done": false, "note": null, "created_at": "2026-11-19T17:34:33.379495+08:00", "updated_at": "2026-11-19T17:34:33.379498+08:00"}}` |
 | `GET /tasks/99` | 404 | `{"code": -1, "msg": "没有这个任务", "data": null}` |
 
 ### 改：改属性 + commit
@@ -3073,13 +3074,13 @@ def finish_task(task_id: int) -> dict:
             raise fail(404, "没有这个任务")
         task.done = True                   # 直接改属性，还没写进数据库
         session.commit()                   # commit 时自动生成 UPDATE
-        return success(to_dict(task), msg="已完成")
+        return success(TaskOut.model_validate(task), msg="已完成")
 ```
 
 | 请求 | HTTP | 响应体 |
 |---|---|---|
-| `PATCH /tasks/1/done` | 200 | `{"code": 200, "msg": "已完成", "data": {"id": 1, "title": "写笔记", "done": true, "note": null}}` |
-| `GET /tasks?done=false` | 200 | `{"code": 200, "msg": "ok", "data": [{"id": 2, "title": "读书", "done": false, "note": null}, {"id": 3, "title": "跑步", "done": false, "note": "5 公里"}]}` |
+| `PATCH /tasks/1/done` | 200 | `{"code": 200, "msg": "已完成", "data": {"id": 1, "title": "写笔记", "done": true, "note": null, "created_at": "2026-11-19T17:34:33.379495+08:00", "updated_at": "2026-11-19T09:35:10.502117Z"}}` |
+| `GET /tasks?done=false` | 200 | `{"code": 200, "msg": "ok", "data": [{"id": 2, "title": "读书", "done": false, "note": null, "created_at": "2026-11-19T17:34:35.120331+08:00", "updated_at": "2026-11-19T17:34:35.120334+08:00"}, {"id": 3, "title": "跑步", "done": false, "note": "5 公里", "created_at": "2026-11-19T17:34:37.845102+08:00", "updated_at": "2026-11-19T17:34:37.845105+08:00"}]}` |
 
 ### 删：delete + commit
 
@@ -3100,7 +3101,7 @@ def delete_task(task_id: int) -> dict:
 | 请求 | HTTP | 响应体 |
 |---|---|---|
 | `DELETE /tasks/2` | 200 | `{"code": 200, "msg": "删除成功", "data": null}` |
-| `GET /tasks` | 200 | `{"code": 200, "msg": "ok", "data": [{"id": 1, "title": "写笔记", "done": true, "note": null}, {"id": 3, "title": "跑步", "done": false, "note": "5 公里"}]}` |
+| `GET /tasks` | 200 | `{"code": 200, "msg": "ok", "data": [{"id": 1, "title": "写笔记", "done": true, "note": null, "created_at": "2026-11-19T17:34:33.379495+08:00", "updated_at": "2026-11-19T17:35:10.502117+08:00"}, {"id": 3, "title": "跑步", "done": false, "note": "5 公里", "created_at": "2026-11-19T17:34:37.845102+08:00", "updated_at": "2026-11-19T17:34:37.845105+08:00"}]}` |
 
 ### 小结
 
@@ -3192,7 +3193,7 @@ Db = Annotated[Session, Depends(db_session)]   # 起个短名字，接口里写 
 def create_task(title: str, session: Db) -> dict:
     task = Task(title=title)
     session.add(task)                                  # 只是记下「要插入」
-    return success(to_dict(task), msg="创建成功")      # 响应内容这时已经定了
+    return success(TaskOut.model_validate(task), msg="创建成功")      # 响应内容这时已经定了
     # 之后 ② 才 commit；万一失败，数据没存进去，前端却已经拿到「创建成功」
 
 
@@ -3202,7 +3203,7 @@ def create_task(title: str, session: Db) -> dict:
     task = Task(title=title)
     session.add(task)
     session.commit()                                   # 真正存进数据库；失败就在这里抛异常，前端收到的是错误
-    return success(to_dict(task), msg="创建成功")      # 能走到这里，说明真的存好了
+    return success(TaskOut.model_validate(task), msg="创建成功")      # 能走到这里，说明真的存好了
 ```
 
 | 接口 | 改数据库吗 | 要自己 commit 吗 |
@@ -3227,7 +3228,7 @@ def get_task(task_id: int, session: Db) -> dict:
     task = session.get(Task, task_id)        # session 已经准备好了，直接用
     if task is None:
         raise fail(404, "没有这个任务")
-    return success(to_dict(task))
+    return success(TaskOut.model_validate(task))
     # 返回后 db_session 接着跑 ②（这里没改数据，提交了也没事）和 ④ 关闭
 
 
@@ -3241,7 +3242,7 @@ def create_task(title: str, session: Db, note: str | None = None) -> dict:
     task = Task(title=title, note=note)
     session.add(task)
     session.commit()                          # 自己提交：提交失败会直接报错，前端不会收到「创建成功」
-    return success(to_dict(task), msg="创建成功")
+    return success(TaskOut.model_validate(task), msg="创建成功")
 ```
 
 和第 3.8 节比，接口里少了一层 `with`，开会话、出错回滚、关闭都交给了 `db_session`。返回的响应体和第 3.8 节完全一样。
@@ -3264,7 +3265,7 @@ def create_task(title: str, session: Db, note: str | None = None) -> dict:
 # app/schemas.py（末尾加上）
 class TaskList(BaseModel):
     items: list[TaskOut]      # 模型可以嵌套：items 是 TaskOut 的列表
-    total: int
+    total: int                # 一共多少条
 ```
 
 下面按「准备、查列表、增、查一条、改、删」分块写，几块代码依次放进同一个文件 `app/main.py`。
@@ -3276,27 +3277,27 @@ class TaskList(BaseModel):
 from __future__ import annotations
 
 from fastapi import FastAPI
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select                 # func.count() 用来数条数
+from sqlalchemy.orm import Session                  # load_task 的参数类型
 
 from app import errors
-from app.db import Base, Db, engine
-from app.errors import fail, task_not_found
-from app.models import Task
-from app.response import success
-from app.schemas import TaskCreate, TaskList, TaskOut
+from app.db import Base, Db, engine                 # Db：依赖注入拿会话（第 3.9 节）
+from app.errors import fail, task_not_found         # 业务错误（第 3.5 节）
+from app.models import Task                         # 表模型（第 3.7 节）
+from app.response import success                    # 统一响应格式（第 3.4 节）
+from app.schemas import TaskCreate, TaskList, TaskOut   # 请求体、列表响应、单条响应
 
-app = FastAPI(title="todo-api")
-errors.install(app)
+app = FastAPI(title="todo-api")                     # title 显示在 /docs 页面顶部
+errors.install(app)                                 # 登记错误处理器，所有错误都返回 {code: -1, msg, data: null}
 Base.metadata.create_all(engine)   # 练习用：启动时自动建表；正式项目用 alembic 管理表结构（第 3.15 节）
 
 
 def load_task(session: Session, task_id: int) -> Task:
     """按 id 取任务，没有就报 404。好几个接口都要用，抽成函数。"""
-    task = session.get(Task, task_id)
-    if task is None:
-        raise task_not_found()
-    return task
+    task = session.get(Task, task_id)               # SELECT * FROM tasks WHERE id = 1，按主键查一条
+    if task is None:                                # 查不到
+        raise task_not_found()                      # 抛 404「没有这个任务」，调用它的接口不会再往下执行
+    return task                                     # 查到了就返回 Task 对象
 ```
 
 - **`load_task`**：第 3.8 节里「查一条、改、删」都在重复「`session.get` → 是 None 就 404」，抽成一个函数，后面三个接口各用一行就行。
@@ -3317,35 +3318,33 @@ def list_tasks(session: Db, done: bool | None = None, limit: int = 20) -> dict:
     return success(TaskList(items=items, total=total or 0))     # 返回 {code, msg, data: {items: [...], total: 3}}
 ```
 
-- 比第 3.8 节多了三样：`.order_by(Task.id.desc())` 新的排前面，`.limit(limit)` 最多取几条，`total` 数一共几条。
-- **`TaskOut.model_validate(task)`**：把数据库里的 `Task` 对象转成返回给前端的 `TaskOut`（第 3.3 节加了 `from_attributes=True` 才能这样用），作用和第 3.8 节的 `to_dict` 一样。
-- **为什么不能直接 `success(task)`**：`Task` 是 SQLAlchemy 的数据库对象，FastAPI 不知道怎么把它转成 JSON，会报错返回 500。转成 `TaskOut` 还有一个好处：只输出 `TaskOut` 里定义的字段，以后表里加了不该给前端看的列，也不会被带出去。
+比第 3.8 节多了三样：`.order_by(Task.id.desc())` 新的排前面，`.limit(limit)` 最多取几条，`total` 数一共几条。
 
 ### 增：POST /tasks
 
 ```python
 # app/main.py（接着写）
-@app.post("/tasks", status_code=201)
-def create_task(body: TaskCreate, session: Db) -> dict:
-    if session.scalar(select(Task).where(Task.title == body.title, Task.done.is_(False))):
-        raise fail(409, "已经有一条同名的未完成任务")
-    task = Task(title=body.title, note=body.note)
-    session.add(task)
-    session.commit()         # 写接口自己提交：提交失败就报错，不会被当成成功
-    return success(TaskOut.model_validate(task), msg="创建成功")
+@app.post("/tasks", status_code=201)                # 新建成功返回 201
+def create_task(body: TaskCreate, session: Db) -> dict:   # body：请求体 {"title": ..., "note": ...}，先按 TaskCreate 校验
+    if session.scalar(select(Task).where(Task.title == body.title, Task.done.is_(False))):   # SELECT * FROM tasks WHERE title = '写笔记' AND done IS false，查到一条就算重名
+        raise fail(409, "已经有一条同名的未完成任务")   # 重名就报 409，下面不会执行
+    task = Task(title=body.title, note=body.note)    # 在内存里建一个 Task 对象，还没进数据库
+    session.add(task)                                # 记下「要插入」
+    session.commit()                                 # INSERT INTO tasks ...，真正写进数据库；提交失败就报错，不会被当成成功
+    return success(TaskOut.model_validate(task), msg="创建成功")   # Task → TaskOut，返回 {code, msg, data: {id, title, ...}}
 ```
 
 - 参数从第 3.8 节的 `?title=...` 换成了请求体 `body: TaskCreate`（第 3.3 节），标题长度这些校验交给 pydantic。
 - 只拦「同名的**未完成**任务」：已经完成的同名任务不算冲突。`.where(条件1, 条件2)` 是「且」。
-- **返回的时间有两种写法**：刚创建的任务返回 `"created_at": "2026-11-19T09:34:33.379495Z"`，从库里查出来的返回 `"2026-11-19T17:34:09.370014+08:00"`。创建时返回的是 Python 里 `_now()` 算的 UTC 时间；查询时 Postgres 按自己设置的时区（装的时候跟电脑一样，国内是 `Asia/Shanghai`）换算好再返回。两种写法是同一个时刻，前端用 `new Date(...)` 解析结果一样。
+- **`Task.done.is_(False)`**：生成 SQL 的 `done IS false`。写成 `Task.done == False` 也能用，只是代码检查工具会提示「别用 == 和 False 比较」。
 
 ### 查一条：GET /tasks/1
 
 ```python
 # app/main.py（接着写）
-@app.get("/tasks/{task_id}")
+@app.get("/tasks/{task_id}")                        # {task_id} 是路径参数：/tasks/1 → task_id = 1
 def get_task(task_id: int, session: Db) -> dict:
-    return success(TaskOut.model_validate(load_task(session, task_id)))
+    return success(TaskOut.model_validate(load_task(session, task_id)))   # 查一条 → 转成 TaskOut → 包成 {code, msg, data}
 ```
 
 查不到时 `load_task` 里直接抛 404，这里不用再判断。
@@ -3354,12 +3353,12 @@ def get_task(task_id: int, session: Db) -> dict:
 
 ```python
 # app/main.py（接着写）
-@app.patch("/tasks/{task_id}/done")
+@app.patch("/tasks/{task_id}/done")                 # PATCH：只改一部分字段
 def finish_task(task_id: int, session: Db) -> dict:
-    task = load_task(session, task_id)
-    task.done = True         # 改属性就行，提交时自动生成 UPDATE
-    session.commit()
-    return success(TaskOut.model_validate(task))
+    task = load_task(session, task_id)               # 先查出来，查不到就 404
+    task.done = True                                 # 改属性就行，这时还没写进数据库
+    session.commit()                                 # UPDATE tasks SET done = true, updated_at = ... WHERE id = 1
+    return success(TaskOut.model_validate(task))     # 返回改完的任务，done 已经是 true
 ```
 
 ### 删：DELETE /tasks/1
@@ -3369,9 +3368,9 @@ def finish_task(task_id: int, session: Db) -> dict:
 # 删除成功返回 200 而不是 204：204 表示「没有响应体」，而我们约定每个响应都有 {code, msg, data}
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: int, session: Db) -> dict:
-    session.delete(load_task(session, task_id))
-    session.commit()
-    return success(msg="删除成功")
+    session.delete(load_task(session, task_id))      # 先查出来（查不到就 404），再记下「要删除」
+    session.commit()                                 # DELETE FROM tasks WHERE id = 1
+    return success(msg="删除成功")                    # data 是 null：删掉的东西不用再返回
 ```
 
 ### 启动试一下
