@@ -1928,7 +1928,7 @@ touch app/__init__.py tests/__init__.py
 uv pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" pytest httpx python-dotenv
 ```
 
-- `__init__.py`：空文件，让 `app`、`tests` 成为包，才能写 `from app.db import ...`。
+- `__init__.py`：空文件，标记 `app`、`tests` 是包，这样就能写 `from app.db import ...`。严格说 Python 3.3 以后没有它也能 import，但 pytest 这类工具在有它时更稳定，项目里习惯都放。
 - 已经在上一级激活过 `.venv` 就不用再建虚拟环境，包装进同一个 `.venv` 就行。
 
 | 包 | 作用 |
@@ -3736,7 +3736,7 @@ from app.routers import tasks                  # 导入 routers/tasks.py 这个�
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:   # 服务启动、关闭时执行（第 2.8 节）
-    Base.metadata.create_all(engine)   # 启动时建表（第 3.15 节换成 alembic）
+    Base.metadata.create_all(engine)   # 启动时建表（第 3.15 节换成 alembic）；不写在模块顶层，测试导入 app 时就不会去连真数据库
     yield                              # yield 之前：启动时跑；之后：关闭时跑（这里没有）
 
 
@@ -3745,15 +3745,15 @@ errors.install(app)                    # 登记错误处理器
 app.include_router(tasks.router)       # 把路由挂到 app 上，不挂就是 404
 ```
 
+拆完还差两步：给新建的 `routers/` 文件夹补一个 `__init__.py`，再跑一遍测试，确认搬完功能没变。
+
 ```bash
-touch app/routers/__init__.py      # 和 3.1 节一样，有它才能 from app.routers import ...
-python -m pytest -q                 # 还是 5 passed：只是搬了位置，功能没变
+touch app/routers/__init__.py      # 新建一个空文件，标记 routers/ 是个包，和 3.1 节的 app/、tests/ 一样
+python -m pytest -q                 # 跑 3.11 节的测试：还是 5 passed，说明只是搬了位置，功能没变
 ```
 
-- **`prefix="/tasks"`**：这个文件里的路径都自动加上 `/tasks`。`@router.get("")` 就是 `GET /tasks`，`@router.get("/{task_id}")` 就是 `GET /tasks/{task_id}`。
-- **`tags=["任务"]`**：`/docs` 里按它分组显示。下一节加上账号接口后，文档里会分成「账号」「任务」两组。
-- **`app.include_router(...)`**：挂上才生效，忘了挂，访问就是 404。
-- **建表挪到了 `lifespan`**：就是 2.8 节讲的写法，服务启动时执行一次。比写在模块顶层好：测试里导入 `app` 时不会顺手去连真数据库。
+- **`__init__.py`**：空文件，只起标记作用，`main.py` 里的 `from app.routers import tasks` 就是从这个包里导入。严格说 Python 3.3 以后没有它也能 import，但 pytest 这类工具在有它时更稳定，项目里习惯都放。
+- **跑测试**：不用去 `/docs` 里一个个点。要是看到 `failed`，比如忘了 `include_router`，接口会变成 404，测试会直接指出是哪个测试、哪一行出错。
 
 以后再加一类业务（比如「标签」），就是新建 `routers/tags.py`，在 `main.py` 里多一行 `include_router`。
 
