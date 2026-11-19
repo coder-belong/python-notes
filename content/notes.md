@@ -3181,9 +3181,38 @@ def db_session() -> Iterator[Session]:
 Db = Annotated[Session, Depends(db_session)]   # 起个短名字，接口里写 session: Db 就行
 ```
 
-- **`yield`**：函数执行到 `yield` 时交出一个值并暂停，之后从暂停的地方接着跑。执行顺序：① → 接口函数 → ② 或 ③ → ④。
+- **`yield`**：函数执行到 `yield` 时交出一个值并暂停，之后从暂停的地方接着跑。执行顺序：① → 接口函数（一直到 return）→ ② 或 ③ → ④。注意：接口 return 的时候，返回给前端的内容就已经定了，② 出错也改不了它。
 - **`Annotated[Session, Depends(db_session)]`**：「类型是 Session，值由 `db_session` 提供」。
-- **写接口里自己 `session.commit()`**：② 可能在响应已经发出去之后才执行，万一提交失败，前端会以为成功了。所以写数据的接口在返回前自己提交。
+
+**写数据的接口要自己 commit**：只要接口会改数据库（增、改、删），就在接口里、`return` 之前写一行 `session.commit()`，不要等 ② 帮你提交。
+
+```python
+# ❌ 不自己 commit：先说成功，再去存
+@app.post("/tasks")
+def create_task(title: str, session: Db) -> dict:
+    task = Task(title=title)
+    session.add(task)                                  # 只是记下「要插入」
+    return success(to_dict(task), msg="创建成功")      # 响应内容这时已经定了
+    # 之后 ② 才 commit；万一失败，数据没存进去，前端却已经拿到「创建成功」
+
+
+# ✅ 自己 commit：先存，存好了再说成功
+@app.post("/tasks")
+def create_task(title: str, session: Db) -> dict:
+    task = Task(title=title)
+    session.add(task)
+    session.commit()                                   # 真正存进数据库；失败就在这里抛异常，前端收到的是错误
+    return success(to_dict(task), msg="创建成功")      # 能走到这里，说明真的存好了
+```
+
+| 接口 | 改数据库吗 | 要自己 commit 吗 |
+|---|---|---|
+| 增 `POST` | 改 | 要 |
+| 改 `PATCH` / `PUT` | 改 | 要 |
+| 删 `DELETE` | 改 | 要 |
+| 查 `GET` | 不改 | 不用 |
+
+写数据的接口自己提交之后，② 那里已经没东西可提交了，只是兜底。`db_session` 真正省事的是另外两件：出错时 ③ 自动回滚，最后 ④ 一定关闭会话，不用每个接口自己写。
 
 接口里使用：参数写 `session: Db`，FastAPI 每次请求先调用 `db_session()` 开好会话再传进来，接口里不用再写 `with SessionLocal() as session:`。拿第 3.8 节的「查一条」和「增」改一下：
 
