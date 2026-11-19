@@ -2944,7 +2944,9 @@ class Task(Base):
 - **增删改**：`session.add(...)`、改属性、`session.delete(...)` 都只是先记下来，**`commit()` 才真正写进数据库**。没 commit 就关闭会话，改动全部作废。
 - **查**：`session.get(...)`、`session.scalars(...)` 会立即查数据库，把结果变成 `Task` 对象。查询不改数据，所以不用 commit。
 
-下面每个接口演示一种操作。每个接口都用 `with SessionLocal() as session:` 开一个会话，`with` 结束自动关闭：
+下面按「增、查、改、删」分块写，几块代码依次放进同一个文件 `crud_demo.py`。每个接口都用 `with SessionLocal() as session:` 开一个会话，`with` 结束自动关闭。
+
+### 准备：建 app、建表
 
 ```python
 # crud_demo.py（放在 todo-api/ 下）：每个接口演示一种数据库操作
@@ -2965,8 +2967,18 @@ Base.metadata.create_all(engine)           # 建表（表已存在就跳过）
 def to_dict(task: Task) -> dict:
     """数据库对象 → 返回给前端的 dict。"""
     return {"id": task.id, "title": task.title, "done": task.done, "note": task.note}
+```
 
+四块都写完后，在 `todo-api/` 目录启动，到 `/docs` 里按顺序试。每块下面是按顺序实际执行的结果：
 
+```bash
+uvicorn crud_demo:app --reload
+```
+
+### 增：add + commit
+
+```python
+# crud_demo.py（接着写）
 # 增：POST /tasks?title=写笔记
 @app.post("/tasks", status_code=201)
 def create_task(title: str, note: str | None = None) -> dict:
@@ -2982,8 +2994,19 @@ def create_task(title: str, note: str | None = None) -> dict:
         session.add(task)                  # 只是记下「要插入」，还没写进数据库
         session.commit()                   # 真正写进数据库，task.id 这时有值了
         return success(to_dict(task), msg="创建成功")
+```
 
+| 请求 | HTTP | 返回的 data / msg |
+|---|---|---|
+| `POST /tasks?title=写笔记` | 201 | `{"id": 1, "title": "写笔记", "done": false, "note": null}` |
+| `POST /tasks?title=读书` | 201 | `{"id": 2, "title": "读书", ...}` |
+| `POST /tasks?title=跑步&note=5 公里` | 201 | `{"id": 3, "title": "跑步", "note": "5 公里", ...}` |
+| `POST /tasks?title=读书` | 409 | 已经有同名任务了 |
 
+### 查：列表和单条
+
+```python
+# crud_demo.py（接着写）
 # 查列表：GET /tasks?done=false
 @app.get("/tasks")
 def list_tasks(done: bool | None = None) -> dict:
@@ -3004,8 +3027,18 @@ def get_task(task_id: int) -> dict:
         if task is None:
             raise fail(404, "没有这个任务")
         return success(to_dict(task))
+```
 
+| 请求 | HTTP | 返回的 data / msg |
+|---|---|---|
+| `GET /tasks` | 200 | 3 条，id 倒序：跑步、读书、写笔记；`total: 3` |
+| `GET /tasks/1` | 200 | `{"id": 1, "title": "写笔记", ...}` |
+| `GET /tasks/99` | 404 | 没有这个任务 |
 
+### 改：改属性 + commit
+
+```python
+# crud_demo.py（接着写）
 # 改：PATCH /tasks/1/done
 @app.patch("/tasks/{task_id}/done")
 def finish_task(task_id: int) -> dict:
@@ -3016,8 +3049,17 @@ def finish_task(task_id: int) -> dict:
         task.done = True                   # 直接改属性，还没写进数据库
         session.commit()                   # commit 时自动生成 UPDATE
         return success(to_dict(task), msg="已完成")
+```
 
+| 请求 | HTTP | 返回的 data / msg |
+|---|---|---|
+| `PATCH /tasks/1/done` | 200 | `{"id": 1, "done": true, ...}` |
+| `GET /tasks?done=false` | 200 | 只剩跑步、读书 |
 
+### 删：delete + commit
+
+```python
+# crud_demo.py（接着写）
 # 删：DELETE /tasks/1
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: int) -> dict:
@@ -3030,31 +3072,16 @@ def delete_task(task_id: int) -> dict:
         return success(msg="删除成功")
 ```
 
-在 `todo-api/` 目录启动，到 `/docs` 里按顺序试：
-
-```bash
-uvicorn crud_demo:app --reload
-```
-
-实际运行结果（按顺序执行）：
-
 | 请求 | HTTP | 返回的 data / msg |
 |---|---|---|
-| `POST /tasks?title=写笔记` | 201 | `{"id": 1, "title": "写笔记", "done": false, "note": null}` |
-| `POST /tasks?title=读书` | 201 | `{"id": 2, "title": "读书", ...}` |
-| `POST /tasks?title=跑步&note=5 公里` | 201 | `{"id": 3, "title": "跑步", "note": "5 公里", ...}` |
-| `POST /tasks?title=读书` | 409 | 已经有同名任务了 |
-| `GET /tasks` | 200 | 3 条，id 倒序：跑步、读书、写笔记；`total: 3` |
-| `GET /tasks/1` | 200 | `{"id": 1, "title": "写笔记", ...}` |
-| `GET /tasks/99` | 404 | 没有这个任务 |
-| `PATCH /tasks/1/done` | 200 | `{"id": 1, "done": true, ...}` |
-| `GET /tasks?done=false` | 200 | 只剩跑步、读书 |
 | `DELETE /tasks/2` | 200 | 删除成功 |
 | `GET /tasks` | 200 | 剩跑步、写笔记，`total: 2` |
 
+### 小结
+
 数据存在 Postgres 的 `todo` 库里，重启服务数据还在，在 DBeaver 里打开 `tasks` 表也能看到；想清空就 `dropdb todo && createdb todo`。
 
-**常用写法**：
+常用写法：
 
 | 想做什么 | 写法 |
 |---|---|
