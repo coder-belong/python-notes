@@ -2613,7 +2613,8 @@ INSERT INTO users (username) VALUES ('alice');
 
 ```sql
 -- JOIN（内连接）：两边都对得上的才出现
-SELECT u.username, t.title, t.done   -- ③ 最后取这三列
+-- 整句意思：列出每条任务，带上它所属用户的用户名，按任务顺序排
+SELECT u.username, t.title, t.done   -- ③ 拼好之后取这三列
 FROM tasks t                          -- ① 从 tasks 出发，t 是 tasks 的简写
 JOIN users u ON u.id = t.user_id      -- ② 每条任务按 user_id 找到它的用户，拼成一行；u 是 users 的简写
 ORDER BY t.id;                        -- ④ 按任务 id 排序
@@ -2625,10 +2626,12 @@ ORDER BY t.id;                        -- ④ 按任务 id 排序
 -- carol 没有任务，对不上，不出现
 
 -- LEFT JOIN（左连接）：左边的表（FROM 后面那张）每行都出现，右边对不上的列填 NULL
-SELECT u.username, t.title
+-- 整句意思：列出所有用户和各自的任务，没有任务的用户也要列出来
+-- 和上一句的区别：上一句从任务出发，只看得到有任务的人；这句从用户出发，一个用户都不漏
+SELECT u.username, t.title            -- ③ 拼好之后取这两列
 FROM users u                          -- ① 这次从 users 出发，users 是左边的表
 LEFT JOIN tasks t ON t.user_id = u.id -- ② 每个用户找自己的任务：有几条拼几行，一条都没有也留一行，t 的列全是 NULL
-ORDER BY u.id, t.id;                  -- ③ 先按用户排，同一个用户再按任务排
+ORDER BY u.id, t.id;                  -- ④ 先按用户排，同一个用户再按任务排
 --  username | title
 -- ----------+--------
 --  alice    | 写笔记
