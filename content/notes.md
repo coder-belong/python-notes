@@ -2844,14 +2844,30 @@ INSERT INTO users (username) VALUES ('alice') ON CONFLICT (username) DO NOTHING;
 **先把配置放进 `.env`**：数据库地址这类配置不写死在代码里。在 `todo-api/` 下新建 `.env`：
 
 ```
+# .env：自己电脑上真正用的配置
 DATABASE_URL=sqlite:///todo.db
 ```
 
-`.env` 里以后会有密码，**不能提交**，要写进 `.gitignore`。另外建一个 `.env.example` 提交上去，只写有哪些配置、不写真实的值，别人复制一份改名成 `.env` 就能用：
+`.env` 里以后会有密码（比如 Postgres 的地址里就带密码），**不能提交**，要写进 `.gitignore`：
 
 ```
+# .gitignore
+.env
+```
+
+这样 git 仓库里就没有 `.env` 了，别人拉下代码不知道要配哪些项。所以另外建一个 `.env.example` 提交上去，**两个文件的作用不同**：
+
+- `.env`：自己用的真实值，不提交。
+- `.env.example`：只列出「要配哪些项」，值写示例或占位，提交到仓库。别人复制一份改名成 `.env`，再改成自己的值就能用。
+
+```
+# .env.example：提交到仓库的模板
+# SQLite 不需要密码，示例值直接能用；换 Postgres 时格式是：
+# DATABASE_URL=postgresql+psycopg://用户名:密码@localhost:5432/todo
 DATABASE_URL=sqlite:///todo.db
 ```
+
+现在两个文件里 `DATABASE_URL` 那行一样，是因为 SQLite 地址只是个文件名、没有密码，示例值就是能用的值。以后加了密码、密钥这类配置，`.env` 写真实值，`.env.example` 只写 `SECRET_KEY=换成你自己的` 这样的占位。
 
 ```python
 # app/db.py
