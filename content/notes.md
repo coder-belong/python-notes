@@ -1308,8 +1308,8 @@ log.warning("快满了")                        # 2026-11-13 14:28:48,622 WARNIN
 log.error("失败了")                          # 2026-11-13 14:28:48,622 ERROR __main__: 失败了
 
 # 环境变量：密码、地址这类配置不写死在代码里
-db_url = os.environ.get("DATABASE_URL", "sqlite:///todo.db")   # 读环境变量 DATABASE_URL，没配就用默认值
-print(db_url)                               # 没配时：sqlite:///todo.db
+db_url = os.environ.get("DATABASE_URL", "postgresql+psycopg://localhost:5432/todo")   # 读环境变量 DATABASE_URL，没配就用默认值
+print(db_url)                               # 没配时：postgresql+psycopg://localhost:5432/todo
 
 # 时间
 now = datetime.now(UTC)                     # 带时区的当前时间，存库和返回接口都用 UTC
@@ -1933,7 +1933,7 @@ app = FastAPI(lifespan=lifespan)
 ```bash
 mkdir -p todo-api/app todo-api/tests && cd todo-api
 touch app/__init__.py tests/__init__.py
-uv pip install fastapi "uvicorn[standard]" sqlalchemy pytest httpx python-dotenv
+uv pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" pytest httpx python-dotenv
 ```
 
 - `__init__.py`：空文件，让 `app`、`tests` 成为包，才能写 `from app.db import ...`。
@@ -1944,11 +1944,12 @@ uv pip install fastapi "uvicorn[standard]" sqlalchemy pytest httpx python-dotenv
 | fastapi | 写接口的框架 |
 | uvicorn | 运行接口的服务器 |
 | sqlalchemy | 用 Python 类操作数据库 |
+| psycopg | Python 连 Postgres 的驱动，SQLAlchemy 通过它发 SQL（第 3.7 节） |
 | pytest | 跑测试 |
 | httpx | 测试里的 `TestClient` 要用它 |
 | python-dotenv | 启动时读取 `.env` 文件里的配置（第 3.7 节） |
 
-`"uvicorn[standard]"` 要加引号，否则 zsh 会把方括号当通配符。
+`"uvicorn[standard]"`、`"psycopg[binary]"` 要加引号，否则 zsh 会把方括号当通配符。`[binary]` 表示装编译好的版本，不用自己装 Postgres 的开发库。
 
 最后的目录结构：
 
@@ -2835,7 +2836,14 @@ INSERT INTO users (username) VALUES ('alice') ON CONFLICT (username) DO NOTHING;
 | `SELECT ... WHERE done = false` | `select(Task).where(Task.done == False)` |
 | `COMMIT` / `ROLLBACK` | `session.commit()` / `session.rollback()` |
 
-练习项目先用 SQLite：一个文件就是一个库，不用装服务。练完把连接地址换成 Postgres，代码基本不用改。
+练习项目直接用上面装好的 Postgres，再建两个库：
+
+```bash
+createdb todo         # 接口用的库，第 3.7 节开始连它
+createdb todo_test    # 测试专用的库，第 3.11 节用（测试会清空它，所以和 todo 分开）
+```
+
+在 DBeaver 里照「装好、连上」第 3 步再建一个连接，数据库填 `todo`，代码写进去的数据随时能打开表看到。
 
 ## 3.7 连数据库：SQLAlchemy {#sqlalchemy}
 
@@ -2845,10 +2853,10 @@ INSERT INTO users (username) VALUES ('alice') ON CONFLICT (username) DO NOTHING;
 
 ```
 # .env：自己电脑上真正用的配置
-DATABASE_URL=sqlite:///todo.db
+DATABASE_URL=postgresql+psycopg://localhost:5432/todo
 ```
 
-`.env` 里以后会有密码（比如 Postgres 的地址里就带密码），**不能提交**，要写进 `.gitignore`：
+`.env` 里以后会有密码（比如连云数据库的地址里就带密码），**不能提交**，要写进 `.gitignore`：
 
 ```
 # .gitignore
@@ -2862,12 +2870,12 @@ DATABASE_URL=sqlite:///todo.db
 
 ```
 # .env.example：提交到仓库的模板
-# SQLite 不需要密码，示例值直接能用；换 Postgres 时格式是：
-# DATABASE_URL=postgresql+psycopg://用户名:密码@localhost:5432/todo
-DATABASE_URL=sqlite:///todo.db
+# 格式：postgresql+psycopg://用户名:密码@主机:端口/库名
+# 本机 brew 装的 Postgres 不用写用户名和密码，下面这行直接能用
+DATABASE_URL=postgresql+psycopg://localhost:5432/todo
 ```
 
-现在两个文件里 `DATABASE_URL` 那行一样，是因为 SQLite 地址只是个文件名、没有密码，示例值就是能用的值。以后加了密码、密钥这类配置，`.env` 写真实值，`.env.example` 只写 `SECRET_KEY=换成你自己的` 这样的占位。
+现在两个文件里 `DATABASE_URL` 那行一样，是因为本机连接不用密码，示例值就是能用的值。以后换成带密码的云数据库，或者加了密钥这类配置，`.env` 写真实值，`.env.example` 只写 `SECRET_KEY=换成你自己的` 这样的占位。
 
 ```python
 # app/db.py
@@ -2881,7 +2889,7 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 load_dotenv()      # 读当前目录的 .env，把里面的配置放进环境变量（已经设置过的不覆盖）
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///todo.db")   # 读环境变量，读不到用默认值
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg://localhost:5432/todo")   # 读环境变量，读不到用默认值
 
 engine = create_engine(DATABASE_URL)          # 引擎：管理和数据库的连接
 SessionLocal = sessionmaker(engine, autoflush=False, expire_on_commit=False)  # 会话工厂
@@ -2924,7 +2932,7 @@ class Task(Base):
 **`DATABASE_URL` 是怎么读到的**：
 
 ```
-.env 文件里的一行  DATABASE_URL=sqlite:///todo.db
+.env 文件里的一行  DATABASE_URL=postgresql+psycopg://localhost:5432/todo
    ↓  load_dotenv()                     启动时把 .env 读进环境变量
 环境变量 DATABASE_URL
    ↓  os.environ.get("DATABASE_URL")    读出来
@@ -2934,7 +2942,8 @@ create_engine(DATABASE_URL)             连上数据库
 - `os.environ` 只能读到环境变量，不会自己去读 `.env`，所以要先 `load_dotenv()`。
 - `load_dotenv()` 不覆盖已经设置过的环境变量：终端里 `export DATABASE_URL=...` 了，就以终端为准；线上服务器没有 `.env` 文件，直接设置环境变量就行，代码不用改。
 - 不想在代码里加载，也可以在启动时让 uv 加载：`uv run --env-file .env uvicorn app.main:app --reload`。
-- `sqlite:///todo.db` 是当前目录下的 `todo.db` 文件；换成 PostgreSQL 只要改这一行，比如 `postgresql+psycopg://用户:密码@localhost:5432/todo`。
+- **地址拆开看**：`postgresql` 是数据库种类，`+psycopg` 是用哪个驱动（3.1 节装的 psycopg），`localhost:5432` 是主机和端口，`todo` 是库名。完整格式是 `postgresql+psycopg://用户名:密码@主机:端口/库名`；这里没写用户名，就用当前的 Mac 用户名连，brew 装的 Postgres 本机连接也不用密码。
+- 云数据库（比如第 3.16 节的 Neon）给的地址一般是 `postgresql://...`，要手动加上 `+psycopg`，否则 SQLAlchemy 会去找另一个没装的驱动 psycopg2。
 
 **表定义里的几个点**：
 
@@ -2942,7 +2951,7 @@ create_engine(DATABASE_URL)             连上数据库
 - `mapped_column(...)`：数据库里这一列的定义。
 - `default=_now`：插入时没给值，就调用 `_now()`。注意传的是函数本身，不加括号；写成 `default=datetime.now(UTC)` 会在程序启动时就算好一个固定时间，所有数据都一样。
 - `onupdate=_now`：这一行被修改、提交时，自动调用 `_now()` 更新这一列。`updated_at` 就靠它：新建时和创建时间基本一样（各调一次 `_now()`，可能差几微秒），之后每次改动都会刷新。
-- **表结构改了要删库重建**：`create_all` 只会建不存在的表，不会给已有的表加列。已经跑过旧版本的话，先删掉 `todo.db` 再启动，否则会报 `no such column: tasks.updated_at`。正式项目用 alembic 处理这种改动（第 3.15 节）。
+- **表结构改了要删库重建**：`create_all` 只会建不存在的表，不会给已有的表加列。已经跑过旧版本的话，先删库重建再启动：`dropdb todo && createdb todo`，否则会报 `column tasks.updated_at does not exist`。正式项目用 alembic 处理这种改动（第 3.15 节）。
 
 ## 3.8 增删改查：Session {#session}
 
@@ -3057,7 +3066,7 @@ uvicorn crud_demo:app --reload
 | `DELETE /tasks/2` | 200 | 删除成功 |
 | `GET /tasks` | 200 | 剩跑步、写笔记，`total: 2` |
 
-数据存在 `todo.db` 里，重启服务数据还在；想清空就删掉 `todo.db`。
+数据存在 Postgres 的 `todo` 库里，重启服务数据还在，在 DBeaver 里打开 `tasks` 表也能看到；想清空就 `dropdb todo && createdb todo`。
 
 **常用写法**：
 
@@ -3213,6 +3222,7 @@ def delete_task(task_id: int, session: Db) -> dict:
 
 - **`TaskOut.model_validate(task)`**：把数据库里的 `Task` 对象转成返回给前端的 `TaskOut`（第 3.3 节加了 `from_attributes=True` 才能这样用）。
 - **为什么不能直接 `success(task)`**：`Task` 是 SQLAlchemy 的数据库对象，FastAPI 不知道怎么把它转成 JSON，会报错返回 500。转成 `TaskOut` 还有一个好处：只输出 `TaskOut` 里定义的字段，以后表里加了不该给前端看的列，也不会被带出去。
+- **返回的时间有两种写法**：刚创建的任务返回 `"created_at": "2026-11-19T09:34:33.379495Z"`，从库里查出来的返回 `"2026-11-19T17:34:09.370014+08:00"`。创建时返回的是 Python 里 `_now()` 算的 UTC 时间；查询时 Postgres 按自己设置的时区（装的时候跟电脑一样，国内是 `Asia/Shanghai`）换算好再返回。两种写法是同一个时刻，前端用 `new Date(...)` 解析结果一样。
 
 启动：`uvicorn app.main:app --reload`，到 `/docs` 里点着试，或者用 curl：
 
@@ -3237,18 +3247,22 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.db import Base, db_session
 from app.main import app
 
 
+# 测试专用的库，和开发用的 todo 库分开：测试会把它清空
+TEST_DATABASE_URL = "postgresql+psycopg://localhost:5432/todo_test"
+engine = create_engine(TEST_DATABASE_URL)
+TestSession = sessionmaker(engine, autoflush=False, expire_on_commit=False)
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    # 每个测试一个全新的内存库，测试之间互不影响
-    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    # 每个测试开始前删表、重建：上一个测试留下的数据清干净，测试之间互不影响
+    Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
-    TestSession = sessionmaker(engine, autoflush=False, expire_on_commit=False)
 
     def test_db_session() -> Iterator[Session]:
         session = TestSession()
@@ -3316,8 +3330,9 @@ python -m pytest -q -k 404     # 只跑名字里带 404 的测试
 
 - **`assert 条件`**：条件不成立就算失败，pytest 会把两边的实际值打印出来。
 - **`@pytest.fixture`**：测试的准备工作。测试函数参数里写了 `client`，pytest 就先跑同名的 fixture，把 `yield` 出来的东西传进去；测试结束后执行 `yield` 后面的收尾。
-- **`app.dependency_overrides`**：测试时把某个依赖换掉，这里把真数据库换成内存库，跑完不留垃圾。
-- 内存库 `sqlite://` 要配 `StaticPool`，否则每个连接拿到的都是一个新的空库，会报 `no such table`。
+- **`app.dependency_overrides`**：测试时把某个依赖换掉，这里把开发用的 `todo` 库换成测试专用的 `todo_test` 库（3.6 节末尾建好的）。
+- **测试库一定要和开发库分开**：每个测试开始都会 `drop_all` 删表，要是连的是 `todo`，自己在 `/docs` 里建的数据就全没了。
+- **为什么在测试开始前删表，而不是结束后**：测试失败时，数据还留在 `todo_test` 里，可以去 DBeaver 打开看是什么样。
 
 ## 3.12 拆文件和配置 {#routers-settings}
 
@@ -3362,7 +3377,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "sqlite:///todo.db"   # 对应环境变量 DATABASE_URL（不区分大小写）
+    database_url: str = "postgresql+psycopg://localhost:5432/todo"   # 对应环境变量 DATABASE_URL（不区分大小写）
     debug: bool = False                       # DEBUG=true 会自动转成 True
 
 
@@ -3907,7 +3922,7 @@ def delete_task(task_id: int, user: CurrentUser, session: Db) -> dict:
 
 > 页数很深（比如第 10000 页）时，`OFFSET` 会越来越慢，因为数据库要先数过前面所有行。那种场景用「游标分页」：前端传上一页最后一条的 id，后端查 `where id < 那个 id`。一般的后台列表用 `page / size` 就够了。
 
-表结构又变了，**再删一次 `todo.db`**。这种「改一次表就删一次库」的做法到这里为止，下一节换成 alembic。
+表结构又变了（`tasks` 加了 `user_id`），**再删一次库重建**：`dropdb todo && createdb todo`。这种「改一次表就删一次库」的做法到这里为止，下一节换成 alembic。
 
 **测试**：`conftest.py` 里加一个注册用户、返回请求头的小工具，任务的测试都带上它：
 
@@ -3985,8 +4000,6 @@ config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"
 target_metadata = Base.metadata
 ```
 
-再在文件里两处 `context.configure(...)` 的参数里各加一行 `render_as_batch=True`：SQLite 不支持删列、改列，开了这个，alembic 会用「建新表 → 复制数据 → 删旧表」的方式绕过去。用 Postgres 的话加了也没影响。
-
 `.replace("%", "%%")`：`alembic.ini` 的格式把 `%` 当特殊字符，数据库密码里有 `%` 时不转义会报错。
 
 最后，`main.py` 里的 `lifespan` 和 `create_all` **删掉**：表结构从此只由 alembic 管。
@@ -3995,12 +4008,12 @@ target_metadata = Base.metadata
 app = FastAPI(title="todo-api")         # 不再 create_all：表结构交给 alembic
 ```
 
-测试里的 `create_all` 留着：测试用的是内存库，每次都是全新的，直接建表最省事。
+测试里的 `drop_all` / `create_all` 留着：`todo_test` 每个测试都要清空重建，直接按模型建表最省事。
 
 ### 第一次：从现在的表结构生成迁移
 
 ```bash
-rm -f todo.db                                         # 最后一次删库：之后都靠迁移
+dropdb todo && createdb todo                          # 最后一次删库：之后都靠迁移
 alembic revision --autogenerate -m "create users and tasks"
 alembic upgrade head
 ```
@@ -4010,10 +4023,10 @@ alembic upgrade head
 ```python
 """create users and tasks
 
-Revision ID: 8b3af2c15abf
+Revision ID: 8b00b78b9f87
 Revises:
 """
-revision: str = '8b3af2c15abf'
+revision: str = '8b00b78b9f87'
 down_revision: Union[str, Sequence[str], None] = None    # 上一个版本：第一个没有
 
 
@@ -4024,17 +4037,16 @@ def upgrade() -> None:                                    # 升级：执行这�
     ...
     )
     op.create_table('tasks', ...)
-    with op.batch_alter_table('tasks', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_tasks_user_id'), ['user_id'], unique=False)
+    op.create_index(op.f('ix_tasks_user_id'), 'tasks', ['user_id'], unique=False)   # user_id 的索引
 
 
 def downgrade() -> None:                                  # 回退：执行这个，把 upgrade 做的撤销掉
-    ...
+    op.drop_index(op.f('ix_tasks_user_id'), table_name='tasks')
     op.drop_table('tasks')
     op.drop_table('users')
 ```
 
-执行完，数据库里多了 `alembic_version` 表，记着当前版本 `8b3af2c15abf`。
+执行完，数据库里多了 `alembic_version` 表，记着当前版本 `8b00b78b9f87`。
 
 ### 之后每次改表：改模型 → 生成 → 检查 → 升级
 
@@ -4053,10 +4065,12 @@ alembic upgrade head
 **报错了**：
 
 ```
-sqlite3.OperationalError: Cannot add a NOT NULL column with default value NULL
+sqlalchemy.exc.IntegrityError: (psycopg.errors.NotNullViolation) column "priority" of relation "tasks" contains null values
 ```
 
 原因：`default=0` 是 **Python 这边**的默认值，只在 SQLAlchemy 插入新数据时生效，数据库根本不知道。表里已经有的那几行，新加的 `priority` 列填什么？数据库只能填 NULL，而这一列又规定了不能为 NULL。
+
+报错后数据库还停在上一个版本（`alembic current` 还是 `8b00b78b9f87`）：Postgres 里加列、建表也在事务里执行，迁移中途失败会整个撤销，不会改到一半。
 
 改成同时写 `server_default`：这是**数据库这边**的默认值，加列时已有的行会自动填上它。删掉刚才生成的那个迁移文件，重新生成：
 
@@ -4067,20 +4081,18 @@ sqlite3.OperationalError: Cannot add a NOT NULL column with default value NULL
 ```bash
 rm migrations/versions/*_add_task_priority.py
 alembic revision --autogenerate -m "add task priority"
-alembic upgrade head            # Running upgrade 8b3af2c15abf -> 23a1f64ac3fa, add task priority
+alembic upgrade head            # Running upgrade 8b00b78b9f87 -> c6314163489a, add task priority
 ```
 
 生成的脚本：
 
 ```python
 def upgrade() -> None:
-    with op.batch_alter_table('tasks', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('priority', sa.Integer(), server_default='0', nullable=False))
+    op.add_column('tasks', sa.Column('priority', sa.Integer(), server_default='0', nullable=False))
 
 
 def downgrade() -> None:
-    with op.batch_alter_table('tasks', schema=None) as batch_op:
-        batch_op.drop_column('priority')
+    op.drop_column('tasks', 'priority')
 ```
 
 原来的数据都还在，`priority` 自动是 0。要在接口里返回，`TaskOut` 也加上 `priority: int`。
@@ -4099,34 +4111,12 @@ def downgrade() -> None:
 
 ```
 $ alembic history
-8b3af2c15abf -> 23a1f64ac3fa (head), add task priority
-<base> -> 8b3af2c15abf, create users and tasks
+8b00b78b9f87 -> c6314163489a (head), add task priority
+<base> -> 8b00b78b9f87, create users and tasks
 ```
 
-- **生成的脚本一定要打开看一眼再 upgrade**。autogenerate 不是万能的：比如把列**改名**，它会识别成「删掉旧列 + 加一列新的」，数据就丢了。这种要手动把脚本改成 `batch_op.alter_column('旧名', new_column_name='新名')`。
+- **生成的脚本一定要打开看一眼再 upgrade**。autogenerate 不是万能的：比如把列**改名**，它会识别成「删掉旧列 + 加一列新的」，数据就丢了。这种要手动把脚本改成 `op.alter_column('tasks', '旧名', new_column_name='新名')`。
 - **已经执行过、提交过的迁移脚本不要再改**。要改就再生成一个新的。
-
-### 换成 PostgreSQL
-
-模型和迁移脚本都不用改，只换连接地址：
-
-```bash
-uv pip install "psycopg[binary]"         # Postgres 的驱动
-```
-
-```
-# .env
-DATABASE_URL=postgresql+psycopg://用户名:密码@localhost:5432/todo
-```
-
-```bash
-alembic upgrade head                     # 在新库上从头建一遍
-uvicorn app.main:app --reload
-```
-
-- 地址开头是 `postgresql+psycopg://`：`+psycopg` 指定用哪个驱动。云数据库（比如 Neon）给的地址一般是 `postgresql://...`，要手动加上 `+psycopg`，否则 SQLAlchemy 会去找另一个没装的驱动。
-- 本地装 Postgres：Mac 上 `brew install postgresql@17`，或者直接用 Neon 这类云数据库的免费版，下一节部署也会用到。
-- 这一节的代码在 Postgres 上实际跑过：两个迁移都能执行，接口正常。有一点不同：返回的时间会带上数据库所在的时区，比如 `2026-11-12T19:58:42+08:00`，和 SQLite 返回的 `2026-11-12T11:58:42Z` 是同一个时刻，前端用 `new Date(...)` 解析结果一样。
 
 ## 3.16 上线：CORS、中间件、部署 {#deploy}
 
@@ -4249,7 +4239,7 @@ def health() -> dict:
 
 本笔记站的后端（仓库里的 `backend/` 目录）就是这么部署的，可以对照着看。
 
-**1. 线上数据库**：Vercel 上的函数用完就销毁，磁盘也是临时的，SQLite 文件存不住，只能用云数据库。在 Vercel 项目的 Storage 里一键建一个 Neon（Postgres，有免费额度），它会自动设好 `DATABASE_URL` 环境变量。记得按上一节说的把开头改成 `postgresql+psycopg://`。
+**1. 线上数据库**：Vercel 上的服务连不到你电脑上的 Postgres，线上要用云数据库。在 Vercel 项目的 Storage 里一键建一个 Neon（Postgres，有免费额度），它会自动设好 `DATABASE_URL` 环境变量。记得按第 3.7 节说的把开头改成 `postgresql+psycopg://`。
 
 **2. 入口文件和依赖**：项目根目录加一个 `index.py`，Vercel 找到里面的 `app` 就能运行：
 
