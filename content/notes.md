@@ -2731,16 +2731,22 @@ SELECT (i % 3) + 1, '任务 ' || i FROM generate_series(1, 300000) AS i;
 `EXPLAIN ANALYZE` 会真的执行一次查询，并告诉你数据库是怎么查的、花了多久：
 
 ```sql
+-- 后半句是普通查询：找出标题是「任务 299999」的那一行（造数据时的第 299999 条，在表很靠后）
+-- 前面加 EXPLAIN ANALYZE：查询照常真的执行，但不看查出来的数据，改为报告「怎么查的、花了多久」
+-- （只写 EXPLAIN 不带 ANALYZE：只给计划、不执行；带 ANALYZE 是真执行，别加在 DELETE / UPDATE 前面乱试）
 EXPLAIN ANALYZE SELECT id, title FROM tasks WHERE title = '任务 299999';
---  Parallel Seq Scan on tasks ...
---    Rows Removed by Filter: 150001
---  Execution Time: 7.625 ms
+--  Parallel Seq Scan on tasks ...      ← Seq Scan = 全表扫描，一行行看过去；Parallel = 开了几个进程分头扫
+--    Rows Removed by Filter: 150001    ← 看过但不符合条件、被扔掉的行数（每个进程平均的，几个进程加起来就是整张表）
+--  Execution Time: 7.625 ms            ← 实际耗时：为了找 1 行，把 30 万行全看了一遍
 
+-- 给 title 建索引：数据库另外存一份按 title 排好序的目录，记着每个标题在哪一行
+-- idx_tasks_title 是索引名，自己起；tasks (title) 表示给 tasks 表的 title 列建
 CREATE INDEX idx_tasks_title ON tasks (title);
 
+-- 同一条查询再看一次
 EXPLAIN ANALYZE SELECT id, title FROM tasks WHERE title = '任务 299999';
---  Index Scan using idx_tasks_title on tasks ...
---  Execution Time: 0.023 ms
+--  Index Scan using idx_tasks_title on tasks ...   ← Index Scan = 走索引，在目录里直接定位到那一行，不用全表看
+--  Execution Time: 0.023 ms                        ← 从 7.6 毫秒降到 0.02 毫秒
 ```
 
 - `Seq Scan` 是全表扫描，`Index Scan` 是走索引。同一条查询从 7.6 毫秒变成 0.02 毫秒，数据越多差得越多。
