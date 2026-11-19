@@ -3388,89 +3388,127 @@ curl -i http://127.0.0.1:8000/tasks/99      # -i 显示状态码：404 + {"code"
 
 `TestClient` 不用启动服务，就能在代码里对 app 发请求。pytest 自动找 `test_` 开头的文件和函数来跑。
 
+下面按「准备、fixture、五个测试」分块写，几块代码依次放进同一个文件 `tests/test_tasks.py`。
+
+### 准备：导入、连测试库
+
 ```python
 # tests/test_tasks.py
 from __future__ import annotations
 
 from collections.abc import Iterator
 
-import pytest
-from fastapi.testclient import TestClient
+import pytest                                       # 测试框架
+from fastapi.testclient import TestClient           # 不启动服务，直接在代码里给 app 发请求
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db import Base, db_session
-from app.main import app
+from app.db import Base, db_session                 # db_session：要被换掉的那个依赖（第 3.9 节）
+from app.main import app                            # 要测的 app（第 3.10 节）
 
 
 # 测试专用的库，和开发用的 todo 库分开：测试会把它清空
 TEST_DATABASE_URL = "postgresql+psycopg://localhost:5432/todo_test"
-engine = create_engine(TEST_DATABASE_URL)
-TestSession = sessionmaker(engine, autoflush=False, expire_on_commit=False)
+engine = create_engine(TEST_DATABASE_URL)                                       # 连测试库
+TestSession = sessionmaker(engine, autoflush=False, expire_on_commit=False)    # 测试库的会话工厂，参数和 db.py 里一样
+```
 
+**测试库一定要和开发库分开**：每个测试开始都会删表，要是连的是 `todo`，自己在 `/docs` 里建的数据就全没了。`todo_test` 是第 3.6 节末尾建好的。
 
-@pytest.fixture
+### fixture：每个测试前准备好 client
+
+```python
+# tests/test_tasks.py（接着写）
+@pytest.fixture                                     # 标记成 fixture：测试函数参数里写 client，pytest 就先跑它
 def client() -> Iterator[TestClient]:
     # 每个测试开始前删表、重建：上一个测试留下的数据清干净，测试之间互不影响
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
+    Base.metadata.drop_all(engine)                  # DROP TABLE tasks ...
+    Base.metadata.create_all(engine)                # CREATE TABLE tasks ...
 
-    def test_db_session() -> Iterator[Session]:
+    def test_db_session() -> Iterator[Session]:     # 测试版的 db_session：连的是测试库
         session = TestSession()
         try:
-            yield session
-            session.commit()
+            yield session                           # 交给接口用
+            session.commit()                        # 接口正常返回后提交
         finally:
-            session.close()
+            session.close()                         # 不管怎样都关闭
 
-    app.dependency_overrides[db_session] = test_db_session   # 把真库换成测试库
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
+    app.dependency_overrides[db_session] = test_db_session   # 把真库换成测试库：接口要 db_session 时，改调 test_db_session
+    with TestClient(app) as c:                      # with：启动、关闭 app（会执行 app 的启动代码）
+        yield c                                     # 把 client 交给测试函数，测试跑完再回到这里
+    app.dependency_overrides.clear()                # 收尾：撤掉替换，不影响别的地方
+```
 
+- **`@pytest.fixture`**：测试的准备工作。测试函数参数里写了 `client`，pytest 就先跑同名的 fixture，把 `yield` 出来的东西传进去；测试结束后执行 `yield` 后面的收尾。
+- **`app.dependency_overrides`**：测试时把某个依赖换掉，这里把开发用的 `todo` 库换成测试专用的 `todo_test` 库。接口代码一行不用改。
+- **为什么在测试开始前删表，而不是结束后**：测试失败时，数据还留在 `todo_test` 里，可以去 DBeaver 打开看是什么样。
 
-def test_create_and_list(client: TestClient) -> None:
-    r = client.post("/tasks", json={"title": "写笔记"})
-    assert r.status_code == 201
-    assert r.json()["code"] == 200
+### 测试一：新建后能在列表里看到
+
+```python
+# tests/test_tasks.py（接着写）
+def test_create_and_list(client: TestClient) -> None:   # 参数 client：pytest 自动传入上面 fixture yield 出来的 c
+    r = client.post("/tasks", json={"title": "写笔记"})   # 发 POST /tasks，json= 就是请求体
+    assert r.status_code == 201                     # HTTP 状态码：新建成功是 201
+    assert r.json()["code"] == 200                  # 响应体里的 code
     assert r.json()["data"]["title"] == "写笔记"
-    assert r.json()["data"]["done"] is False
+    assert r.json()["data"]["done"] is False        # 新建的任务默认没完成
 
-    r = client.get("/tasks")
+    r = client.get("/tasks")                        # 再查列表
     assert r.status_code == 200
-    assert r.json()["data"]["total"] == 1
-    assert [t["title"] for t in r.json()["data"]["items"]] == ["写笔记"]
+    assert r.json()["data"]["total"] == 1           # 一共 1 条
+    assert [t["title"] for t in r.json()["data"]["items"]] == ["写笔记"]   # 取出所有标题，应该只有「写笔记」
+```
 
+**`assert 条件`**：条件不成立就算失败，pytest 会把两边的实际值打印出来。一个测试里可以写很多个 `assert`，遇到第一个失败的就停。
 
+### 测试二：标题为空返回 422
+
+```python
+# tests/test_tasks.py（接着写）
 def test_empty_title_rejected(client: TestClient) -> None:
-    r = client.post("/tasks", json={"title": ""})
-    assert r.status_code == 422
+    r = client.post("/tasks", json={"title": ""})   # 空标题：TaskCreate 要求至少 1 个字符
+    assert r.status_code == 422                     # pydantic 校验不通过，接口函数根本不会执行
+```
 
+### 测试三：同名未完成任务返回 409
 
+```python
+# tests/test_tasks.py（接着写）
 def test_duplicate_title_conflict(client: TestClient) -> None:
-    client.post("/tasks", json={"title": "写笔记"})
-    r = client.post("/tasks", json={"title": "写笔记"})
+    client.post("/tasks", json={"title": "写笔记"})   # 先建一条
+    r = client.post("/tasks", json={"title": "写笔记"})   # 再建同名的
     assert r.status_code == 409
-    assert r.json() == {"code": -1, "msg": "已经有一条同名的未完成任务", "data": None}
+    assert r.json() == {"code": -1, "msg": "已经有一条同名的未完成任务", "data": None}   # 整个响应体都对上，JSON 的 null 在 Python 里是 None
+```
 
+### 测试四：标记完成后按 done 筛选
 
+```python
+# tests/test_tasks.py（接着写）
 def test_finish_and_filter(client: TestClient) -> None:
-    a = client.post("/tasks", json={"title": "a"}).json()["data"]["id"]
-    client.post("/tasks", json={"title": "b"})
-    assert client.patch(f"/tasks/{a}/done").json()["data"]["done"] is True
-    items = client.get("/tasks", params={"done": False}).json()["data"]["items"]
-    assert [t["title"] for t in items] == ["b"]
+    a = client.post("/tasks", json={"title": "a"}).json()["data"]["id"]   # 建任务 a，记下它的 id
+    client.post("/tasks", json={"title": "b"})      # 再建任务 b
+    assert client.patch(f"/tasks/{a}/done").json()["data"]["done"] is True   # 把 a 标记完成，返回的 done 应该是 true
+    items = client.get("/tasks", params={"done": False}).json()["data"]["items"]   # params= 拼成 ?done=false，只查没完成的
+    assert [t["title"] for t in items] == ["b"]     # 只剩 b
+```
 
+### 测试五：删除后再查是 404
 
+```python
+# tests/test_tasks.py（接着写）
 def test_delete_then_404(client: TestClient) -> None:
-    task_id = client.post("/tasks", json={"title": "a"}).json()["data"]["id"]
-    r = client.delete(f"/tasks/{task_id}")
+    task_id = client.post("/tasks", json={"title": "a"}).json()["data"]["id"]   # 先建一条，拿到 id
+    r = client.delete(f"/tasks/{task_id}")          # 删掉它
     assert r.status_code == 200
     assert r.json()["msg"] == "删除成功"
-    r = client.get(f"/tasks/{task_id}")
-    assert r.status_code == 404
+    r = client.get(f"/tasks/{task_id}")             # 再查同一个 id
+    assert r.status_code == 404                     # 已经没有了
     assert r.json() == {"code": -1, "msg": "没有这个任务", "data": None}
 ```
+
+### 跑测试
 
 在 `todo-api/` 目录运行：
 
@@ -3478,12 +3516,6 @@ def test_delete_then_404(client: TestClient) -> None:
 python -m pytest -q            # 应该看到 5 passed
 python -m pytest -q -k 404     # 只跑名字里带 404 的测试
 ```
-
-- **`assert 条件`**：条件不成立就算失败，pytest 会把两边的实际值打印出来。
-- **`@pytest.fixture`**：测试的准备工作。测试函数参数里写了 `client`，pytest 就先跑同名的 fixture，把 `yield` 出来的东西传进去；测试结束后执行 `yield` 后面的收尾。
-- **`app.dependency_overrides`**：测试时把某个依赖换掉，这里把开发用的 `todo` 库换成测试专用的 `todo_test` 库（3.6 节末尾建好的）。
-- **测试库一定要和开发库分开**：每个测试开始都会 `drop_all` 删表，要是连的是 `todo`，自己在 `/docs` 里建的数据就全没了。
-- **为什么在测试开始前删表，而不是结束后**：测试失败时，数据还留在 `todo_test` 里，可以去 DBeaver 打开看是什么样。
 
 ## 3.12 拆文件和配置 {#routers-settings}
 
