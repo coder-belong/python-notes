@@ -21,6 +21,7 @@ import AdminPanel from "./AdminPanel";
 import ChangelogPanel from "./ChangelogPanel";
 import FocusBar from "./FocusBar";
 import Home from "./Home";
+import ProgressPage from "./ProgressPage";
 import MoreMenu from "./MoreMenu";
 import SideResizer from "./SideResizer";
 import ThemeToggle from "./ThemeToggle";
@@ -42,6 +43,8 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   const { sections } = notes;
   // undefined：还没读到网址（服务端预渲染和刚打开的一瞬间）；null：首页
   const [route, setRoute] = useState<string | null | undefined>(undefined);
+  /** 不是某一节的单独页面：#progress 是学习过程页。route 这时是 null。 */
+  const [page, setPage] = useState<"progress" | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -122,6 +125,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
       const found = sections.some((s) => s.id === id);
       restoreY.current = found ? loadPosition(id) : null;   // 每节各记各的位置，没读过就从头
       setRoute(found ? id : null);
+      setPage(id === "progress" ? "progress" : null);
       setNavOpen(false);
     };
     apply();
@@ -148,7 +152,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setOpenParts((s) => (s.has(part) ? s : new Set(s).add(part)));
     }
-  }, [route, section]);
+  }, [route, section, page]);
 
   // 记住读到哪：停止滚动半秒后存一次
   useEffect(() => {
@@ -390,8 +394,11 @@ export default function NotesApp({ notes }: { notes: Notes }) {
           </div>
           <StudyEntry study={study} onOpen={() => setStatsOpen(true)} />
           <nav>
-            <a href="#" className={`nav-home ${route === null ? "active" : ""}`}>
+            <a href="#" className={`nav-home ${route === null && !page ? "active" : ""}`}>
               首页 · 学习路线
+            </a>
+            <a href="#progress" className={`nav-home ${page === "progress" ? "active" : ""}`}>
+              学习过程
             </a>
             {groups.map((g) => {
               const done = g.items.filter((s) => study.data.done[s.id]).length;
@@ -452,7 +459,11 @@ export default function NotesApp({ notes }: { notes: Notes }) {
             </div>
           )}
 
-          {route === null && !study.guestBlocked && (
+          {page === "progress" && !study.guestBlocked && (
+            <ProgressPage groups={groups} data={study.data} />
+          )}
+
+          {route === null && !page && !study.guestBlocked && (
             <Home notes={notes} groups={groups} done={study.data.done} reading={reading} studyDays={study.data.days} />
           )}
 

@@ -70,7 +70,7 @@
 
 | key | 内容 |
 |---|---|
-| `python-notes:study` | 每天学习时长、每节用时、「学完了」、每天的番茄数 |
+| `python-notes:study` | 每天学习时长、每节用时、「学完了」、每天的番茄数、每节开始学和学完的日期 |
 | `python-notes:reading` | 上次读到的节和滚动位置 |
 | `python-notes:prefs` | 主题、字号 |
 | `python-notes:side-w` | 侧栏宽度 |
@@ -112,6 +112,8 @@ uv run uvicorn app.main:app --reload --port 8000
 
 线上要配的环境变量：`JWT_SECRET`（签 token 的密钥，一串随机字符）、`DATABASE_URL`（接 Neon 后自动有）、`ADMIN_USERNAMES`（可选，管理员用户名，逗号隔开，默认 `belong`）。
 
+**学习过程**（侧栏「学习过程」，网址 `#progress`）：每节第一次学时记下开始日期，勾「学完了」时记下学完日期（取消勾选就删掉），按天列出开始学、学完的节，以及每个阶段哪天开始、哪天学完。这个功能上线前勾的「学完了」没有日期，不会出现在时间线上，所在阶段也算不出学完日期。日期跟着学习记录一起同步，后端存在 `section_dates` 表，开始日期两台电脑都有时取早的。
+
 **访客限制**：没登录只能免费看 10 分钟（按学习时长算，页面在前台、有操作才计时），用完弹出关不掉的注册 / 登录框。限制只在前端，清掉浏览器数据或开无痕窗口能重新计时，它是引导注册的门槛，不是防破解的锁。访客在浏览器里有一个随机 id，注册或登录时一起发给后端，管理员能看到「这个访客后来注册成了谁」。
 
 **管理员**：用管理员账号登录后，点侧栏的账号图标，弹窗里多一个「所有用户的学习情况」按钮，下面还有访客的统计。是不是管理员只看用户名，所以管理员用户名一定要自己先注册掉，否则别人注册了这个名字就成了管理员。
@@ -142,6 +144,8 @@ src/lib/account.ts              调后端接口、登录信息和待同步记录
 src/lib/guest.ts                访客：免费 10 分钟、访客 id 和时长、上报
 src/lib/prefs.ts                主题、字号的读写
 src/components/NotesApp.tsx     页面：按 # 切节、侧栏目录、上一节 / 下一节、快捷键、专注模式开关
+src/lib/progress.ts             学习过程：从每节的日期算出按天的时间线
+src/components/ProgressPage.tsx 学习过程页
 src/components/Home.tsx         首页
 src/components/Heatmap.tsx      学习热力图
 src/components/StudyPanel.tsx   学习统计入口和弹窗

@@ -239,14 +239,18 @@ export function useStudy(currentSection: string | null) {
 
       const prev = dataRef.current;
       const section = sectionRef.current;
+      // 第一次学这一节：记下日期（学习过程里的「开始学」）
+      const firstTime = !!section && !prev.started[section];
       const updated: StudyData = {
         ...prev,
         days: { ...prev.days, [today]: (prev.days[today] ?? 0) + 1 },
         sections: section ? { ...prev.sections, [section]: (prev.sections[section] ?? 0) + 1 } : prev.sections,
+        started: firstTime ? { ...prev.started, [section]: today } : prev.started,
       };
       commit(updated, (p) => {
         p.days[today] = (p.days[today] ?? 0) + 1;
         if (section) p.sections[section] = (p.sections[section] ?? 0) + 1;
+        if (firstTime) p.started[section] = today;
       });
       setSessionSeconds((s) => s + 1);
 
@@ -260,8 +264,15 @@ export function useStudy(currentSection: string | null) {
     (id: string) => {
       const prev = dataRef.current;
       const value = !prev.done[id];
-      commit({ ...prev, done: { ...prev.done, [id]: value } }, (p) => {
+      const today = dayKey();
+      // 勾上记下今天是学完的日期，取消勾选就删掉
+      const finished = { ...prev.finished };
+      if (value) finished[id] = today;
+      else delete finished[id];
+      commit({ ...prev, done: { ...prev.done, [id]: value }, finished }, (p) => {
         p.done[id] = value;
+        if (value) p.finished[id] = today;
+        else delete p.finished[id];
       });
       flush();
       void syncNow(); // 勾选马上同步，不等一分钟

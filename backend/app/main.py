@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from . import errors
 from .db import Base, Db, engine
 from .errors import fail, success
-from .models import Guest, GuestDay, SectionStat, StudyDay, SyncBatch, User
+from .models import Guest, GuestDay, SectionDate, SectionStat, StudyDay, SyncBatch, User
 from .schemas import AuthIn, GuestSyncIn, SyncIn
 from .security import AdminUser, CurrentUser, create_token, hash_password, is_admin, verify_password
 
@@ -100,12 +100,31 @@ def totals(session: Session, user_id: int) -> dict:
     """这个用户的全部学习记录，格式和前端 localStorage 里的 StudyData 一样。"""
     days = session.scalars(select(StudyDay).where(StudyDay.user_id == user_id)).all()
     stats = session.scalars(select(SectionStat).where(SectionStat.user_id == user_id)).all()
+    dates = session.scalars(select(SectionDate).where(SectionDate.user_id == user_id)).all()
     return {
         "days": {d.day: d.seconds for d in days if d.seconds},
         "pomodoros": {d.day: d.pomodoros for d in days if d.pomodoros},
         "sections": {s.section_id: s.seconds for s in stats if s.seconds},
         "done": {s.section_id: True for s in stats if s.done},
+        "started": {d.section_id: d.started_on for d in dates if d.started_on},
+        "finished": {d.section_id: d.finished_on for d in dates if d.finished_on},
     }
+
+
+def save_dates(session: Session, user_id: int, body: SyncIn) -> None:
+    """每节的开始、学完日期：开始日期两台电脑都有就取早的；学完日期以最新发来的为准，取消勾选就清空。"""
+    for sid in body.started.keys() | body.finished.keys() | body.done.keys():
+        row = session.get(SectionDate, (user_id, sid))
+        if row is None:
+            row = SectionDate(user_id=user_id, section_id=sid)
+            session.add(row)
+        started = body.started.get(sid)
+        if started and (row.started_on is None or started < row.started_on):
+            row.started_on = started
+        if body.done.get(sid) is False:
+            row.finished_on = None
+        elif sid in body.finished:
+            row.finished_on = body.finished[sid]
 
 
 @app.post("/sync")
@@ -115,7 +134,7 @@ def sync(body: SyncIn, user: CurrentUser, session: Db) -> dict:
     发的是增量（「刚才又学了 60 秒」）而不是总数：两台电脑各学各的，加起来就是总时长，不会互相覆盖。
     每批带一个 batch_id，同一批发两次只算一次。全是空的就只是来取最新数据。
     """
-    has_changes = body.days or body.pomodoros or body.sections or body.done
+    has_changes = body.days or body.pomodoros or body.sections or body.done or body.started or body.finished
     seen = session.get(SyncBatch, (user.id, body.batch_id))
     if has_changes and seen is None:
         session.add(SyncBatch(user_id=user.id, batch_id=body.batch_id))
@@ -126,6 +145,7 @@ def sync(body: SyncIn, user: CurrentUser, session: Db) -> dict:
             key = {"user_id": user.id, "section_id": sid}
             set_ = {"done": body.done[sid]} if sid in body.done else None
             upsert(session, SectionStat, key, {"seconds": body.sections.get(sid, 0)}, set_)
+        save_dates(session, user.id, body)
         session.commit()
     return success(totals(session, user.id))
 

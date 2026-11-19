@@ -27,6 +27,8 @@ class SyncIn(BaseModel):
     pomodoros: dict[Day, Annotated[int, Field(ge=0, le=100)]] = {}  # 每天新增的番茄数
     sections: dict[SectionId, Seconds] = {}  # 每节新增的秒数
     done: dict[SectionId, bool] = {}  # 「学完了」改成了什么
+    started: dict[SectionId, Day] = {}  # 第一次学这一节的日期（后端保留较早的那个）
+    finished: dict[SectionId, Day] = {}  # 学完这一节的日期（勾选或补记日期时发）
 
 
 class GuestSyncIn(BaseModel):

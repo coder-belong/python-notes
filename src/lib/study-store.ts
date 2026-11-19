@@ -8,12 +8,14 @@ export type StudyData = {
   sections: Record<string, number>; // 小节 id → 累计秒数
   done: Record<string, boolean>; // 小节 id → 是否勾了「学完了」
   pomodoros: Record<string, number>; // 日期 → 当天完成了几个番茄钟（专注模式）
+  started: Record<string, string>; // 小节 id → 第一次学这一节的日期（学习过程用）
+  finished: Record<string, string>; // 小节 id → 勾「学完了」的日期；取消勾选就删掉
 };
 
 const KEY = "python-notes:study";
 
 export function emptyData(): StudyData {
-  return { version: 1, days: {}, sections: {}, done: {}, pomodoros: {} };
+  return { version: 1, days: {}, sections: {}, done: {}, pomodoros: {}, started: {}, finished: {} };
 }
 
 export function loadData(): StudyData {
@@ -27,6 +29,8 @@ export function loadData(): StudyData {
       sections: migrateKeys(parsed.sections ?? {}),
       done: migrateKeys(parsed.done ?? {}),
       pomodoros: parsed.pomodoros ?? {},
+      started: parsed.started ?? {},
+      finished: parsed.finished ?? {},
     };
   } catch {
     return emptyData();

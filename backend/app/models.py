@@ -39,6 +39,20 @@ class SectionStat(Base):
     done: Mapped[bool] = mapped_column(default=False)
 
 
+class SectionDate(Base):
+    """每节第一次学的日期、学完的日期（学习过程用）。对应前端的 started 和 finished。
+
+    单独一张表而不是给 section_stats 加列：create_all 只会建新表，不会给已有的表加列。
+    """
+
+    __tablename__ = "section_dates"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    section_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    started_on: Mapped[str | None] = mapped_column(String(10), default=None)  # 2026-11-12
+    finished_on: Mapped[str | None] = mapped_column(String(10), default=None)  # 取消「学完了」时清空
+
+
 class SyncBatch(Base):
     """处理过的同步批次。同一批次重复发过来（比如网络断了前端重试）只算一次，时长不会被加两遍。"""
 

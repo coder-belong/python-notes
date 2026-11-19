@@ -1603,6 +1603,81 @@ h2.page-title {
   }
 }
 
+/* ---------- 学习过程 ---------- */
+.sproc-empty {
+  padding: 24px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.sproc {
+  padding: 4px 16px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.sproc-day h3 {
+  margin: 12px 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sproc-day ul {
+  margin: 0;
+  padding: 0 0 0 14px;
+  border-left: 2px solid var(--line);
+  list-style: none;
+}
+
+.sproc-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 14px;
+}
+
+.sproc-item a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.sproc-item a:hover {
+  color: var(--accent);
+}
+
+.sproc-tag {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--code-bg);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sproc-item.done .sproc-tag {
+  background: color-mix(in srgb, var(--done) 15%, transparent);
+  color: var(--done);
+}
+
+.sproc-item.stage-done .sproc-tag {
+  background: var(--done);
+  color: #fff;
+}
+
+.sproc-item.stage-done a {
+  font-weight: 600;
+}
+
+.sproc-item.stage-start .sproc-tag {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 /* ---------- 学习热力图 ---------- */
 .heatmap {
   --cell: 11px;

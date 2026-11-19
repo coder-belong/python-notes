@@ -48,25 +48,39 @@ export const loadAccount = () => read<Account>(AUTH_KEY);
 export const saveAccount = (a: Account | null) => write(AUTH_KEY, a);
 
 export function emptyDelta(): Delta {
-  const { days, sections, done, pomodoros } = emptyData();
-  return { days, sections, done, pomodoros };
+  const { days, sections, done, pomodoros, started, finished } = emptyData();
+  return { days, sections, done, pomodoros, started, finished };
 }
 
 export function loadSync(): SyncState {
   const s = read<SyncState>(SYNC_KEY);
-  return { claimed: s?.claimed ?? false, pending: s?.pending ?? emptyDelta(), inflight: s?.inflight ?? null };
+  // 旧版本存的增量没有 started / finished，补上空的
+  const fill = (d: Partial<Delta> | undefined | null) => (d ? { ...emptyDelta(), ...d } : null);
+  return {
+    claimed: s?.claimed ?? false,
+    pending: fill(s?.pending) ?? emptyDelta(),
+    inflight: s?.inflight ? { ...fill(s.inflight)!, batch_id: s.inflight.batch_id } : null,
+  };
 }
 
 export const saveSync = (s: SyncState) => write(SYNC_KEY, s);
 
 export function isEmpty(d: Delta): boolean {
-  return [d.days, d.sections, d.done, d.pomodoros].every((m) => Object.keys(m).length === 0);
+  return [d.days, d.sections, d.done, d.pomodoros, d.started, d.finished].every((m) => Object.keys(m).length === 0);
 }
 
 /** 把本机已有的全部记录当成一批增量：第一次登录时传上去，和账号里已有的加在一起。 */
 export function dataAsDelta(data: StudyData): Delta {
   const done = Object.fromEntries(Object.entries(data.done).filter(([, v]) => v));
-  return { days: { ...data.days }, sections: { ...data.sections }, pomodoros: { ...data.pomodoros }, done };
+  const finished = Object.fromEntries(Object.entries(data.finished).filter(([id]) => done[id]));
+  return {
+    days: { ...data.days },
+    sections: { ...data.sections },
+    pomodoros: { ...data.pomodoros },
+    done,
+    started: { ...data.started },
+    finished,
+  };
 }
 
 function addCounts(a: Record<string, number>, b: Record<string, number>): Record<string, number> {
@@ -83,7 +97,23 @@ export function applyPending(server: Delta, pending: Delta): StudyData {
     sections: addCounts(server.sections, pending.sections),
     pomodoros: addCounts(server.pomodoros, pending.pomodoros),
     done: { ...server.done, ...pending.done },
+    started: earliest(server.started ?? {}, pending.started),
+    finished: finishedDates(server.finished ?? {}, pending),
   };
+}
+
+/** 开始日期：两边都有取早的。 */
+function earliest(a: Record<string, string>, b: Record<string, string>): Record<string, string> {
+  const out = { ...a };
+  for (const [k, v] of Object.entries(b)) if (!out[k] || v < out[k]) out[k] = v;
+  return out;
+}
+
+/** 学完日期：本机新改的覆盖后端的；本机刚取消勾选的去掉。 */
+function finishedDates(server: Record<string, string>, pending: Delta): Record<string, string> {
+  const out = { ...server, ...pending.finished };
+  for (const [id, v] of Object.entries(pending.done)) if (!v) delete out[id];
+  return out;
 }
 
 export class ApiError extends Error {
