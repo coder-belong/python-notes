@@ -2985,7 +2985,7 @@ def create_task(title: str, note: str | None = None) -> dict:
     with SessionLocal() as session:        # 开一个会话，with 结束自动关闭
         # 先查有没有同名的，分三步：
         stmt = select(Task).where(Task.title == title)   # ① 只是拼好一条 SQL，还没查
-        result = session.scalars(stmt)                   # ② 发给数据库执行；scalars：每行只取第一列，拿到的直接是 Task 对象
+        result = session.scalars(stmt)                   # ② 发给数据库执行；scalars：结果每行本来是 (Task,) 这样的元组，去掉这层，直接拿到 Task 对象
         same = result.one_or_none()                      # ③ 要求结果最多一条：0 条给 None，1 条给那个对象，多条直接报错
         if same is not None:
             raise fail(409, "已经有同名任务了")
