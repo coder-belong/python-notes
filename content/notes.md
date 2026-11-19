@@ -3609,6 +3609,18 @@ class Settings(BaseSettings):                 # 继承 BaseSettings：字段从�
 settings = Settings()   # 整个项目共用这一个，别处 from app.config import settings
 ```
 
+对应的 `.env`（3.7 节已经建过，在 `todo-api/` 下）：
+
+```
+# .env：自己电脑上真正用的配置，不提交
+DATABASE_URL=postgresql+psycopg://localhost:5432/todo   # 对应 database_url
+DEBUG=true                                               # 对应 debug；本地开着，能看到每条 SQL
+```
+
+`.env.example` 也同步加上 `DEBUG=false` 这一行，别人才知道有这个配置可以开。
+
+- **字段名和环境变量名怎么对应**：`database_url` 对应 `DATABASE_URL`，不区分大小写，习惯上环境变量写大写。
+- **不写也能跑**：`.env` 里没写的配置用代码里的默认值，比如不写 `DEBUG` 就是 `False`。
 - **读取顺序**：环境变量 → `.env` 文件 → 默认值。线上直接设环境变量，本地写 `.env`，代码不用改，和 3.7 节一样。
 - **自动转类型**：`DEBUG=true` 读进来就是 `True`，写成 `DEBUG=abc` 启动直接报错，不会带着错误的配置跑起来。
 - **`extra="ignore"`**：`.env` 里有这个类没定义的配置（比如给别的工具用的），忽略，不报错。
@@ -3799,6 +3811,14 @@ hash_password("123456")
 ```
 
 生成一个随机密钥写进 `.env`：`python -c "import secrets; print(secrets.token_urlsafe(32))"`。
+
+```
+# .env（加上这两行）
+JWT_SECRET=把上面命令打印出来的那串粘贴到这里    # 对应 jwt_secret
+TOKEN_DAYS=7                                     # 对应 token_days，不写就用默认的 7
+```
+
+`.env.example` 里写成 `JWT_SECRET=换成你自己的随机字符串`，不要把真实密钥提交上去。
 
 `app/models.py` 加一张用户表：
 
