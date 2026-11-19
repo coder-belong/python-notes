@@ -2971,8 +2971,10 @@ def to_dict(task: Task) -> dict:
 @app.post("/tasks", status_code=201)
 def create_task(title: str, note: str | None = None) -> dict:
     with SessionLocal() as session:        # 开一个会话，with 结束自动关闭
-        # 先查一条：同名的有没有，没有就是 None
-        same = session.scalars(select(Task).where(Task.title == title)).one_or_none()
+        # 先查有没有同名的，分三步：
+        stmt = select(Task).where(Task.title == title)   # ① 只是拼好一条 SQL，还没查
+        result = session.scalars(stmt)                   # ② 发给数据库执行；scalars：每行只取第一列，拿到的直接是 Task 对象
+        same = result.one_or_none()                      # ③ 要求结果最多一条：0 条给 None，1 条给那个对象，多条直接报错
         if same is not None:
             raise fail(409, "已经有同名任务了")
 
