@@ -2929,22 +2929,6 @@ class Task(Base):
     )
 ```
 
-**`DATABASE_URL` 是怎么读到的**：
-
-```
-.env 文件里的一行  DATABASE_URL=postgresql+psycopg://localhost:5432/todo
-   ↓  load_dotenv()                     启动时把 .env 读进环境变量
-环境变量 DATABASE_URL
-   ↓  os.environ.get("DATABASE_URL")    读出来
-create_engine(DATABASE_URL)             连上数据库
-```
-
-- `os.environ` 只能读到环境变量，不会自己去读 `.env`，所以要先 `load_dotenv()`。
-- `load_dotenv()` 不覆盖已经设置过的环境变量：终端里 `export DATABASE_URL=...` 了，就以终端为准；线上服务器没有 `.env` 文件，直接设置环境变量就行，代码不用改。
-- 不想在代码里加载，也可以在启动时让 uv 加载：`uv run --env-file .env uvicorn app.main:app --reload`。
-- **地址拆开看**：`postgresql` 是数据库种类，`+psycopg` 是用哪个驱动（3.1 节装的 psycopg），`localhost:5432` 是主机和端口，`todo` 是库名。完整格式是 `postgresql+psycopg://用户名:密码@主机:端口/库名`；这里没写用户名，就用当前的 Mac 用户名连，brew 装的 Postgres 本机连接也不用密码。
-- 云数据库（比如第 3.16 节的 Neon）给的地址一般是 `postgresql://...`，要手动加上 `+psycopg`，否则 SQLAlchemy 会去找另一个没装的驱动 psycopg2。
-
 **表定义里的几个点**：
 
 - `Mapped[类型]`：Python 里这一列是什么类型。
@@ -4239,7 +4223,7 @@ def health() -> dict:
 
 本笔记站的后端（仓库里的 `backend/` 目录）就是这么部署的，可以对照着看。
 
-**1. 线上数据库**：Vercel 上的服务连不到你电脑上的 Postgres，线上要用云数据库。在 Vercel 项目的 Storage 里一键建一个 Neon（Postgres，有免费额度），它会自动设好 `DATABASE_URL` 环境变量。记得按第 3.7 节说的把开头改成 `postgresql+psycopg://`。
+**1. 线上数据库**：Vercel 上的服务连不到你电脑上的 Postgres，线上要用云数据库。在 Vercel 项目的 Storage 里一键建一个 Neon（Postgres，有免费额度），它会自动设好 `DATABASE_URL` 环境变量。它给的地址开头是 `postgresql://`，要改成 `postgresql+psycopg://`，否则 SQLAlchemy 会去找另一个没装的驱动 psycopg2。
 
 **2. 入口文件和依赖**：项目根目录加一个 `index.py`，Vercel 找到里面的 `app` 就能运行：
 
