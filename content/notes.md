@@ -3308,13 +3308,13 @@ def load_task(session: Session, task_id: int) -> Task:
 # app/main.py（接着写）
 @app.get("/tasks")
 def list_tasks(session: Db, done: bool | None = None, limit: int = 20) -> dict:
-    stmt = select(Task).order_by(Task.id.desc()).limit(limit)
-    if done is not None:
-        stmt = stmt.where(Task.done == done)     # 查询可以一步步加条件
-    tasks = session.scalars(stmt).all()
-    total = session.scalar(select(func.count()).select_from(Task))
-    items = [TaskOut.model_validate(t) for t in tasks]   # 数据库对象 → 响应格式
-    return success(TaskList(items=items, total=total or 0))
+    stmt = select(Task).order_by(Task.id.desc()).limit(limit)   # SELECT * FROM tasks ORDER BY id DESC LIMIT 20（只是拼好，还没查）
+    if done is not None:                                        # 前端传了 ?done=... 才筛选
+        stmt = stmt.where(Task.done == done)                    # 加上 WHERE done = false
+    tasks = session.scalars(stmt).all()                         # 发给数据库执行，拿到 Task 对象列表
+    total = session.scalar(select(func.count()).select_from(Task))   # SELECT count(*) FROM tasks，只取这一个数字（没带 done 条件）
+    items = [TaskOut.model_validate(t) for t in tasks]          # 每个 Task 对象转成 TaskOut，只留给前端的字段
+    return success(TaskList(items=items, total=total or 0))     # 返回 {code, msg, data: {items: [...], total: 3}}
 ```
 
 - 比第 3.8 节多了三样：`.order_by(Task.id.desc())` 新的排前面，`.limit(limit)` 最多取几条，`total` 数一共几条。
