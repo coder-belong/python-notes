@@ -3600,7 +3600,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):                 # 继承 BaseSettings：字段从环境变量读
     """所有配置都在这里：先读环境变量，没有再读 .env，都没有用默认值。"""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")   # 也读 .env；不认识的配置忽略
+    # 这个类自己的设置，两项：
+    #   env_file=".env"：除了环境变量，还去读 .env 文件里的配置
+    #   extra="ignore"：.env 里写了、但下面没定义成字段的项，直接跳过
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://localhost:5432/todo"   # 对应环境变量 DATABASE_URL（不区分大小写）
     debug: bool = False                       # DEBUG=true 会自动转成 True
@@ -3623,7 +3626,7 @@ DEBUG=true                                               # 对应 debug；本地
 - **不写也能跑**：`.env` 里没写的配置用代码里的默认值，比如不写 `DEBUG` 就是 `False`。
 - **读取顺序**：环境变量 → `.env` 文件 → 默认值。线上直接设环境变量，本地写 `.env`，代码不用改，和 3.7 节一样。
 - **自动转类型**：`DEBUG=true` 读进来就是 `True`，写成 `DEBUG=abc` 启动直接报错，不会带着错误的配置跑起来。
-- **`extra="ignore"`**：`.env` 里有这个类没定义的配置（比如给别的工具用的），忽略，不报错。
+- **`extra="ignore"`**：`Settings` 只定义了 `database_url` 和 `debug` 两个字段。如果 `.env` 里还写了别的，比如 `SECRET_KEY=abc`，类里没有 `secret_key` 字段，这一行就直接跳过。不加 `extra="ignore"` 的话，默认会启动报错 `Extra inputs are not permitted`（不允许多余的配置）。
 
 `app/db.py` 开头改成从 `settings` 读，`load_dotenv` 和 `os` 都不用了：
 
