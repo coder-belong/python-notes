@@ -1,0 +1,7 @@
+# 线上运行要的依赖（Vercel 按这个装）；uvicorn、pytest 这类只在本地用的放 requirements-dev.txt
+fastapi
+sqlalchemy
+psycopg[binary]
+pydantic-settings
+pyjwt
+pwdlib[argon2]

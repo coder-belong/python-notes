@@ -43,3 +43,10 @@ next-env.d.ts
 # 构建产物
 /dist/
 !backend/.env.example
+
+# code/：笔记配套的练习工程
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+!code/**/.env.example

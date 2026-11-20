@@ -1,0 +1,6 @@
+# 本地开发：运行依赖 + 本地起服务、跑测试、迁移用的
+-r requirements.txt
+uvicorn[standard]
+pytest
+httpx
+alembic

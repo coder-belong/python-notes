@@ -134,6 +134,7 @@ uv run uvicorn app.main:app --reload --port 8000
 content/notes.md                笔记正文
 content/changelog.md            更新日志
 ROADMAP.md                      学习路线（首页读「## 阶段…」下面的勾选清单）
+code/                           笔记配套代码：每个阶段一个能直接运行的工程（见 code/README.md）
 src/app/layout.tsx              页面外壳：把样式直接写进页面，<head> 里先套上主题和字号
 src/app/page.tsx                构建时读 notes.md，交给 NotesApp
 src/lib/notes.ts                Markdown → 按「部分 / 节」拆好的 HTML（代码高亮在这里做），读 ROADMAP 和更新日志
