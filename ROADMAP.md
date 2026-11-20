@@ -50,14 +50,14 @@
 
 ## 阶段四：AI 应用开发（第 7～8 周）
 
-- [ ] LLM API 调用
-- [ ] 消息结构、System Prompt、Token 和上下文长度
-- [ ] 成本、超时、重试、限流
+- [x] LLM API 调用（第 4.1 节，用 DeepSeek + openai SDK）
+- [x] 消息结构、System Prompt、Token 和上下文长度（第 4.2 节）
+- [x] 成本、超时、重试、限流（第 4.3 节）
 - [ ] Prompt Engineering（次要：边做边学，不用单独花时间）
-- [ ] Structured Output（结合 Pydantic）
-- [ ] Function Calling
-- [ ] Streaming 流式输出
-- [ ] SSE：后端推送模型输出和执行事件，前端用 `fetch` + `ReadableStream` 接收；处理连接断开、取消、最终结果保存
+- [x] Structured Output（结合 Pydantic）（第 4.4 节）
+- [x] Function Calling（第 4.5 节）
+- [x] Streaming 流式输出（第 4.6 节）
+- [x] SSE：后端推送模型输出和执行事件，前端用 `fetch` + `ReadableStream` 接收；处理连接断开、取消、最终结果保存（第 4.6 节）
 - [ ] Embedding 向量化
 - [ ] RAG 检索增强生成
 - [ ] RAG 细节：文档切分、关键词检索（BM25）、混合检索、RRF / Rerank、回答带出处

@@ -5,6 +5,7 @@
 - **阶段一：Python 语言基础**：只讲常用的写法，不常用的先跳过。
 - **阶段二：Python 进阶与工程化**：类型注解、依赖管理、调试、异步、发 HTTP 请求、并发、上下文管理器。
 - **阶段三：FastAPI 后端开发**：用 FastAPI + SQLAlchemy 从零做一个 todo 接口项目。
+- **阶段四：AI 应用开发**：调大模型、控制成本、结构化输出、函数调用、流式输出。
 
 每节的代码都建议自己敲一遍、跑一遍。代码在 Python 3.12 上跑通过，注释里写的是实际输出。
 
@@ -99,7 +100,7 @@ n = 3
 print(f"{user} 有 {n} 个任务")     # f-string：在字符串里嵌变量，最常用
 print(f"{price:.2f}")              # 9.90 保留两位小数
 print("a,b,c".split(","))          # ['a', 'b', 'c']
-print("  hi  ".strip())            # 'hi' 去首尾空格
+print("  hi  ".strip())            # hi   去首尾空格（打印出来看不到空格了）
 print("hello".upper(), "Hello".lower())   # HELLO hello
 print("abc".startswith("a"))       # True
 ```
@@ -136,7 +137,7 @@ print(len(s))     # 6       长度
 **数字**：
 
 ```python
-print(7 / 2)     # 3.6   除法结果总是小数
+print(7 / 2)     # 3.5   除法结果总是小数
 print(7 // 2)    # 3     整除
 print(7 % 2)     # 1     取余
 print(2 ** 10)   # 1024  乘方
@@ -1289,7 +1290,21 @@ def f(x):
     return x
 ```
 
-`ruff check` 会指出 `os` 导入了没用（F401），`--fix` 会直接删掉那行。「准备环境」一节已经在编辑器里配了「保存时自动格式化」，平时不用手动跑；提交代码前跑一次 `ruff check` 就行。
+`ruff check` 对格式化前那段代码的检查结果（ruff 0.17）：
+
+```
+a.py:1:1: I001 [*] Import block is un-sorted or un-formatted       import 的排序、空行不规范
+a.py:1:8: F401 [*] `os` imported but unused                        os 导入了没用
+a.py:3:5: F841 Local variable `y` is assigned to but never used     y 赋了值没用
+Found 3 errors.
+[*] 2 fixable with `--fix` (1 unsafe fix available with `--fix --unsafe-fixes`).
+```
+
+- 带 `[*]` 的 `--fix` 能自动修：这里会删掉 `import os`。
+- `F841` 不会自动修：删掉 `y=1` 可能改变程序行为，ruff 让你自己决定。
+- 每条开头的 `F401`、`F841` 是规则编号，看不懂就拿编号去搜。
+
+「准备环境」一节已经在编辑器里配了「保存时自动格式化」，平时不用手动跑；提交代码前跑一次 `ruff check` 就行。
 
 ## 2.3 日志、环境变量、时间 {#logging-env-time}
 
@@ -4289,6 +4304,7 @@ def delete_task(task_id: int, user: CurrentUser, session: Db) -> dict:
 | `GET /tasks/3`，tom，删完再查 | 404 | `{"code":-1,"msg":"没有这个任务","data":null}` |
 
 - **每个接口都加了 `user: CurrentUser`**：不登录访问任何任务接口都是 401。
+- **3.11 的测试会跟着失败**：那些测试没带 token，现在都会返回 401。要让它们继续通过，测试里先调 `/auth/register` 拿到 token，每个请求加上 `headers={"Authorization": f"Bearer {token}"}`。
 - **列表**：条件里加 `Task.user_id == user.id`，只查自己的。
 - **单条（详情、完成、删除）**：都走 `load_task`，查到了还要比一下 `task.user_id`。**不能只靠前端「不显示」**：别人直接改网址里的 id 就能访问，后端必须每次检查。返回 404 而不是 403，不暴露「这个 id 存在」。
 - **同名检查**也只在自己的任务里查：你有「写笔记」，不影响别人也建一条「写笔记」。
@@ -4478,7 +4494,12 @@ def downgrade() -> None:
     op.drop_column('tasks', 'priority')
 ```
 
-原来的数据都还在，`priority` 自动是 0。要在接口里返回，`TaskOut` 也加上 `priority: int`。
+原来的数据都还在，`priority` 自动是 0。接口返回里也要带上它，`TaskOut` 加一行：
+
+```python
+    # app/schemas.py（TaskOut 里加一行）
+    priority: int             # 之后返回的任务里都多一个 "priority": 0
+```
 
 **给已经有数据的表加「不能为空」的列，一定要给 `server_default`。** 这个坑本地发现不了（本地经常是空表），一上线就炸。
 
@@ -4650,6 +4671,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import errors
 from app.config import settings
+from app.response import success              # 健康检查要用
 from app.routers import auth, tasks
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")   # 日志格式
@@ -4696,7 +4718,7 @@ app.include_router(tasks.router)         # /tasks/...
 @app.get("/", tags=["健康检查"])         # GET /，/docs 里单独一组
 def health() -> dict:
     """部署后先访问这个，确认服务起来了。"""
-    return errors.success({"status": "ok"})   # {"code": 200, "msg": "ok", "data": {"status": "ok"}}
+    return success({"status": "ok"})          # {"code": 200, "msg": "ok", "data": {"status": "ok"}}
 ```
 
 加一个 `/` 接口当**健康检查**：部署完先访问它，返回 `ok` 说明服务起来了；也可以交给监控定时访问。
@@ -4716,17 +4738,38 @@ from app.main import app  # noqa: F401
 
 依赖写进 `pyproject.toml`（2.2 节）或 `requirements.txt`，Vercel 会自动安装。`uvicorn`、`pytest` 这类只在本地用的不用写进去。
 
-**3. 连接池和密钥**：`app/config.py` 加一个 `vercel` 配置，和一个检查：
+**3. 连接池和密钥**：`app/config.py` 加一个 `vercel` 配置和一个检查，改动比较多，整个文件给出来：
 
 ```python
-    # app/config.py（Settings 类里加上）
-    vercel: bool = False                      # Vercel 上会自动设置 VERCEL=1
+# app/config.py（整个换成这样：标 ①②③④ 的是这次改的）
+from __future__ import annotations
+
+from pydantic import model_validator          # ① 导入：做「所有字段读完之后」的检查
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEV_SECRET = "dev-secret-change-me"           # ② 开发用的默认密钥单独起个名字，下面要拿它比较
+
+
+class Settings(BaseSettings):                 # 继承 BaseSettings：字段从环境变量读
+    """所有配置都在这里：先读环境变量，没有再读 .env，都没有用默认值。"""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    database_url: str = "postgresql+psycopg://localhost:5432/todo"
+    debug: bool = False
+    jwt_secret: str = DEV_SECRET              # ③ 默认值改成用上面的常量（3.13 节加的）
+    token_days: int = 7
+    cors_origins: list[str] = ["http://localhost:5173"]   # 上面「跨域」加的
+    vercel: bool = False                      # ④ Vercel 上会自动设置 VERCEL=1
 
     @model_validator(mode="after")            # 所有字段读完之后再执行这个检查
     def check_secret(self) -> Settings:
         if self.vercel and self.jwt_secret == DEV_SECRET:   # 线上还在用开发密钥，等于谁都能伪造 token
             raise ValueError("线上必须设置 JWT_SECRET 环境变量")   # 直接启动失败，比悄悄上线好
         return self                           # 检查通过，原样返回
+
+
+settings = Settings()   # 整个项目共用这一个，别处 from app.config import settings
 ```
 
 `app/db.py` 里，在 Vercel 上不用连接池：
@@ -4780,3 +4823,864 @@ DATABASE_URL='postgresql+psycopg://...线上地址...' alembic upgrade head
 | 跨域、请求日志、部署 | 3.16 |
 
 接下来的阶段四，就是在这样的后端里接入大模型。
+
+---
+
+# 阶段四：AI 应用开发
+
+这个阶段在后端里接入大模型：先学会调模型、控制成本和出错，再让模型按格式输出、调用你写的函数，最后把回答一个字一个字推给前端。
+
+**学完这个阶段，你将会：**
+
+- 用 OpenAI SDK 调大模型，看懂消息结构、Token 和返回结果（4.1～4.2）
+- 算出每次调用花了多少钱，处理超时、重试和并发限制（4.3）
+- 让模型输出固定格式的 JSON，用 Pydantic 校验（4.4）
+- 让模型调用你写的函数：查数据、改数据（4.5）
+- 流式输出，用 SSE 把回答实时推给前端（4.6）
+
+示例用 **DeepSeek** 的模型。它兼容 OpenAI 的接口格式，代码用的是 `openai` 这个 SDK；换成通义千问、Kimi、智谱，甚至 OpenAI 本身，一般只改 `base_url`、key 和模型名。
+
+## 4.1 第一次调用大模型 {#llm-call}
+
+### 准备：key 和项目
+
+1. 在 DeepSeek 开放平台（platform.deepseek.com）注册、充值，在「API keys」里创建一个 key（`sk-` 开头，只显示一次）。
+2. key 写进环境变量，**不要写进代码、不要提交到 git**：
+
+```bash
+echo 'export DEEPSEEK_API_KEY=你的key' >> ~/.zshrc   # 写进 zsh 的配置，以后每个终端都有
+source ~/.zshrc                                       # 当前终端立刻生效
+echo ${#DEEPSEEK_API_KEY}                             # 只看长度，确认设上了（不会打印 key 本身）
+```
+
+3. 建一个新项目，这个阶段的代码都放在这里：
+
+```bash
+mkdir ai-demo && cd ai-demo
+uv venv --python 3.12 .venv && source .venv/bin/activate
+uv pip install openai          # OpenAI 官方 SDK，调 DeepSeek 也用它
+```
+
+### 最小的一次调用
+
+```python
+# hello_llm.py
+import os
+
+from openai import OpenAI
+
+client = OpenAI(
+    api_key=os.environ["DEEPSEEK_API_KEY"],   # 从环境变量读 key
+    base_url="https://api.deepseek.com",      # 发到 DeepSeek，不写就是发到 OpenAI
+)
+
+resp = client.chat.completions.create(        # 发一次请求，等模型整段回答完才返回
+    model="deepseek-flash",                   # 用哪个模型
+    messages=[{"role": "user", "content": "用一句话介绍 FastAPI"}],   # 对话内容，下一节细讲
+    extra_body={"thinking": {"type": "disabled"}},   # 关掉思考模式，见下面
+)
+
+print(resp.choices[0].message.content)        # 模型的回答
+# FastAPI 是一个基于 Python 类型提示构建的现代、高性能 Web 框架，用于快速开发 API，支持自动生成交互式文档并具备异步能力。
+print(resp.choices[0].finish_reason)          # stop：正常说完了
+print(resp.usage.prompt_tokens, resp.usage.completion_tokens, resp.usage.total_tokens)
+# 9 34 43                                     输入 9 个 token，输出 34 个，一共 43 个（按 token 收费）
+```
+
+`resp` 是一个对象，最常用的就是这几个字段：
+
+```python
+resp.choices[0].message.content    # 回答的文字
+resp.choices[0].finish_reason      # 为什么停：stop 说完了 / length 到了长度上限被截断 / tool_calls 要调用函数（4.5 节）
+resp.usage                         # 用了多少 token：算钱、看上下文有多长都靠它
+resp.model                         # 实际用的模型
+```
+
+`choices` 是列表，是因为接口允许一次要多个候选回答；平时只要一个，固定写 `choices[0]`。
+
+### 选模型、思考模式
+
+DeepSeek 现在有两个模型：
+
+| 模型 | 特点 | 用在哪 |
+|---|---|---|
+| `deepseek-flash` | 快、便宜 | 大部分场景：对话、提取信息、调用函数，本阶段都用它 |
+| `deepseek-v4-pro` | 更强、更贵 | 复杂推理、写长代码 |
+
+两个模型**默认开着思考模式**：先在内部推理一遍再回答，推理的内容也按输出 token 收费。简单任务关掉更快、更省钱。
+
+为了少写重复代码，先把 client 抽到一个文件里，后面的例子都 `from llm import ...`：
+
+```python
+# llm.py
+import os
+
+from openai import OpenAI
+
+client = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
+MODEL = "deepseek-flash"
+NO_THINKING = {"thinking": {"type": "disabled"}}   # 关掉思考模式
+```
+
+```python
+# think.py：不关思考模式，看看多了什么
+from llm import client
+
+resp = client.chat.completions.create(
+    model="deepseek-flash",
+    messages=[{"role": "user", "content": "一个笼子里有鸡和兔，共 10 个头、28 只脚，鸡兔各几只？只给答案"}],
+)
+msg = resp.choices[0].message
+print(msg.content)                     # 鸡6只，兔4只。
+print(msg.reasoning_content[:100])     # 思考过程，和 content 平级：
+# We need answer only. Need compute. Let chicken x rabbit y. x+y=10, 2x+4y=28 => x+2y=14 => subtract x
+print(resp.usage.completion_tokens, resp.usage.completion_tokens_details.reasoning_tokens)
+# 76 67                                输出 76 个 token，其中 67 个是思考：答案本身只有 9 个
+```
+
+- **关思考**：`extra_body={"thinking": {"type": "disabled"}}`。`extra_body` 是 openai SDK 留的口子：OpenAI 自己没有、DeepSeek 特有的参数放这里。
+- 本阶段的例子都关掉思考；数学、逻辑、写代码这类难题再打开。
+
+> 模型名、价格会变，以 DeepSeek 的 API 文档（api-docs.deepseek.com）为准。写错模型名会直接 400，报错里会列出现在支持的名字。
+
+## 4.2 消息结构、System Prompt、Token {#messages-tokens}
+
+### 消息有三种角色
+
+`messages` 是一个列表，每条消息是 `{"role": 角色, "content": 内容}`：
+
+| role | 是谁 | 用来 |
+|---|---|---|
+| `system` | 开发者 | 定规则：你是谁、怎么回答、不能做什么。放第一条 |
+| `user` | 用户 | 用户说的话 |
+| `assistant` | 模型 | 模型之前的回答（多轮对话时自己带上） |
+
+后面 4.5 节还会用到第四种 `tool`：函数的执行结果。
+
+### System Prompt：定规则
+
+```python
+# sys_demo.py
+from llm import MODEL, NO_THINKING, client
+
+question = {"role": "user", "content": "Python 和 JavaScript 有什么区别？"}
+
+# ① 不加 system：模型按自己的习惯回答
+resp = client.chat.completions.create(model=MODEL, messages=[question], extra_body=NO_THINKING)
+print(resp.choices[0].message.content[:60])   # 只看开头：写了一篇带标题、带表格的长文
+# # Python 和 JavaScript 的区别
+#
+# Python 和 JavaScript 是两门非常流行但设计理念差
+print(resp.usage.completion_tokens)           # 765
+
+# ② 加 system：按你定的规则回答
+resp = client.chat.completions.create(
+    model=MODEL,
+    messages=[
+        {"role": "system", "content": "你是编程老师。回答不超过 30 个字，不用 Markdown。"},
+        question,
+    ],
+    extra_body=NO_THINKING,
+)
+print(resp.choices[0].message.content)        # Python 重可读和数据分析，JS 重浏览器和网页交互。
+print(resp.usage.completion_tokens)           # 16：输出少了，钱也少了
+```
+
+AI 应用里大部分「功能」，其实就是写好的 system prompt：客服、翻译、提取信息，换的主要是这一段。它由后端写死，用户看不到也改不了。
+
+### 模型没有记忆：多轮对话要自己带上历史
+
+每次调用都是独立的，模型不记得上一次说了什么。想让它「记得」，就把之前的对话全部放进 `messages` 再发一次：
+
+```python
+# history_demo.py
+from llm import MODEL, NO_THINKING, client
+
+
+def ask(messages):
+    resp = client.chat.completions.create(model=MODEL, messages=messages, extra_body=NO_THINKING)
+    return resp.choices[0].message.content, resp.usage.prompt_tokens   # 回答、这次输入了多少 token
+
+
+print(ask([{"role": "user", "content": "我叫什么？"}]))
+# ('你好！😊 从我们的对话中，我并不知道你的名字——你还没有告诉我呢。...', 7)
+
+history = [{"role": "system", "content": "回答不超过 20 个字。"}]
+for text in ["我叫小林，在学 Python", "我叫什么？", "我在学什么？"]:
+    history.append({"role": "user", "content": text})          # ① 用户的话加进历史
+    answer, prompt_tokens = ask(history)                       # ② 整个历史发过去
+    history.append({"role": "assistant", "content": answer})   # ③ 模型的回答也加进历史，下一轮带上
+    print(text, "→", answer, prompt_tokens)
+# 我叫小林，在学 Python → 你好小林！Python 学习加油，有什么问题可以问我。 18
+# 我叫什么？ → 你叫小林。 38
+# 我在学什么？ → 你在学 Python。 50
+print(len(history))                                            # 7：1 条 system + 3 轮 × 2 条
+```
+
+最后一列是每轮的输入 token：**18 → 38 → 50，越聊越多**，因为每次都把全部历史重新发一遍，每次都按全部历史收费。聊天产品里的「新建对话」，就是清空这个列表。
+
+### Token：按它收费，也按它限制长度
+
+模型不是按字、按单词处理文字，而是切成 **token**。DeepSeek 文档给的估算：1 个中文字约 0.6 个 token，1 个英文字母约 0.3 个 token。实测一下：
+
+```python
+# token_demo.py
+from llm import MODEL, NO_THINKING, client
+
+
+def count_tokens(text):
+    resp = client.chat.completions.create(
+        model=MODEL, messages=[{"role": "user", "content": text}], max_tokens=1, extra_body=NO_THINKING,
+    )                                          # max_tokens=1：只想看输入有多少 token，回答只要 1 个
+    return resp.usage.prompt_tokens
+
+
+zh = "今天天气不错，我们去公园散步吧。" * 10
+en = "The weather is nice today, let's go for a walk in the park. " * 10
+print(len(zh), count_tokens(zh))   # 160 94    160 个字 → 94 个 token，约 0.6
+print(len(en), count_tokens(en))   # 600 165   600 个字母 → 165 个 token，约 0.3
+```
+
+- **准确的数字以 `resp.usage` 为准**，估算只用来心里有数。
+- **上下文长度**：一次请求里输入加输出最多能有多少 token。DeepSeek 现在是 1M（一百万）。超过就报错，长对话要裁剪历史（阶段五细讲）。
+- **`max_tokens`**：限制这次最多输出多少个 token。到了上限就硬截断，`finish_reason` 变成 `length`：
+
+```python
+# token_demo.py（接着写）
+resp = client.chat.completions.create(
+    model=MODEL, messages=[{"role": "user", "content": "详细介绍一下 FastAPI"}], max_tokens=30, extra_body=NO_THINKING,
+)
+print(resp.choices[0].message.content)
+# # FastAPI 详细介绍
+#
+# ## 一、什么是 FastAPI
+#
+# FastAPI 是一个现代、快速（高性能）的 Python Web 框架，
+print(resp.choices[0].finish_reason, resp.usage.completion_tokens)   # length 30   话没说完就被截断了
+```
+
+拿到回答要先看 `finish_reason`：是 `length` 就说明内容不完整，不能直接当结果用（4.4 节解析 JSON 时尤其要注意）。
+
+## 4.3 成本、超时、重试、限流 {#cost-retry}
+
+### 算钱：按 token 和缓存
+
+DeepSeek 按每百万 token 收费，输入分两种价格：
+
+| deepseek-flash（美元 / 百万 token） | 高峰 | 非高峰（半价） |
+|---|---|---|
+| 输入，命中缓存 | 0.006 | 0.003 |
+| 输入，没命中缓存 | 0.3 | 0.15 |
+| 输出 | 1.2 | 0.6 |
+
+- **高峰时段**：工作日北京时间 9:00～12:00、14:00～18:00，其他时间（含周末、法定节假日）半价。
+- **缓存**：如果这次请求的开头和之前的请求一样（比如同一段很长的 system prompt），重复的那部分按「命中缓存」算，便宜得多，DeepSeek 自动做，不用配置。
+- 价格会调整，以文档的价格页为准。
+
+`usage` 里有命中、没命中各多少 token，按单价乘一下就是这次花的钱：
+
+```python
+# cost_demo.py
+from llm import MODEL, NO_THINKING, client
+
+PRICE = {"hit": 0.006, "miss": 0.3, "output": 1.2}   # deepseek-flash 高峰价，美元 / 百万 token
+
+
+def cost_usd(usage):
+    hit = usage.prompt_cache_hit_tokens       # 输入里命中缓存的 token
+    miss = usage.prompt_cache_miss_tokens     # 输入里没命中的 token
+    out = usage.completion_tokens             # 输出的 token
+    return (hit * PRICE["hit"] + miss * PRICE["miss"] + out * PRICE["output"]) / 1_000_000
+
+
+rules = "你是 todo 应用的客服。规则：" + "回答要礼貌、简短，只回答和 todo 应用有关的问题。" * 50   # 故意弄一段很长的 system
+for q in ["怎么新建任务？", "怎么删除任务？"]:
+    resp = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "system", "content": rules}, {"role": "user", "content": q}],
+        extra_body=NO_THINKING,
+    )
+    u = resp.usage
+    print(u.prompt_cache_hit_tokens, u.prompt_cache_miss_tokens, u.completion_tokens, f"{cost_usd(u):.6f}")
+# 0 767 25 0.000260      第一次：767 个输入 token 全没命中
+# 512 255 22 0.000106    第二次：开头一样的 512 个命中缓存，钱少了一半多
+```
+
+- **省钱规则**：固定不变的内容（system prompt、文档资料）放在 `messages` 最前面，每次变的内容（用户问题）放后面，这样开头才能命中缓存。
+- 正式项目里，每次调用都把 `usage` 和算出来的钱记进日志或数据库，按用户、按功能统计，才知道钱花在哪。
+
+### 超时和重试：SDK 自带
+
+调模型比一般接口慢得多，几秒到几十秒都正常，网络抖动、服务繁忙也常见。openai SDK 自带超时和重试，**创建 client 时设好就行**：
+
+```python
+# error_demo.py
+import os
+import time
+
+import openai
+from openai import OpenAI
+
+from llm import MODEL, NO_THINKING
+
+client = OpenAI(
+    api_key=os.environ["DEEPSEEK_API_KEY"],
+    base_url="https://api.deepseek.com",
+    timeout=30,        # 一次请求最多等 30 秒（默认等 600 秒，太长了）
+    max_retries=2,     # 超时、连不上、429、5xx 时自动重试 2 次（默认就是 2）
+)
+print(client.timeout, client.max_retries)   # 30 2
+
+msgs = [{"role": "user", "content": "写一篇 500 字的文章"}]
+start = time.perf_counter()
+try:
+    client.chat.completions.create(model=MODEL, messages=msgs, extra_body=NO_THINKING, timeout=1)   # 单次请求也能覆盖：故意只等 1 秒
+except openai.APITimeoutError as e:
+    print(type(e).__name__, e, round(time.perf_counter() - start, 1))
+# APITimeoutError Request timed out. 4.8    一共试了 3 次（1 次 + 重试 2 次），每次 1 秒，中间还等了一会儿
+```
+
+SDK 的重试就是 2.6 节手写的那一套：只重试「可能下次就好」的错误，越等越久，次数有上限。
+
+### 常见错误
+
+openai SDK 把 HTTP 错误转成了不同的异常类，按类型 `except`：
+
+| 状态码 | 异常类 | DeepSeek 的意思 | 怎么办 | SDK 会自动重试吗 |
+|---|---|---|---|---|
+| 400 | `BadRequestError` | 请求格式不对：模型名写错、参数不对 | 看报错改代码 | 不会 |
+| 401 | `AuthenticationError` | key 不对 | 检查 key | 不会 |
+| 402 | `APIStatusError` | 余额不足 | 充值 | 不会 |
+| 422 | `UnprocessableEntityError` | 参数值不对 | 看报错改代码 | 不会 |
+| 429 | `RateLimitError` | 并发太多 | 降低并发，见下面 | 会 |
+| 500 / 503 | `InternalServerError` | 服务器出错 / 太忙 | 等一会儿再试 | 会 |
+| — | `APITimeoutError` | 等太久没回 | 调大超时或换短一点的任务 | 会 |
+
+```python
+# error_demo.py（接着写）
+bad = OpenAI(api_key="sk-wrong", base_url="https://api.deepseek.com")   # 故意用错的 key
+try:
+    bad.chat.completions.create(model=MODEL, messages=msgs)
+except openai.AuthenticationError as e:
+    print(e.status_code, e.message)
+# 401 Error code: 401 - Authentication Fails, Your api key: ****rong is invalid (request_id: ...)
+
+try:
+    client.chat.completions.create(model="deepseek-xxx", messages=msgs)   # 故意写错模型名
+except openai.BadRequestError as e:
+    print(e.status_code, e.message)
+# 400 Error code: 400 - The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed deepseek-xxx. (request_id: ...)
+```
+
+在 FastAPI 接口里调模型时，这些异常要接住，转成 3.5 节的统一错误格式返回给前端，不要把原始报错直接抛出去。
+
+### 限流：控制同时发出去的请求数
+
+DeepSeek 不限每分钟请求数，限的是**同时进行中的请求数**（并发）：一个请求从发出到模型回答完都算占着一个名额，超过就返回 429。
+
+要批量调用时（比如一次翻译 100 条），用 2.5 节的 `asyncio.Semaphore` 控制并发。异步要用 `AsyncOpenAI`，用法和 `OpenAI` 一样，调用前加 `await`：
+
+```python
+# limit_demo.py
+import asyncio
+import os
+import time
+
+from openai import AsyncOpenAI
+
+client = AsyncOpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
+limit = asyncio.Semaphore(3)                   # 最多同时 3 个请求
+
+
+async def translate(word):
+    async with limit:                          # 拿到名额才往下走，满了就排队等
+        start = time.perf_counter()
+        resp = await client.chat.completions.create(   # 异步调用，等的时候别的任务可以跑
+            model="deepseek-flash",
+            messages=[{"role": "user", "content": f"把「{word}」翻译成英文，只回答单词"}],
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        print(word, resp.choices[0].message.content, f"{time.perf_counter() - start:.1f}s")
+        return resp.choices[0].message.content
+
+
+async def main():
+    start = time.perf_counter()
+    words = ["苹果", "香蕉", "西瓜", "葡萄", "橙子", "草莓"]
+    results = await asyncio.gather(*(translate(w) for w in words))   # 6 个一起提交，同时只跑 3 个
+    print(results, f"共 {time.perf_counter() - start:.1f}s")
+
+
+asyncio.run(main())
+# 苹果 Apple 0.5s
+# 香蕉 banana 0.5s
+# 西瓜 Watermelon 0.5s
+# 橙子 Orange 0.4s
+# 葡萄 grape 0.4s
+# 草莓 strawberry 1.0s
+# ['Apple', 'banana', 'Watermelon', 'grape', 'Orange', 'strawberry'] 共 1.5s
+```
+
+- 6 个请求一个一个调要 3 秒左右，3 个并发 1.5 秒就完了。
+- `gather` 返回的结果顺序和传进去的顺序一致，不管谁先完成。
+- 在 FastAPI 接口里调模型也要用 `AsyncOpenAI`（接口写成 `async def`），否则一个请求等模型的几秒钟里会卡住其他请求。
+
+## 4.4 Structured Output：让模型输出 JSON {#structured-output}
+
+模型默认输出的是一段话，程序很难用。要拿去存数据库、给前端渲染，就得让它输出**固定格式的 JSON**，再用 3.3 节的 Pydantic 校验。
+
+例子：用户随口说一句话，提取成一个待办任务。
+
+```python
+# json_demo.py
+from typing import Literal
+
+import openai
+from pydantic import BaseModel, Field, ValidationError
+
+from llm import MODEL, NO_THINKING, client
+
+
+class TaskDraft(BaseModel):                       # 想要的格式，和 3.3 节写请求体一样
+    title: str = Field(max_length=50)
+    priority: Literal["high", "medium", "low"]    # 只能是这三个之一
+    due: str | None                               # 截止日期，没有就是 None
+
+
+# system 里写清楚：① 必须出现 json 这个词 ② 给一个格式示例
+SYSTEM = """从用户的话里提取一个待办任务，只输出 json，格式：
+{"title": "任务标题", "priority": "high / medium / low 三选一", "due": "截止日期 YYYY-MM-DD，没说就是 null"}"""
+
+
+def extract(text: str) -> TaskDraft:
+    resp = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": text}],
+        response_format={"type": "json_object"},  # JSON 模式：保证输出是合法的 JSON
+        max_tokens=200,                           # 留够长度，被截断的 JSON 解析不了
+        extra_body=NO_THINKING,
+    )
+    content = resp.choices[0].message.content
+    print(content)                                # 模型输出的 JSON 字符串
+    return TaskDraft.model_validate_json(content) # 解析 + 校验，不合格就抛 ValidationError
+
+
+task = extract("下周五之前一定要把季度报告交了，今天是 2026-11-20")
+# {"title": "提交季度报告", "priority": "high", "due": "2026-11-27"}
+print(task)            # title='提交季度报告' priority='high' due='2026-11-27'
+print(task.priority)   # high                     已经是 TaskDraft 对象，直接用点号取
+```
+
+「下周五」被换算成了具体日期，「一定要」被理解成了 `high`：这种「把人话变成结构化数据」，是大模型在业务里最常见的用法。
+
+**JSON 模式的规则（记住就行）**：
+
+1. 写 `response_format={"type": "json_object"}`。
+2. prompt 里**必须出现 `json` 这个词**，否则直接 400：
+
+```python
+# json_demo.py（接着写）
+try:
+    client.chat.completions.create(
+        model=MODEL, messages=[{"role": "user", "content": "提取任务：明天交报告"}],   # prompt 里没有 json
+        response_format={"type": "json_object"}, extra_body=NO_THINKING,
+    )
+except openai.BadRequestError as e:
+    print(e.message)
+# Error code: 400 - Prompt must contain the word 'json' in some form to use 'response_format' of type 'json_object'. (request_id: ...)
+```
+
+3. 在 prompt 里**给出格式示例**：字段名、类型、可选值都写清楚。JSON 模式只保证「是合法 JSON」，不保证字段对。
+4. **一定要用 Pydantic 校验**：模型可能少字段、多字段、值不在范围里：
+
+```python
+# json_demo.py（接着写）
+try:
+    TaskDraft.model_validate_json('{"title": "交报告", "priority": "urgent", "due": null}')   # 假设模型输出了 urgent
+except ValidationError as e:
+    print(e.errors()[0]["msg"])   # Input should be 'high', 'medium' or 'low'
+```
+
+5. 校验失败、内容为空、`finish_reason` 是 `length` 时：重试一次，还不行就给用户一个友好的报错。别把没通过校验的数据存进数据库。
+
+> OpenAI 自己的接口支持更严格的 `json_schema` 模式：直接传 Pydantic 模型，保证字段完全对。DeepSeek 目前只支持上面的 `json_object`，所以要自己校验。不管用哪家，模型的输出都当成「前端传来的数据」一样对待：先校验再用。
+
+## 4.5 Function Calling：让模型调用你的函数 {#function-calling}
+
+模型只会生成文字，不能查你的数据库，也不知道今天的任务。**Function Calling**（也叫 Tool Calling）就是：你告诉模型有哪些函数可以用，模型判断需要时，返回「我要调用哪个函数、参数是什么」，**由你的代码去执行**，再把结果交回给模型，模型根据结果回答。
+
+```
+用户：我还有哪些任务没做完？
+  → 模型：要调用 list_tasks(done=false)        ← 模型只是「说要调用」，不会自己执行
+  → 你的代码：执行 list_tasks，得到结果
+  → 把结果发回给模型
+  → 模型：你还有「交季度报告」「跑步 5 公里」两个任务
+```
+
+### ① 准备函数，写给模型看的说明
+
+```python
+# tool_demo.py
+import json
+
+from llm import MODEL, NO_THINKING, client
+
+TASKS = [                                         # 假装是数据库里的任务
+    {"id": 1, "title": "写笔记", "done": True},
+    {"id": 2, "title": "交季度报告", "done": False},
+    {"id": 3, "title": "跑步 5 公里", "done": False},
+]
+
+
+def list_tasks(done: bool | None = None) -> list[dict]:   # 普通的 Python 函数
+    if done is None:
+        return TASKS
+    return [t for t in TASKS if t["done"] == done]
+
+
+def finish_task(task_id: int) -> dict:
+    for t in TASKS:
+        if t["id"] == task_id:
+            t["done"] = True
+            return {"ok": True, "task": t}
+    return {"ok": False, "error": f"没有 id 为 {task_id} 的任务"}   # 出错也返回给模型，让它告诉用户
+
+
+TOOLS = [                                         # 给模型看的函数说明：名字、做什么、参数（JSON Schema 格式）
+    {
+        "type": "function",
+        "function": {
+            "name": "list_tasks",
+            "description": "查询用户的待办任务列表",   # 模型靠 description 判断什么时候该用，要写清楚
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "done": {"type": "boolean", "description": "true 只查已完成，false 只查未完成，不传查全部"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "finish_task",
+            "description": "把一个任务标记为已完成",
+            "parameters": {
+                "type": "object",
+                "properties": {"task_id": {"type": "integer", "description": "任务 id"}},
+                "required": ["task_id"],          # 必须传的参数
+            },
+        },
+    },
+]
+
+FUNCTIONS = {"list_tasks": list_tasks, "finish_task": finish_task}   # 函数名 → 真正的函数，执行时按名字找
+```
+
+### ② 模型返回的「要调用」长什么样
+
+调用时多传一个 `tools=TOOLS`。模型决定要用函数时，回答里不是文字，而是 `tool_calls`：
+
+```python
+# tool_demo.py（接着写）
+resp = client.chat.completions.create(
+    model=MODEL, messages=[{"role": "user", "content": "我还有哪些任务没做完？"}], tools=TOOLS, extra_body=NO_THINKING,
+)
+m = resp.choices[0].message
+print(repr(m.content))           # '我来查一下你未完成的任务。'   可能带一句话，也可能是空的
+for c in m.tool_calls:
+    print(c.id, c.type, c.function.name, repr(c.function.arguments))
+# call_00_yedAQk8XZOs2YqNUiXZn4849 function list_tasks '{"done": false}'
+#   id：这次调用的编号，回传结果时要带上
+#   arguments：参数是 JSON 字符串，要自己 json.loads
+```
+
+用户的话和函数无关时，模型就正常回答，`tool_calls` 是 `None`：
+
+```python
+# tool_demo.py（接着写）
+resp = client.chat.completions.create(
+    model=MODEL, messages=[{"role": "user", "content": "你好"}], tools=TOOLS, extra_body=NO_THINKING,
+)
+print(resp.choices[0].finish_reason, resp.choices[0].message.tool_calls)   # stop None
+```
+
+### ③ 循环：调模型 → 执行函数 → 把结果交回去 → 直到模型给出最终回答
+
+一句话可能要调好几次函数（先查、再改），所以写成循环：
+
+```python
+# tool_demo.py（接着写）
+messages = [{"role": "user", "content": "我还有哪些任务没做完？把跑步那个标成完成"}]
+
+for step in range(1, 6):                          # 最多 5 轮，防止模型一直调用停不下来
+    resp = client.chat.completions.create(model=MODEL, messages=messages, tools=TOOLS, extra_body=NO_THINKING)
+    msg = resp.choices[0].message
+    print(f"第 {step} 次调用，finish_reason={resp.choices[0].finish_reason}")
+    if not msg.tool_calls:                        # ① 不要调函数了：这就是最终回答
+        print("最终回答：", msg.content)
+        break
+    messages.append(msg)                          # ② 模型「要调用」的这条消息，原样放进历史
+    for call in msg.tool_calls:                   # ③ 一次可能要调好几个，逐个执行
+        args = json.loads(call.function.arguments)                # 参数：JSON 字符串 → 字典
+        print("  模型要调用：", call.function.name, args)
+        result = FUNCTIONS[call.function.name](**args)            # 按名字找到函数，执行
+        print("  执行结果：", result)
+        messages.append({                                         # ④ 结果用 tool 角色放进历史
+            "role": "tool",
+            "tool_call_id": call.id,                              # 对应哪一次调用
+            "content": json.dumps(result, ensure_ascii=False),    # 结果转成字符串
+        })
+    # 回到循环开头：带着函数结果再调一次模型
+```
+
+实际运行：
+
+```
+第 1 次调用，finish_reason=tool_calls
+  模型要调用： list_tasks {'done': False}
+  执行结果： [{'id': 2, 'title': '交季度报告', 'done': False}, {'id': 3, 'title': '跑步 5 公里', 'done': False}]
+第 2 次调用，finish_reason=tool_calls
+  模型要调用： finish_task {'task_id': 3}
+  执行结果： {'ok': True, 'task': {'id': 3, 'title': '跑步 5 公里', 'done': True}}
+第 3 次调用，finish_reason=stop
+最终回答： 搞定了。你原本有两个未完成的任务：
+
+1. **交季度报告** —— 还没做完
+2. **跑步 5 公里** —— ✅ 已标记完成
+
+现在就剩「交季度报告」这一项了，加油 💪
+```
+
+用户只说了「跑步那个」，模型自己先查出列表，再找到跑步是 id 3，然后调用 `finish_task(3)`。
+
+**规则（记住就行）**：
+
+- **函数由你的代码执行**，模型只给出名字和参数。参数也可能不对，要和接口参数一样校验（可以用 Pydantic）。
+- **一定要限制最大轮数**，模型可能反复调用停不下来。
+- **函数执行出错也要把错误交回给模型**（像 `finish_task` 找不到 id 那样），让它告诉用户，而不是让程序崩掉。
+- **删除、付款这类高风险操作**，不要让模型直接执行，先返回给用户确认（阶段五细讲）。
+- 在接口里用时，函数要按当前登录用户查数据（3.14 节的 `user_id`），不能因为是模型调用就跳过权限检查。
+
+这个「调模型 → 执行工具 → 结果交回 → 再调模型」的循环，就是 Agent 最核心的部分，阶段五会在这个基础上展开。
+
+## 4.6 流式输出和 SSE {#streaming-sse}
+
+模型写一段几百字的回答要好几秒。前面的调用都是等全部写完才返回，用户要盯着空白页等。**流式输出**：模型生成一点就返回一点，前端一个字一个字地显示，用户马上就能看到内容。
+
+### Python 里接收流式输出
+
+加 `stream=True`，返回的不再是一个完整结果，而是可以 `for` 的一串片段（chunk）：
+
+```python
+# stream_demo.py
+from llm import MODEL, NO_THINKING, client
+
+stream = client.chat.completions.create(
+    model=MODEL,
+    messages=[{"role": "user", "content": "用三句话介绍 Python"}],
+    stream=True,                               # 流式：边生成边返回
+    stream_options={"include_usage": True},    # 最后多给一个片段，带上 usage（流式默认不给）
+    extra_body=NO_THINKING,
+)
+
+parts = []                                     # 把片段攒起来，最后拼成完整回答
+for i, chunk in enumerate(stream):             # 每生成一点，循环就走一次
+    if i < 3:                                  # 看看前 3 个片段装的是什么
+        print(repr(chunk.choices[0].delta.content) if chunk.choices else None)
+    if chunk.choices and chunk.choices[0].delta.content:   # 片段里的文字在 delta.content，不是 message.content
+        parts.append(chunk.choices[0].delta.content)
+    if chunk.usage:                            # 最后那个片段：choices 是空的，只有 usage
+        print("usage:", chunk.usage.prompt_tokens, chunk.usage.completion_tokens, "chunks:", i + 1)
+print("".join(parts))
+```
+
+```
+''
+'1'
+'.'
+usage: 9 69 chunks: 71
+1. Python 是一种语法简洁、易读易学的高级编程语言，广泛适用于数据分析、人工智能、Web 开发等众多领域。  
+2. 它拥有丰富的标准库和第三方生态，能大幅提升开发效率。  
+3. Python 跨平台、社区活跃，是编程入门与快速原型的理想选择。
+```
+
+- 每个片段只有一两个字，69 个 token 的回答分成了 71 个片段返回。
+- 第一个片段的文字常常是空字符串，要判断一下再用。
+- 想在终端里看到打字效果，把 `parts.append` 换成 `print(text, end="", flush=True)`。
+
+### SSE：后端把片段推给前端
+
+后端拿到片段后，要一个个转发给浏览器。最常用的格式是 **SSE**（Server-Sent Events）：一个普通的 HTTP 响应，`Content-Type` 是 `text/event-stream`，连接不断开，后端往里一段段写：
+
+```
+event: delta              ← 事件名，自己定
+data: {"text": "你好"}     ← 数据，一般写 JSON
+
+event: done               ← 每个事件之间空一行
+data: {"length": 54}
+
+```
+
+规则就这三条：每行 `字段: 值`；一个事件以**空行**结束；`data` 里放 JSON 字符串。
+
+FastAPI 用 `StreamingResponse` 加一个生成器（2.8 节 `yield`）实现，再装两个包：`uv pip install fastapi uvicorn`。
+
+```python
+# chat_api.py
+import json
+import os
+from collections.abc import AsyncIterator
+
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse
+from openai import AsyncOpenAI
+from pydantic import BaseModel
+
+app = FastAPI()
+client = AsyncOpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")   # 接口里用异步的
+
+
+class ChatIn(BaseModel):
+    question: str
+
+
+def sse(event: str, data: dict) -> str:
+    """拼一个 SSE 事件：event 一行、data 一行、最后一个空行。"""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@app.post("/chat/stream")
+async def chat_stream(body: ChatIn, request: Request) -> StreamingResponse:
+    async def events() -> AsyncIterator[str]:   # 生成器：每 yield 一次，就往响应里写一段
+        stream = await client.chat.completions.create(
+            model="deepseek-flash",
+            messages=[{"role": "user", "content": body.question}],
+            stream=True,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        parts: list[str] = []
+        finished = False
+        try:
+            async for chunk in stream:          # 异步版的 for：模型每给一个片段走一次
+                if await request.is_disconnected():   # ① 前端断开了（关页面、点了停止）：不用再往下读
+                    break
+                text = chunk.choices[0].delta.content if chunk.choices else None
+                if text:
+                    parts.append(text)
+                    yield sse("delta", {"text": text})   # ② 片段推给前端
+            else:                               # for 正常走完（没有 break）才会进 else
+                finished = True
+                yield sse("done", {"length": len("".join(parts))})   # ③ 告诉前端：说完了
+        except Exception as e:
+            yield sse("error", {"msg": str(e)})  # ④ 中途出错：响应头已经发出去了，只能用事件告诉前端
+        finally:
+            await stream.close()                # ⑤ 不管怎样都关掉和模型的连接，不再继续生成、继续收费
+            # ⑥ 在这里保存结果：真实项目里写进数据库，完整的还是中途断开的都要记下来
+            print(f"保存回答：{'完整' if finished else '中途断开'}，{len(''.join(parts))} 个字", flush=True)
+
+    return StreamingResponse(events(), media_type="text/event-stream")   # 把生成器包成 SSE 响应
+```
+
+启动 `uvicorn chat_api:app --port 8410`，用 curl 看原始响应（`-N`：收到一点就显示一点，不缓存）：
+
+```bash
+curl -N -X POST localhost:8410/chat/stream -H 'Content-Type: application/json' -d '{"question":"用一句话介绍 SSE"}'
+```
+
+```
+event: delta
+data: {"text": "SS"}
+
+event: delta
+data: {"text": "E"}
+
+event: delta
+data: {"text": "（"}
+
+...（中间省略）
+
+event: delta
+data: {"text": "。"}
+
+event: done
+data: {"length": 54}
+
+```
+
+- **为什么出错要用事件告诉前端**：流式响应一开始，状态码 200 就已经发出去了，后面出错没法再改成 500，只能发一个 `error` 事件。
+- **为什么要 `finally` 里保存**：用户中途关掉页面，前面生成的内容和花的钱也要记下来；不放在 `finally` 里，断开时这段代码根本不会执行。
+
+### 前端接收：fetch + ReadableStream
+
+浏览器自带的 `EventSource` 只能发 GET、不能带 `Authorization` 请求头，实际项目里一般用 `fetch` 自己读：
+
+```js
+// chat.mjs（前端写法；这里用 Node 运行：node chat.mjs）
+async function chatStream(question, onText, signal) {
+  const res = await fetch("http://localhost:8410/chat/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },   // 要登录的接口再加 Authorization
+    body: JSON.stringify({ question }),
+    signal,                                            // 传 AbortController 的 signal，用来取消
+  });
+  const reader = res.body.getReader();                 // 响应体按块读，不等全部到齐
+  const decoder = new TextDecoder();                   // 字节 → 文字
+  let buffer = "";                                     // 一块里可能有半个事件，先攒着
+  while (true) {
+    const { done, value } = await reader.read();       // 读到一块
+    if (done) break;                                   // 后端写完了
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");               // 按空行切成一个个事件
+    buffer = events.pop();                             // 最后一段可能不完整，留到下一块
+    for (const block of events) {
+      const event = block.match(/^event: (.*)$/m)?.[1];
+      const data = JSON.parse(block.match(/^data: (.*)$/m)?.[1] ?? "{}");
+      if (event === "delta") onText(data.text);        // 拿到片段，追加到页面上
+      if (event === "done") console.log("\n[完成] 共", data.length, "个字");
+      if (event === "error") console.log("\n[出错]", data.msg);
+    }
+  }
+}
+
+// 正常使用：每来一个片段就追加显示
+await chatStream("用两句话介绍 SSE", (t) => process.stdout.write(t));   // 浏览器里换成追加到页面元素
+
+// 用户点「停止」：调 controller.abort()
+const controller = new AbortController();
+setTimeout(() => controller.abort(), 2000);            // 演示：2 秒后取消
+try {
+  await chatStream("写一篇 800 字的文章介绍 Python", (t) => process.stdout.write(t), controller.signal);
+} catch (e) {
+  console.log("\n[已取消]", e.name);                  // 取消会抛 AbortError
+}
+```
+
+用 Node 实际跑了一遍（Node 18 以上也有 `fetch`）：
+
+```
+SSE（Server-Sent Events）是一种基于 HTTP 的服务器推送技术，允许服务器通过单向连接持续向客户端发送文本数据流。它适合实时通知、消息推送等场景，客户端使用 EventSource API 即可接收，并支持自动重连。
+[完成] 共 119 个字
+
+## Python：简洁优雅的编程语言
+
+在当今数字化时代，编程语言种类繁多，而 Python 以其独特的魅力脱颖而出，成为全球最受欢迎的
+[已取消] AbortError
+```
+
+后端的输出：
+
+```
+保存回答：完整，119 个字
+保存回答：中途断开，69 个字
+```
+
+前端取消后，后端检测到断开，停止读取并关掉了和模型的连接，前面生成的 69 个字也保存下来了。
+
+**规则（记住就行）**：
+
+1. 后端用 `StreamingResponse` + 生成器，`media_type="text/event-stream"`。
+2. 事件格式：`event: 名字\ndata: JSON\n\n`，用 `delta` / `done` / `error` 区分。
+3. 前端用 `fetch` + `getReader()` 读，按空行切事件，半个事件留到下一块。
+4. 取消：前端 `AbortController.abort()`；后端 `request.is_disconnected()` 判断，`finally` 里关掉模型连接、保存结果。
+5. 部署时，Nginx 这类代理默认会把响应攒起来再发，流式就失效了，要关掉缓冲（阶段六讲）。
