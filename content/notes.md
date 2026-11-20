@@ -3022,15 +3022,15 @@ uvicorn crud_demo:app --reload
 def create_task(title: str, note: str | None = None) -> dict:
     with SessionLocal() as session:        # 开一个会话，with 结束自动关闭
         # 先查有没有同名的，分三步：
-        stmt = select(Task).where(Task.title == title)   # ① 只是拼好一条 SQL，还没查
-        result = session.scalars(stmt)                   # ② 发给数据库执行；scalars：结果每行本来是 (Task,) 这样的元组，去掉这层，直接拿到 Task 对象
+        stmt = select(Task).where(Task.title == title)   # ① 只是拼好 SQL，还没查：SELECT * FROM tasks WHERE title = '写笔记'
+        result = session.scalars(stmt)                   # ② 这时才把上面的 SELECT 发给数据库执行；scalars：结果每行本来是 (Task,) 这样的元组，去掉这层，直接拿到 Task 对象
         same = result.one_or_none()                      # ③ 要求结果最多一条：0 条给 None，1 条给那个对象，多条直接报错
         if same is not None:
             raise fail(409, "已经有同名任务了")
 
         task = Task(title=title, note=note)
         session.add(task)                  # 只是记下「要插入」，还没写进数据库
-        session.commit()                   # 真正写进数据库，task.id 这时有值了
+        session.commit()                   # INSERT INTO tasks (title, note, ...) VALUES ('写笔记', NULL, ...)，真正写进数据库，task.id 这时有值了
         return success(TaskOut.model_validate(task), msg="创建成功")
 ```
 
@@ -3071,10 +3071,10 @@ select(Task).where(Task.done == False)     # SELECT * FROM tasks WHERE done = fa
 @app.get("/tasks")
 def list_tasks(done: bool | None = None) -> dict:
     with SessionLocal() as session:
-        stmt = select(Task)                       # 先说要查 Task 表（这时还没查）
+        stmt = select(Task)                       # SELECT * FROM tasks（只是拼好，这时还没查）
         if done is not None:                      # 前端传了 done 才加条件
-            stmt = stmt.where(Task.done == done)
-        tasks = session.scalars(stmt).all()       # 这时才真正去数据库查
+            stmt = stmt.where(Task.done == done)     # 加上 WHERE done = false
+        tasks = session.scalars(stmt).all()       # 这时才真正去数据库查：SELECT * FROM tasks WHERE done = false
         return success([TaskOut.model_validate(t) for t in tasks])
 ```
 
@@ -3088,7 +3088,7 @@ def list_tasks(done: bool | None = None) -> dict:
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int) -> dict:
     with SessionLocal() as session:
-        task = session.get(Task, task_id)                 # 按主键查，没有就是 None
+        task = session.get(Task, task_id)                 # SELECT * FROM tasks WHERE id = 1，按主键查，没有就是 None
         if task is None:
             raise fail(404, "没有这个任务")
         return success(TaskOut.model_validate(task))
@@ -3108,11 +3108,11 @@ def get_task(task_id: int) -> dict:
 @app.patch("/tasks/{task_id}/done")
 def finish_task(task_id: int) -> dict:
     with SessionLocal() as session:
-        task = session.get(Task, task_id)
+        task = session.get(Task, task_id)            # SELECT * FROM tasks WHERE id = 1
         if task is None:
             raise fail(404, "没有这个任务")
         task.done = True                   # 直接改属性，还没写进数据库
-        session.commit()                   # commit 时自动生成 UPDATE
+        session.commit()                   # commit 时自动生成 UPDATE tasks SET done = true, updated_at = ... WHERE id = 1
         return success(TaskOut.model_validate(task), msg="已完成")
 ```
 
@@ -3129,11 +3129,11 @@ def finish_task(task_id: int) -> dict:
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: int) -> dict:
     with SessionLocal() as session:
-        task = session.get(Task, task_id)
+        task = session.get(Task, task_id)            # SELECT * FROM tasks WHERE id = 1
         if task is None:
             raise fail(404, "没有这个任务")
-        session.delete(task)               # 记下「要删除」
-        session.commit()                   # commit 时生成 DELETE
+        session.delete(task)               # 记下「要删除」，还没删
+        session.commit()                   # commit 时生成 DELETE FROM tasks WHERE id = 1
         return success(msg="删除成功")
 ```
 
@@ -3210,7 +3210,7 @@ def db_session() -> Iterator[Session]:
     session = SessionLocal()
     try:
         yield session          # ① 把 session 交给接口，在这里暂停
-        session.commit()       # ② 接口正常返回后，从这里继续
+        session.commit()       # ② 接口正常返回后，从这里继续：commit，这次请求的 INSERT / UPDATE / DELETE 才真正写进去
     except BaseException:
         session.rollback()     # ③ 接口抛了异常，撤销这次请求的所有修改
         raise
@@ -3231,7 +3231,7 @@ Db = Annotated[Session, Depends(db_session)]   # 起个短名字，接口里写 
 @app.post("/tasks")
 def create_task(title: str, session: Db) -> dict:
     task = Task(title=title)
-    session.add(task)                                  # 只是记下「要插入」
+    session.add(task)                                  # 只是记下「要插入」，INSERT 要等 commit 才发
     return success(TaskOut.model_validate(task), msg="创建成功")      # 响应内容这时已经定了
     # 之后 ② 才 commit；万一失败，数据没存进去，前端却已经拿到「创建成功」
 
@@ -3240,8 +3240,8 @@ def create_task(title: str, session: Db) -> dict:
 @app.post("/tasks")
 def create_task(title: str, session: Db) -> dict:
     task = Task(title=title)
-    session.add(task)
-    session.commit()                                   # 真正存进数据库；失败就在这里抛异常，前端收到的是错误
+    session.add(task)                                # 记下「要插入」
+    session.commit()                                   # INSERT INTO tasks ...，真正存进数据库；失败就在这里抛异常，前端收到的是错误
     return success(TaskOut.model_validate(task), msg="创建成功")      # 能走到这里，说明真的存好了
 ```
 
@@ -3264,7 +3264,7 @@ from app.db import Db
 # 查一条：GET /tasks/1（只读，不用 commit）
 @app.get("/tasks/{task_id}")
 def get_task(task_id: int, session: Db) -> dict:
-    task = session.get(Task, task_id)        # session 已经准备好了，直接用
+    task = session.get(Task, task_id)        # SELECT * FROM tasks WHERE id = 1；session 已经准备好了，直接用
     if task is None:
         raise fail(404, "没有这个任务")
     return success(TaskOut.model_validate(task))
@@ -3274,13 +3274,13 @@ def get_task(task_id: int, session: Db) -> dict:
 # 增：POST /tasks?title=写笔记（写数据，返回前自己 commit）
 @app.post("/tasks", status_code=201)
 def create_task(title: str, session: Db, note: str | None = None) -> dict:
-    same = session.scalars(select(Task).where(Task.title == title)).one_or_none()
+    same = session.scalars(select(Task).where(Task.title == title)).one_or_none()   # SELECT * FROM tasks WHERE title = '写笔记'，最多一条
     if same is not None:
         raise fail(409, "已经有同名任务了")   # 抛异常 → db_session 走 ③ 回滚，再 ④ 关闭
 
     task = Task(title=title, note=note)
-    session.add(task)
-    session.commit()                          # 自己提交：提交失败会直接报错，前端不会收到「创建成功」
+    session.add(task)                                # 记下「要插入」
+    session.commit()                          # INSERT INTO tasks ...；自己提交：提交失败会直接报错，前端不会收到「创建成功」
     return success(TaskOut.model_validate(task), msg="创建成功")
 ```
 
@@ -3351,7 +3351,7 @@ def list_tasks(session: Db, done: bool | None = None, limit: int = 20) -> dict:
     stmt = select(Task).order_by(Task.id.desc()).limit(limit)   # SELECT * FROM tasks ORDER BY id DESC LIMIT 20（只是拼好，还没查）
     if done is not None:                                        # 前端传了 ?done=... 才筛选
         stmt = stmt.where(Task.done == done)                    # 加上 WHERE done = false
-    tasks = session.scalars(stmt).all()                         # 发给数据库执行，拿到 Task 对象列表
+    tasks = session.scalars(stmt).all()                         # 这时才执行上面拼好的 SELECT，拿到 Task 对象列表
     total = session.scalar(select(func.count()).select_from(Task))   # SELECT count(*) FROM tasks，只取这一个数字（没带 done 条件）
     items = [TaskOut.model_validate(t) for t in tasks]          # 每个 Task 对象转成 TaskOut，只留给前端的字段
     return success(TaskList(items=items, total=total or 0))     # 返回 {code, msg, data: {items: [...], total: 3}}
@@ -3368,7 +3368,7 @@ def create_task(body: TaskCreate, session: Db) -> dict:   # body：请求体 {"t
     if session.scalar(select(Task).where(Task.title == body.title, Task.done.is_(False))):   # SELECT * FROM tasks WHERE title = '写笔记' AND done IS false，查到一条就算重名
         raise fail(409, "已经有一条同名的未完成任务")   # 重名就报 409，下面不会执行
     task = Task(title=body.title, note=body.note)    # 在内存里建一个 Task 对象，还没进数据库
-    session.add(task)                                # 记下「要插入」
+    session.add(task)                                # 记下「要插入」，下一行 commit 才发 INSERT
     session.commit()                                 # INSERT INTO tasks ...，真正写进数据库；提交失败就报错，不会被当成成功
     return success(TaskOut.model_validate(task), msg="创建成功")   # Task → TaskOut，返回 {code, msg, data: {id, title, ...}}
 ```
@@ -3407,7 +3407,7 @@ def finish_task(task_id: int, session: Db) -> dict:
 # 删除成功返回 200 而不是 204：204 表示「没有响应体」，而我们约定每个响应都有 {code, msg, data}
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: int, session: Db) -> dict:
-    session.delete(load_task(session, task_id))      # 先查出来（查不到就 404），再记下「要删除」
+    session.delete(load_task(session, task_id))      # 先 SELECT 查出来（查不到就 404），再记下「要删除」
     session.commit()                                 # DELETE FROM tasks WHERE id = 1
     return success(msg="删除成功")                    # data 是 null：删掉的东西不用再返回
 ```
@@ -3468,7 +3468,7 @@ def client() -> Iterator[TestClient]:
         session = TestSession()
         try:
             yield session                           # 交给接口用
-            session.commit()                        # 接口正常返回后提交
+            session.commit()                        # 接口正常返回后提交：INSERT / UPDATE / DELETE 这时才写进测试库
         finally:
             session.close()                         # 不管怎样都关闭
 
@@ -3666,7 +3666,7 @@ router = APIRouter(prefix="/tasks", tags=["任务"])   # prefix：路径都自�
 
 
 def load_task(session: Session, task_id: int) -> Task:   # 从 main.py 原样搬过来
-    task = session.get(Task, task_id)          # 按主键查一条
+    task = session.get(Task, task_id)          # SELECT * FROM tasks WHERE id = 1，按主键查一条
     if task is None:
         raise task_not_found()                 # 查不到就 404
     return task
@@ -3681,7 +3681,7 @@ def list_tasks(session: Db, done: bool | None = None, limit: int = 20) -> dict:
     stmt = select(Task).order_by(Task.id.desc()).limit(limit)   # SELECT * FROM tasks ORDER BY id DESC LIMIT 20
     if done is not None:
         stmt = stmt.where(Task.done == done)   # 传了 done 才加 WHERE done = ...
-    tasks = session.scalars(stmt).all()        # 真正查询
+    tasks = session.scalars(stmt).all()        # 这时才执行上面拼好的 SELECT
     total = session.scalar(select(func.count()).select_from(Task))   # SELECT count(*) FROM tasks
     items = [TaskOut.model_validate(t) for t in tasks]   # Task → TaskOut
     return success(TaskList(items=items, total=total or 0))
@@ -3698,11 +3698,11 @@ def get_task(task_id: int, session: Db) -> dict:
 # app/routers/tasks.py（接着写）
 @router.post("", status_code=201)              # POST /tasks
 def create_task(body: TaskCreate, session: Db) -> dict:
-    if session.scalar(select(Task).where(Task.title == body.title, Task.done.is_(False))):   # 有同名的未完成任务
+    if session.scalar(select(Task).where(Task.title == body.title, Task.done.is_(False))):   # SELECT * FROM tasks WHERE title = '写笔记' AND done IS false：有同名的未完成任务
         raise fail(409, "已经有一条同名的未完成任务")
     task = Task(title=body.title, note=body.note)
-    session.add(task)
-    session.commit()                           # INSERT
+    session.add(task)                                # 记下「要插入」
+    session.commit()                           # INSERT INTO tasks (title, note, ...) VALUES (...)
     return success(TaskOut.model_validate(task), msg="创建成功")
 
 
@@ -3710,14 +3710,14 @@ def create_task(body: TaskCreate, session: Db) -> dict:
 def finish_task(task_id: int, session: Db) -> dict:
     task = load_task(session, task_id)
     task.done = True
-    session.commit()                           # UPDATE
+    session.commit()                           # UPDATE tasks SET done = true, updated_at = ... WHERE id = 1
     return success(TaskOut.model_validate(task))
 
 
 @router.delete("/{task_id}")                   # DELETE /tasks/{task_id}
 def delete_task(task_id: int, session: Db) -> dict:
-    session.delete(load_task(session, task_id))
-    session.commit()                           # DELETE
+    session.delete(load_task(session, task_id))      # 先 SELECT 查出来（查不到就 404），再记下「要删除」
+    session.commit()                           # DELETE FROM tasks WHERE id = 1
     return success(msg="删除成功")
 ```
 
@@ -3968,7 +3968,7 @@ def register(body: AuthIn, session: Db) -> dict:
     if session.scalar(select(User).where(User.username == body.username)):   # SELECT ... WHERE username = 'tom'，已经有了
         raise fail(409, "这个用户名已经被注册了")
     user = User(username=body.username, password_hash=hash_password(body.password))   # 存哈希，不存明文
-    session.add(user)
+    session.add(user)                                # 记下「要插入」
     session.commit()                           # INSERT INTO users ...，之后 user.id 有值
     return success(TokenOut(token=create_token(user.id), username=user.username), msg="注册成功")   # 直接发 token，等于已经登录
 ```
@@ -3981,7 +3981,7 @@ def register(body: AuthIn, session: Db) -> dict:
 # app/routers/auth.py（接着写）
 @router.post("/login")
 def login(body: AuthIn, session: Db) -> dict:
-    user = session.scalar(select(User).where(User.username == body.username))   # 按用户名查，查不到是 None
+    user = session.scalar(select(User).where(User.username == body.username))   # SELECT * FROM users WHERE username = 'tom'，查不到是 None
     if user is None or not verify_password(body.password, user.password_hash):   # 用户不存在、密码错，都走这里
         raise fail(401, "用户名或密码错误")      # 两种情况同一句话：不告诉别人「这个用户名是存在的」
     return success(TokenOut(token=create_token(user.id), username=user.username), msg="登录成功")
@@ -4054,7 +4054,7 @@ async def auth_middleware(request: Request, call_next):
 
 @app.get("/auth/me")
 def me(request: Request, session: Db) -> dict:   # 要多写一个 request 参数
-    user = session.get(User, request.state.user_id)   # 自己取出 id、自己查用户；request.state 没有类型，编辑器不提示
+    user = session.get(User, request.state.user_id)   # SELECT * FROM users WHERE id = 1；自己取出 id、自己查用户，request.state 没有类型，编辑器不提示
     return success({"id": user.id, "username": user.username})
 ```
 
@@ -4105,12 +4105,12 @@ class Task(Base):
 tom = User(username="tom", password_hash="...")
 tom.tasks.append(Task(title="写笔记"))     # 不用自己填 user_id
 tom.tasks.append(Task(title="读书"))
-session.add(tom)
-session.commit()
+session.add(tom)                                     # 记下「要插入」：tom 和他的两条任务
+session.commit()                                     # INSERT INTO users ...，再 INSERT INTO tasks 两条，user_id 自动填 tom 的 id
 
 print([t.title for t in tom.tasks])       # ['写笔记', '读书']
-print(session.get(Task, 1).user.username) # tom
-session.delete(tom)                       # 删 tom，他的两条任务也跟着删了（cascade）
+print(session.get(Task, 1).user.username) # tom：先 SELECT * FROM tasks WHERE id = 1，访问 .user 时再 SELECT * FROM users WHERE id = 1
+session.delete(tom)                       # 删 tom，他的两条任务也跟着删（cascade）：commit 时先 DELETE 两条 tasks，再 DELETE FROM users WHERE id = 1
 ```
 
 `relationship` 适合「拿一个对象顺带看看关联的东西」。要按条件筛选、分页、计数，还是自己写 `select(...).where(...)`，下面的接口就是这样做的。
@@ -4177,7 +4177,7 @@ def list_tasks(
     if done is not None:
         conditions.append(Task.done == done)             # 再加 AND done = ...
 
-    total = session.scalar(select(func.count()).select_from(Task).where(*conditions))   # SELECT count(*) ... WHERE 同一组条件
+    total = session.scalar(select(func.count()).select_from(Task).where(*conditions))   # SELECT count(*) FROM tasks WHERE user_id = 1 AND done = false：和下面列表同一组条件
     # 拼成一条 SQL（以 page=2、size=20、done=false 为例）：
     # SELECT * FROM tasks WHERE user_id = 1 AND done = false ORDER BY id DESC LIMIT 20 OFFSET 20
     stmt = (
@@ -4187,7 +4187,7 @@ def list_tasks(
         .offset((page - 1) * size)                       # OFFSET 20：跳过前面几页，(2 - 1) × 20 = 20 条
         .limit(size)                                     # LIMIT 20：这一页取几条
     )
-    items = [TaskOut.model_validate(t) for t in session.scalars(stmt)]   # 执行查询，每条转成 TaskOut
+    items = [TaskOut.model_validate(t) for t in session.scalars(stmt)]   # 这时才执行上面拼好的 SELECT，每条转成 TaskOut
     return success(TaskList(items=items, total=total or 0, page=page, size=size))
 ```
 
@@ -4230,12 +4230,12 @@ Authorization: Bearer <tom 的 token>
 # app/routers/tasks.py（接着写）
 @router.post("", status_code=201)
 def create_task(body: TaskCreate, user: CurrentUser, session: Db) -> dict:
-    same = select(Task).where(Task.user_id == user.id, Task.title == body.title, Task.done.is_(False))   # 自己的、同名、未完成
-    if session.scalar(same):
+    same = select(Task).where(Task.user_id == user.id, Task.title == body.title, Task.done.is_(False))   # SELECT * FROM tasks WHERE user_id = 1 AND title = '写笔记' AND done IS false：自己的、同名、未完成（只是拼好）
+    if session.scalar(same):                         # 执行上面的 SELECT，查到一条就算重名
         raise fail(409, "已经有一条同名的未完成任务")
     task = Task(user_id=user.id, title=body.title, note=body.note)   # 新任务属于当前用户
-    session.add(task)
-    session.commit()                                     # INSERT
+    session.add(task)                                # 记下「要插入」
+    session.commit()                                     # INSERT INTO tasks (user_id, title, note, ...) VALUES (1, '写周报', ...)
     return success(TaskOut.model_validate(task), msg="创建成功")
 ```
 
@@ -4260,14 +4260,14 @@ def get_task(task_id: int, user: CurrentUser, session: Db) -> dict:
 def finish_task(task_id: int, user: CurrentUser, session: Db) -> dict:
     task = load_task(session, task_id, user)            # 先确认是自己的
     task.done = True
-    session.commit()                                     # UPDATE
+    session.commit()                                     # UPDATE tasks SET done = true, updated_at = ... WHERE id = 2
     return success(TaskOut.model_validate(task))
 
 
 @router.delete("/{task_id}")
 def delete_task(task_id: int, user: CurrentUser, session: Db) -> dict:
-    session.delete(load_task(session, task_id, user))   # 先确认是自己的，再删
-    session.commit()                                     # DELETE
+    session.delete(load_task(session, task_id, user))   # 先确认是自己的（load_task 里 SELECT），再记下「要删除」
+    session.commit()                                     # DELETE FROM tasks WHERE id = 3
     return success(msg="删除成功")
 ```
 
