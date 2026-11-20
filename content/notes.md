@@ -2495,6 +2495,7 @@ def install(app: FastAPI) -> None:
 在 `api_demo.py` 末尾临时加一个会出错的接口，用来试 ④：
 
 ```python
+# api_demo.py（末尾临时加上，试完删掉）
 @app.get("/boom")
 def boom() -> dict:
     return {"x": 1 / 0}      # 故意写个 bug
@@ -3821,6 +3822,7 @@ hash_password("123456")
 `app/config.py` 加两个配置：
 
 ```python
+    # app/config.py（Settings 类里加上这两行）
     jwt_secret: str = "dev-secret-change-me"  # 签 token 的密钥，线上一定要换成随机长字符串
     token_days: int = 7                       # token 几天后过期
 ```
@@ -3838,6 +3840,7 @@ TOKEN_DAYS=7                                     # 对应 token_days，不写就
 `app/models.py` 加一张用户表：
 
 ```python
+# app/models.py（加一个 User 类）
 class User(Base):
     __tablename__ = "users"
 
@@ -3850,6 +3853,7 @@ class User(Base):
 `app/schemas.py` 加注册登录的请求体和返回格式：
 
 ```python
+# app/schemas.py（末尾加上）
 class AuthIn(BaseModel):
     """注册、登录的请求体。"""
     username: str = Field(min_length=2, max_length=20, pattern=r"^\w+$")   # 2～20 个字；\w 是字母、数字、下划线、汉字
@@ -4122,6 +4126,7 @@ session.delete(tom)                       # 删 tom，他的两条任务也跟�
 `schemas.py` 里 `TaskList` 加两个字段，告诉前端现在是第几页：
 
 ```python
+# app/schemas.py（TaskList 改成这样）
 class TaskList(BaseModel):
     items: list[TaskOut]      # 模型可以嵌套
     total: int                # 符合条件的一共多少条（不是这一页的条数）
@@ -4306,71 +4311,20 @@ def delete_task(task_id: int, user: CurrentUser, session: Db) -> dict:
 
 表结构又变了（`tasks` 加了 `user_id`），**再删一次库重建**：`dropdb todo && createdb todo`。这种「改一次表就删一次库」的做法到这里为止，下一节换成 alembic。
 
-**测试**：`client` 这个 fixture 后面 3.16 节的 `test_main.py` 也要用，先从 `test_tasks.py` 挪到 `tests/conftest.py`。`conftest.py` 是 pytest 约定的文件名，里面的 fixture 同一目录的所有测试文件都能直接用，不用 import。再在末尾加一个注册用户、返回请求头的小工具，任务的测试都带上它：
-
-```python
-# tests/conftest.py（client fixture 挪过来之后，末尾加上）
-def login(client: TestClient, username: str = "tom") -> dict:
-    """注册一个用户，返回带 token 的请求头。"""
-    r = client.post("/auth/register", json={"username": username, "password": "123456"})   # 注册就直接拿到 token
-    return {"Authorization": f"Bearer {r.json()['data']['token']}"}   # 返回请求头，用法：headers=login(client)
-
-
-@pytest.fixture
-def auth(client: TestClient) -> dict:          # 测试参数里写 auth，就拿到 tom 的请求头
-    return login(client)
-```
-
-原来的测试都改成带上 `headers=auth`（比如 `client.post("/tasks", json={...}, headers=auth)`），再加三个新的：
-
-**没登录：401**
-
-```python
-# tests/test_tasks.py（末尾加上）
-def test_requires_login(client: TestClient) -> None:
-    r = client.get("/tasks")                   # 不带 headers
-    assert r.status_code == 401
-```
-
-**两个用户互相看不到**
-
-```python
-# tests/test_tasks.py（接着写）
-def test_users_cannot_see_each_other(client: TestClient) -> None:
-    tom, jerry = login(client, "tom"), login(client, "jerry")   # 注册两个用户，拿到各自的请求头
-    task_id = client.post("/tasks", json={"title": "tom 的任务"}, headers=tom).json()["data"]["id"]   # tom 建一条
-
-    assert client.get("/tasks", headers=jerry).json()["data"]["total"] == 0      # 列表里看不到
-    assert client.get(f"/tasks/{task_id}", headers=jerry).status_code == 404     # 直接猜 id 也拿不到
-    assert client.delete(f"/tasks/{task_id}", headers=jerry).status_code == 404  # 删不掉
-    assert client.get(f"/tasks/{task_id}", headers=tom).status_code == 200       # 自己还在
-```
-
-**分页**
-
-```python
-# tests/test_tasks.py（接着写）
-def test_pagination(client: TestClient, auth: dict) -> None:   # auth：上面 fixture 给的 tom 的请求头
-    for i in range(1, 26):                                   # 建 25 条
-        client.post("/tasks", json={"title": f"任务{i}"}, headers=auth)
-    data = client.get("/tasks", params={"page": 2, "size": 10}, headers=auth).json()["data"]   # 第 2 页，每页 10 条
-    assert data["total"] == 25
-    assert [t["title"] for t in data["items"]][:2] == ["任务15", "任务14"]   # 倒序，第 2 页从第 11 条开始
-    assert len(client.get("/tasks", params={"page": 3, "size": 10}, headers=auth).json()["data"]["items"]) == 5   # 最后一页只剩 5 条
-    assert client.get("/tasks", params={"size": 500}, headers=auth).status_code == 422   # 超过 100 条，校验不通过
-```
-
-`test_tasks.py` 开头要 `from tests.conftest import login`：fixture 能自动用，普通函数还是要 import。跑一下应该是 `8 passed`（3.11 节的 5 个加这里新加的 3 个）。
-
 ## 3.15 数据库迁移：Alembic {#alembic}
 
-前面每次改表都要删库重建，因为 `create_all` 只会建不存在的表，不会改已有的表。本地数据删了无所谓，**线上的数据是不能删的**。迁移工具解决的就是「表结构要改，数据要留着」：
+前面每次改表都要删库重建，因为 `create_all` 只会建不存在的表，不会改已有的表。自己练习时没问题，真实项目里有两个麻烦：
+
+- **线上的数据不能删**：表结构要改，数据要留着。
+- **多人开发时，每个人的库都要跟着改**：你加了一列，同事电脑上的库、线上的库也得加上。靠口头通知、各自手动改库，迟早会漏。
+
+迁移工具同时解决这两件事：
 
 - 每次改表，生成一个**迁移脚本**，写着「这次加了哪一列」「建了哪张表」。
 - 数据库里多一张 `alembic_version` 表，记着当前执行到哪个版本。
 - `alembic upgrade head` 把还没执行的脚本按顺序执行一遍。本地、同事电脑、线上，都用同一套脚本升到同一个结构。
 
-迁移脚本要提交到 git，和代码一起走。
+迁移脚本要提交到 git，和代码一起走：同事拉下代码，跑一次 `alembic upgrade head` 就同步了，具体流程见下面的「多人协作」。
 
 ```bash
 uv pip install alembic         # 装数据库迁移工具
@@ -4382,6 +4336,8 @@ alembic init migrations        # 在 todo-api/ 下生成 alembic.ini 和 migrati
 生成的 `env.py` 不知道你的数据库在哪、表长什么样。找到 `target_metadata = None` 那一段，换成：
 
 ```python
+# migrations/env.py（alembic init 生成的文件；把 target_metadata = None 那一段换成下面这些）
+
 # ---- 改动 ①：数据库地址和项目用同一份配置，不在 alembic.ini 里再写一遍 ----
 from app import models  # noqa: E402,F401  导入一下，表才会登记到 Base.metadata 上
 from app.config import settings  # noqa: E402
@@ -4397,9 +4353,40 @@ target_metadata = Base.metadata
 
 最后，`main.py` 里的 `lifespan` 和 `create_all` **删掉**：表结构从此只由 alembic 管。
 
+原来（3.12 节写的，3.13 节加了 auth）：
+
 ```python
-app = FastAPI(title="todo-api")         # 不再 create_all：表结构交给 alembic
+# app/main.py（原来）
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:   # 服务启动时执行
+    Base.metadata.create_all(engine)   # 启动时按模型建表：只建不存在的表，不会改已有的表
+    yield
+
+
+app = FastAPI(title="todo-api", lifespan=lifespan)
+errors.install(app)
+app.include_router(auth.router)
+app.include_router(tasks.router)
 ```
+
+改成：
+
+```python
+# app/main.py（整个换成这样）
+from __future__ import annotations
+
+from fastapi import FastAPI
+
+from app import errors
+from app.routers import auth, tasks
+
+app = FastAPI(title="todo-api")         # 不再 create_all：表结构交给 alembic
+errors.install(app)
+app.include_router(auth.router)
+app.include_router(tasks.router)
+```
+
+`lifespan` 整个删掉，跟着没用的 `AsyncIterator`、`asynccontextmanager`、`Base`、`engine` 这几个导入也一起删。
 
 测试里的 `drop_all` / `create_all` 留着：`todo_test` 每个测试都要清空重建，直接按模型建表最省事。
 
@@ -4414,6 +4401,7 @@ alembic upgrade head
 `--autogenerate` 会把代码里的表和数据库里的表做对比，把差别写成脚本，放在 `migrations/versions/` 下面：
 
 ```python
+# migrations/versions/8b00b78b9f87_create_users_and_tasks.py（自动生成的，节选）
 """create users and tasks
 
 Revision ID: 8b00b78b9f87
@@ -4468,6 +4456,7 @@ sqlalchemy.exc.IntegrityError: (psycopg.errors.NotNullViolation) column "priorit
 改成同时写 `server_default`：这是**数据库这边**的默认值，加列时已有的行会自动填上它。删掉刚才生成的那个迁移文件，重新生成：
 
 ```python
+    # app/models.py（Task 里 priority 这一行改成这样）
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 ```
 
@@ -4480,6 +4469,7 @@ alembic upgrade head            # Running upgrade 8b00b78b9f87 -> c6314163489a, 
 生成的脚本：
 
 ```python
+# migrations/versions/c6314163489a_add_task_priority.py（重新生成的，节选）
 def upgrade() -> None:
     op.add_column('tasks', sa.Column('priority', sa.Integer(), server_default='0', nullable=False))
 
@@ -4491,6 +4481,61 @@ def downgrade() -> None:
 原来的数据都还在，`priority` 自动是 0。要在接口里返回，`TaskOut` 也加上 `priority: int`。
 
 **给已经有数据的表加「不能为空」的列，一定要给 `server_default`。** 这个坑本地发现不了（本地经常是空表），一上线就炸。
+
+### 多人协作：以模型为准，靠迁移脚本同步
+
+表结构的「源头」是 `models.py` 里的类。要改表，只改模型，再生成迁移脚本；不要去数据库里手动 `ALTER TABLE`，也不要把自己库的表结构导出来发给别人。
+
+| 谁 | 做什么 |
+|---|---|
+| 改表的人（A） | 改模型 → `alembic revision --autogenerate` → 打开脚本检查 → 模型改动和迁移脚本**一起提交** |
+| 其他同事（B） | `git pull` 拿到新脚本 → `alembic upgrade head`，本地库就和 A 的一样了 |
+| 线上 | 部署前同样跑 `alembic upgrade head` |
+
+- **为什么不能手动改库**：手动改的只有你自己的库有，同事和线上都没有；下次 autogenerate 对比时，还会生成一些莫名其妙的改动。
+
+**两个人同时改表会冲突**。比如都在 `8b00b78b9f87` 上，A 加了 `priority`，B 加了 `due_date`，各自生成一个迁移。两边代码合并后，就有了两个「最新版本」：
+
+```bash
+$ alembic heads                 # 列出所有最新版本：本来只该有一个
+c6314163489a (head)
+affb685abc68 (head)
+
+$ alembic upgrade head          # 不知道该升到哪一个，直接报错
+FAILED: Multiple head revisions are present for given argument 'head'; please specify a specific target revision, '<branchname>@head' to narrow to a specific head, or 'heads' for all heads
+```
+
+两种解决办法，选一种：
+
+**① 接到对方后面（还没上线时用）**：后合并的人打开自己的迁移脚本，把 `down_revision` 改成对方的版本号。两个迁移就变成一前一后，又只剩一个最新版本：
+
+```python
+# migrations/versions/affb685abc68_add_task_due_date.py（B 的脚本）
+down_revision: Union[str, Sequence[str], None] = 'c6314163489a'   # 原来是 '8b00b78b9f87'，改成 A 的版本号
+```
+
+```bash
+$ alembic upgrade head
+Running upgrade 8b00b78b9f87 -> c6314163489a, add task priority
+Running upgrade c6314163489a -> affb685abc68, add task due_date
+```
+
+**② 生成一个合并脚本（已经有人执行过其中一个时用）**：脚本里什么都不做，只是把两条线接起来：
+
+```bash
+$ alembic merge heads -m "merge priority and due_date"
+$ alembic upgrade head
+Running upgrade 8b00b78b9f87 -> affb685abc68, add task due_date
+Running upgrade 8b00b78b9f87 -> c6314163489a, add task priority
+Running upgrade c6314163489a, affb685abc68 -> c2b738282283, merge priority and due_date
+```
+
+```python
+# 生成的合并脚本：down_revision 是两个版本号，upgrade / downgrade 里都是 pass
+down_revision: Union[str, Sequence[str], None] = ('c6314163489a', 'affb685abc68')
+```
+
+已经在线上或同事库里执行过的迁移，不能再改它的 `down_revision`（下面「已经执行过、提交过的迁移脚本不要再改」），这时只能用 ②。
 
 ### 常用命令
 
@@ -4522,6 +4567,7 @@ $ alembic history
 所以 CORS 是**后端**的配置，前端改不了。FastAPI 用自带的中间件：
 
 ```python
+# app/main.py（先看写法，下面「完整的 main.py」里会放到一起）
 from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(                      # 给 app 加一个中间件
@@ -4535,6 +4581,7 @@ app.add_middleware(                      # 给 app 加一个中间件
 `app/config.py` 加一个配置，线上把前端的正式网址写进去：
 
 ```python
+    # app/config.py（Settings 类里加上）
     cors_origins: list[str] = ["http://localhost:5173"]   # 允许跨域的前端网址；环境变量写成 JSON：CORS_ORIGINS='["https://todo.example.com"]'
 ```
 
@@ -4546,6 +4593,7 @@ app.add_middleware(                      # 给 app 加一个中间件
 **中间件**包在所有接口外面：请求进来先经过它，再到接口；接口的响应出去，也要再经过它。适合放「每个请求都要做」的事：记日志、统计耗时、加响应头。上面的 CORS 也是一个中间件。
 
 ```python
+# app/main.py（先看写法，下面「完整的 main.py」里会放到一起）
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -4572,6 +4620,18 @@ async def log_requests(request: Request, call_next: Callable[[Request], Awaitabl
 ```
 
 `call_next(request)` 之前的代码在接口执行**前**跑，之后的在接口执行**后**跑，和 2.8 节 `yield` 前后是一个意思。日志用 2.3 节的 `logging`，不用 `print`：线上能按级别过滤，也能统一收集。
+
+**顺序有没有要求**：
+
+- **和路由谁先谁后都行**：中间件包在整个 app 外面，不是包在某个路由外面。先 `include_router` 再加中间件，照样对所有接口生效。唯一的要求是在服务启动前加好，写在 `main.py` 里就满足；启动后再加会报 `RuntimeError: Cannot add middleware after an application has started`。
+- **多个中间件之间：后加的在外层，先执行**。每加一个就往外多包一层：
+
+```
+# 先加 A，再加 B
+请求 → B → A → 接口 → A → B → 响应
+```
+
+下面完整的 `main.py` 里，CORS 先加、日志中间件后加，日志在最外层，浏览器的 `OPTIONS` 预检也会记进日志。反过来让 CORS 在最外层的话，预检由 CORS 直接回 200，根本走不到日志中间件，日志里就看不到预检。
 
 完整的 `main.py`，分四块：
 
@@ -4659,6 +4719,7 @@ from app.main import app  # noqa: F401
 **3. 连接池和密钥**：`app/config.py` 加一个 `vercel` 配置，和一个检查：
 
 ```python
+    # app/config.py（Settings 类里加上）
     vercel: bool = False                      # Vercel 上会自动设置 VERCEL=1
 
     @model_validator(mode="after")            # 所有字段读完之后再执行这个检查
@@ -4671,6 +4732,7 @@ from app.main import app  # noqa: F401
 `app/db.py` 里，在 Vercel 上不用连接池：
 
 ```python
+# app/db.py（engine 那一段改成这样）
 from sqlalchemy.pool import NullPool
 
 engine = create_engine(
@@ -4699,37 +4761,6 @@ DATABASE_URL='postgresql+psycopg://...线上地址...' alembic upgrade head
 **6. 部署和检查**：推到 GitHub，Vercel 自动部署。部署完访问 `https://你的后端域名/`，返回 `{"code":200,"msg":"ok","data":{"status":"ok"}}` 就成功了，再到 `/docs` 里注册、登录、建任务走一遍。
 
 > 国内访问 `*.vercel.app` 经常不通（域名被污染），自己测试需要开代理；给别人用的话，绑一个自己的域名。
-
-**测试**：加两个，确认健康检查和 CORS 生效（应该是 `10 passed`）：
-
-```python
-# tests/test_main.py（新建）
-from __future__ import annotations
-
-from fastapi.testclient import TestClient
-
-
-def test_health(client: TestClient) -> None:              # 健康检查和日志中间件
-    r = client.get("/")
-    assert r.json()["data"] == {"status": "ok"}
-    assert r.headers["X-Response-Time"].endswith("ms")     # 中间件加的响应头，比如 "3ms"
-```
-
-```python
-# tests/test_main.py（接着写）
-def test_cors_preflight(client: TestClient) -> None:      # 模拟浏览器跨域前发的 OPTIONS 预检
-    headers = {
-        "Origin": "http://localhost:5173",                 # 前端页面所在的网址
-        "Access-Control-Request-Method": "POST",           # 接下来想发 POST
-        "Access-Control-Request-Headers": "authorization,content-type",   # 想带这些请求头
-    }
-    r = client.options("/tasks", headers=headers)
-    assert r.status_code == 200
-    assert r.headers["access-control-allow-origin"] == "http://localhost:5173"   # 后端回答：这个网址可以
-
-    r = client.options("/tasks", headers={**headers, "Origin": "https://evil.example.com"})   # 换一个不在名单里的网址
-    assert "access-control-allow-origin" not in r.headers      # 不在名单里的网址拿不到许可
-```
 
 ### 阶段三做完了什么
 
