@@ -13,6 +13,8 @@
 
 ## 准备环境 {#setup}
 
+### 用 uv 建虚拟环境
+
 Mac 自带的 `python3` 版本比较老（3.9），本笔记用 3.12。用 [uv](https://docs.astral.sh/uv/) 管理 Python 版本和依赖：
 
 ```bash
@@ -26,6 +28,8 @@ python --version                 # Python 3.12.x
 - **激活**只对当前终端窗口有效，新开终端要重新 `source`。退出用 `deactivate`。
 - 运行一个文件：`python 01_hello.py`。
 
+### .gitignore：哪些不提交
+
 建一个 `.gitignore`，这些不要提交：
 
 ```
@@ -35,7 +39,9 @@ __pycache__/
 .env
 ```
 
-**编辑器**：Cursor / VS Code 装 Python 插件和 Ruff 插件，右下角把解释器选成 `.venv` 里的那个。保存时自动格式化，在 `.vscode/settings.json` 里加：
+### 编辑器
+
+Cursor / VS Code 装 Python 插件和 Ruff 插件，右下角把解释器选成 `.venv` 里的那个。保存时自动格式化，在 `.vscode/settings.json` 里加：
 
 ```json
 {
@@ -61,6 +67,8 @@ __pycache__/
 
 ## 1.1 变量、类型、缩进 {#variables}
 
+### 变量和基本类型
+
 ```python
 # 01_basic.py
 name = "林必龙"          # str 字符串
@@ -73,7 +81,9 @@ print(name, age, price, is_ok, nothing)   # 林必龙 18 9.9 True None
 print(type(age))                          # <class 'int'>
 ```
 
-**类型标注**（可写可不写，写了编辑器能提示、能检查）：
+### 类型标注
+
+可写可不写，写了编辑器能提示、能检查：
 
 ```python
 episode: int = 3
@@ -84,7 +94,9 @@ note: str | None = None      # 可以是 str，也可以是 None
 - 变量的值一眼能看出类型时，一般不写标注；**函数的参数和返回值建议都写**。
 - 标注只是提示，Python 运行时不会检查。更多写法集中在第 2.1 节。
 
-**缩进就是语法**：用缩进表示代码块（不用大括号），统一 **4 个空格**。
+### 缩进就是语法
+
+用缩进表示代码块（不用大括号），统一 **4 个空格**。
 
 ```python
 if age >= 18:
@@ -92,7 +104,9 @@ if age >= 18:
 print("结束")           # 不缩进，if 结束了
 ```
 
-**字符串**：单引号、双引号都行，项目里统一一种（Ruff 默认统一成双引号）。
+### 字符串
+
+单引号、双引号都行，项目里统一一种（Ruff 默认统一成双引号）。
 
 ```python
 user = "Tom"
@@ -121,7 +135,9 @@ print(", ".join(str(n) for n in [1, 2]))   # 1, 2   数字要先转成字符串
 print("a.b.c".replace(".", "/"))       # a/b/c
 ```
 
-**切片 `[开始:结束:步长]`**：取一段，包含开始、不包含结束。字符串、列表都能用。
+### 切片 `[开始:结束:步长]`
+
+取一段，包含开始、不包含结束。字符串、列表都能用。
 
 ```python
 s = "abcdef"
@@ -134,7 +150,7 @@ print(s[::-1])    # fedcba  反过来
 print(len(s))     # 6       长度
 ```
 
-**数字**：
+### 数字
 
 ```python
 print(7 / 2)     # 3.5   除法结果总是小数
@@ -145,6 +161,8 @@ print(int("42") + 1, str(42) + "!")   # 43 42!  类型转换
 ```
 
 ## 1.2 判断和循环 {#control-flow}
+
+### if / elif / else
 
 ```python
 score = 85
@@ -171,7 +189,9 @@ if x is None:
     print("x 没有值")
 ```
 
-**真假值**：`0`、`""`、`[]`、`{}`、`None` 都当作假，其他当作真。
+### 真假值
+
+`0`、`""`、`[]`、`{}`、`None` 都当作假，其他当作真。
 
 ```python
 items = []
@@ -187,7 +207,7 @@ if items:                  # 反过来：不为空
 - `is` 基本只用来和 `None` 比：`if x is None:`、`if x is not None:`。
 - 小坑：`0` 也算假。如果 `0` 是一个有意义的值，判断「有没有值」要写 `if count is None:`，不能写 `if not count:`。
 
-**循环**：
+### 循环
 
 ```python
 for i in range(3):            # 0 1 2
@@ -211,7 +231,9 @@ for i in range(10):
 
 ## 1.3 列表、字典、元组、集合 {#collections}
 
-**列表 list**：有顺序，可以改。
+### 列表 list
+
+有顺序，可以改。
 
 ```python
 nums = [3, 1, 2]
@@ -224,7 +246,9 @@ print(sorted(nums))         # [2, 3, 4] 返回新列表
 print(2 in nums)            # True
 ```
 
-**字典 dict**：键值对。
+### 字典 dict
+
+键值对。
 
 ```python
 user = {"name": "Tom", "age": 18}
@@ -242,7 +266,9 @@ for key in user:                  # 直接遍历拿到的是键
     print(key)
 ```
 
-**元组 tuple**：和列表像，但不能改。常用来一次返回多个值。
+### 元组 tuple
+
+和列表像，但不能改。常用来一次返回多个值。
 
 ```python
 point = (3, 4)
@@ -252,7 +278,9 @@ a, b = 1, 2
 a, b = b, a           # 交换两个变量
 ```
 
-**拆包**：把列表、元组、字符串这类序列里的值，按位置一次赋给几个变量。不止元组能拆，函数返回多个值、`for` 循环里的 `for k, v in ...` 都是它。
+### 拆包
+
+把列表、元组、字符串这类序列里的值，按位置一次赋给几个变量。不止元组能拆，函数返回多个值、`for` 循环里的 `for k, v in ...` 都是它。
 
 ```python
 name, age = "Tom,18".split(",")   # split 先得到 ['Tom', '18']，再拆给两个变量
@@ -273,7 +301,9 @@ name, age = "Tom".split(",")           # ValueError: not enough values to unpack
 name, rest = "Tom,18,北京".split(",", 1)   # 只在第一个逗号处切：'Tom'、'18,北京'
 ```
 
-**集合 set**：不重复。
+### 集合 set
+
+不重复。
 
 ```python
 tags = {"a", "b", "a"}
@@ -281,7 +311,7 @@ print(tags)                       # {'a', 'b'}（顺序不固定）
 print(set([1, 1, 2]))             # {1, 2}   给列表去重
 ```
 
-**几个好用的遍历函数**：
+### 几个好用的遍历函数
 
 ```python
 names = ["Tom", "Jerry"]
@@ -293,7 +323,7 @@ for name, age in zip(names, ages):       # 两个列表一一配对
     print(name, age)                      # Tom 18 / Jerry 20
 ```
 
-**把两个列表组装成数据**：
+### 把两个列表组装成数据
 
 ```python
 names = ["Tom", "Jerry"]
@@ -363,6 +393,8 @@ print(squares, evens, names, by_id)             # [1, 4, 9, 16] [2, 4] ['Tom', '
 
 ## 1.5 函数 {#functions}
 
+### 定义函数：参数、默认值、返回值
+
 ```python
 def add(a: int, b: int = 0) -> int:     # b 有默认值，可以不传
     """两个数相加。"""                    # 文档字符串：说明函数是干嘛的
@@ -373,7 +405,9 @@ print(add(1))           # 1   b 用默认值
 print(add(b=5, a=1))    # 6   按名字传（关键字参数），顺序随意
 ```
 
-**一次返回多个值**（其实返回的是元组）：
+### 一次返回多个值
+
+其实返回的是元组：
 
 ```python
 def min_max(nums: list[int]) -> tuple[int, int]:
@@ -383,7 +417,9 @@ lo, hi = min_max([3, 1, 2])
 print(lo, hi)           # 1 3
 ```
 
-**`*` 后面的参数只能按名字传**：参数多的时候防止传错位置。
+### `*` 后面的参数只能按名字传
+
+参数多的时候防止传错位置。
 
 ```python
 def create_user(name: str, *, admin: bool = False) -> str:
@@ -393,7 +429,9 @@ print(create_user("Tom", admin=True))   # Tom admin=True
 # create_user("Tom", True)              # 报错：admin 必须写成 admin=True
 ```
 
-**`*args` 和 `**kwargs`**：接收任意多个参数。
+### `*args` 和 `**kwargs`
+
+接收任意多个参数。
 
 ```python
 def log(*args, **kwargs):
@@ -411,7 +449,9 @@ info = {"name": "Tom", "age": 18}
 print(greet(**info))      # Tom 18   ** 把字典拆成关键字参数
 ```
 
-**`lambda`：一行的小函数**，常用来给 `sorted` / `max` 指定「按什么比」：
+### `lambda`：一行的小函数
+
+常用来给 `sorted` / `max` 指定「按什么比」：
 
 ```python
 double = lambda x: x * 2          # 等价于 def double(x): return x * 2
@@ -597,6 +637,8 @@ print(add.__name__)     # add   不加 @wraps 的话这里是 wrapper
 
 ## 1.7 模块和导入 {#modules}
 
+### 模块和包
+
 一个 `.py` 文件就是一个**模块**；带 `__init__.py` 的文件夹是一个**包**。
 
 ```
@@ -618,7 +660,7 @@ from datetime import datetime as dt   # 起别名
 - 从**运行命令的目录**开始找模块，所以要在项目根目录运行。
 - `datetime` 模块里有个同名的 `datetime` 类：`import datetime` 之后要写 `datetime.datetime.now()`，所以一般写 `from datetime import datetime`。
 
-**只在直接运行时执行的代码**：
+### 只在直接运行时执行的代码
 
 ```python
 def main() -> None:
@@ -629,6 +671,8 @@ if __name__ == "__main__":   # 被别的文件 import 时不执行
 ```
 
 ## 1.8 类：属性和方法 {#classes}
+
+### 定义一个类
 
 ```python
 class Counter:
@@ -650,7 +694,9 @@ print(c.count)     # 6
 print(c)           # Counter(clicks=6)
 ```
 
-**对象不是字典**：类创建出来的是对象，用点号取属性；字典用方括号取值，两种不能混用。
+### 对象不是字典
+
+类创建出来的是对象，用点号取属性；字典用方括号取值，两种不能混用。
 
 ```python
 c = Counter("clicks")                  # 对象
@@ -693,7 +739,9 @@ print(u.name)           # Tom                点号取值
 print(u.model_dump())   # {'name': 'Tom', 'age': 18}   pydantic 用 .model_dump() 转字典
 ```
 
-**类方法 `@classmethod`**：不用先创建对象，直接用类调用。常用来提供「另一种创建对象的方式」。
+### 类方法 `@classmethod`
+
+不用先创建对象，直接用类调用。常用来提供「另一种创建对象的方式」。
 
 ```python
 class User:
@@ -715,7 +763,9 @@ print(u.name, u.age)       # Tom 18
 
 ## 1.9 继承和多态 {#inheritance}
 
-**继承**：子类自动拥有父类的属性和方法，可以覆盖（重写），也可以加新的。
+### 继承
+
+子类自动拥有父类的属性和方法，可以覆盖（重写），也可以加新的。
 
 ```python
 class Animal:
@@ -742,7 +792,9 @@ print(Dog("旺财", "柴犬").speak())   # 旺财: 汪
 - 子类写了自己的 `__init__`，父类的 `__init__` 就**不会自动调用**，要用 `super().__init__(...)` 手动调一次，不然 `self.name` 没设上，后面一用就报 `AttributeError`。
 - 子类没写 `__init__`，就直接用父类的。
 
-**多态**：同一个方法名，不同的类各有各的实现；调用的人不用管对象具体是哪个类。
+### 多态
+
+同一个方法名，不同的类各有各的实现；调用的人不用管对象具体是哪个类。
 
 ```python
 class Cat(Animal):
@@ -761,7 +813,7 @@ for a in animals:
 
 循环里只管调用 `a.speak()`，是汪还是喵由对象自己决定。以后加一种动物，只要再写一个子类，这个循环一行都不用改。
 
-**`isinstance`：判断是不是某个类（或它的子类）的对象**
+### `isinstance`：判断是不是某个类（或它的子类）的对象
 
 ```python
 d = Dog("旺财", "柴犬")
@@ -771,7 +823,7 @@ print(isinstance(d, Cat))       # False
 print(type(d).__name__)         # Dog
 ```
 
-**抽象基类：规定子类必须实现哪些方法**
+### 抽象基类：规定子类必须实现哪些方法
 
 ```python
 from abc import ABC, abstractmethod
@@ -798,7 +850,9 @@ print(s.data)          # {'a': '1'}
 
 子类忘了写 `save`，在创建对象时就会报 `TypeError`，不用等运行到一半才发现。
 
-**鸭子类型：不继承也行**。Python 不检查对象是哪个类，只要有 `speak` 方法，就能放进上面的循环：
+### 鸭子类型：不继承也行
+
+Python 不检查对象是哪个类，只要有 `speak` 方法，就能放进上面的循环：
 
 ```python
 class Robot:                   # 没有继承 Animal
@@ -810,6 +864,8 @@ for a in [Dog("旺财", "柴犬"), Robot()]:
     print(a.speak())           # 旺财: 汪 / 哔
 ```
 
+### 什么时候用继承
+
 所以 Python 里继承用得没那么多。入门阶段记住这几条就够了：
 
 - 继承适合「是一种」的关系：狗是一种动物。
@@ -817,6 +873,8 @@ for a in [Dog("旺财", "柴犬"), Robot()]:
 - 最常见的继承是框架要求的：`class BalanceError(Exception)`（第 1.11 节）、`class TaskCreate(BaseModel)`（pydantic，第 3.3 节）、`class Task(Base)`（SQLAlchemy，第 3.7 节）。
 
 ## 1.10 dataclass：只存数据的类 {#dataclass}
+
+### 用法
 
 只是用来装数据的类，用 `@dataclass` 自动生成 `__init__`、`__repr__`、`__eq__`，不用手写：
 
@@ -839,7 +897,7 @@ print(t == Task("写笔记", tags=["学习"]))   # True  按字段比较
 
 为什么列表默认值不能直接写 `tags: list[str] = []`：那样所有对象会共用同一个列表，dataclass 会直接报错提醒你。`field(default_factory=list)` 表示每次创建对象都新建一个空列表。
 
-**怎么选**：
+### 怎么选
 
 | 场景 | 用什么 |
 |---|---|
@@ -848,6 +906,8 @@ print(t == Task("写笔记", tags=["学习"]))   # True  按字段比较
 | 有复杂逻辑的类、异常类 | 普通 class，自己写 `__init__` |
 
 ## 1.11 异常 {#exceptions}
+
+### try / except / finally
 
 ```python
 def to_int(text: str) -> int | None:
@@ -864,7 +924,7 @@ print(to_int("42"))     # 不管成功失败都会执行 / 42
 print(to_int("abc"))    # 转换失败： invalid literal for int() with base 10: 'abc' / 不管成功失败都会执行 / None
 ```
 
-**常见的错误类型**：
+### 常见的错误类型
 
 | 错误 | 什么时候出现 |
 |---|---|
@@ -876,7 +936,9 @@ print(to_int("abc"))    # 转换失败： invalid literal for int() with base 10
 | `FileNotFoundError` | 文件不存在 |
 | `ZeroDivisionError` | 除以 0 |
 
-**接住不同的错误**：`try` 后面可以跟多个 `except`，每种错误分开处理；几种错误处理方式一样时，用元组写在一个 `except` 里。
+### 接住不同的错误
+
+`try` 后面可以跟多个 `except`，每种错误分开处理；几种错误处理方式一样时，用元组写在一个 `except` 里。
 
 ```python
 def parse(d: dict, key: str) -> int | str:
@@ -914,7 +976,9 @@ finally:
 # 一定执行
 ```
 
-**主动抛错 `raise`**：执行到 `raise`，当前函数立刻停下，后面的代码都不执行（和 `return` 一样）。区别是停下之后去哪里：
+### 主动抛错 `raise`
+
+执行到 `raise`，当前函数立刻停下，后面的代码都不执行（和 `return` 一样）。区别是停下之后去哪里：
 
 - `return`：函数到这里结束，带着结果回到调用它的那一行，**调用方**接着往下执行。
 - `raise`：调用方拿不到结果，错误一层层往外抛，找有没有 `try/except` 接住；接住了就跳到 `except` 里继续执行，没人接就整个程序终止并打印报错。`finally` 里的代码不管怎样都会执行。
@@ -939,7 +1003,9 @@ print("程序继续往下走")
 # 程序继续往下走
 ```
 
-**自定义异常**，按需要从简单到复杂选：
+### 自定义异常
+
+按需要从简单到复杂选：
 
 | 情况 | 写法 |
 |---|---|
@@ -970,9 +1036,13 @@ except BalanceError as e:
 - `super().__init__(message)` 不写的话，`print(e)` 会显示 `('余额不足', 20)` 这种元组。
 - 什么时候需要 `e.need` 这种属性：比如前端要拿到「还差 20」这个数字，直接跳到充值 20 元的页面，而不是从文字里去解析。
 
-**原则**：知道怎么处理才 `except`；不知道就别接，让它往上抛。千万别写 `except: pass` 把错误悄悄吞掉。
+### 原则
+
+知道怎么处理才 `except`；不知道就别接，让它往上抛。千万别写 `except: pass` 把错误悄悄吞掉。
 
 ## 1.12 文件和 JSON {#files-json}
+
+### 读写 JSON 文件
 
 `pathlib` 的 `Path` 用来表示「一个文件或文件夹的路径」，建文件夹、读写文件、找文件都通过它；`json` 负责在字典和 JSON 字符串之间转换。下面分五步：建文件夹 → 写 → 读 → 看文件信息 → 找文件。
 
@@ -1043,6 +1113,8 @@ for path in sorted(folder.glob("*.json")):   # *.json：所有以 .json 结尾�
 - 路径是**相对于运行命令时所在的目录**，不是 `.py` 文件所在的目录。在别的目录运行 `python 子目录/demo.py`，`data` 会建在你所在的目录。
 - JSON 的键必须是字符串；Python 的 `True` / `None` 会转成 `true` / `null`。
 
+### 按行读大文件
+
 大文件不要一次 `read_text()` 全读进内存，按行读：
 
 ```python
@@ -1051,7 +1123,9 @@ with open("data/user.json", encoding="utf-8") as fp:   # with 结束时自动关
         print(line.rstrip())
 ```
 
-**`with` 是什么**：进入时拿到资源，离开代码块时自动收尾。中途出错也会收尾，不用自己写 `try / finally`。文件、数据库连接、锁都这么用。
+### `with` 是什么
+
+进入时拿到资源，离开代码块时自动收尾。中途出错也会收尾，不用自己写 `try / finally`。文件、数据库连接、锁都这么用。
 
 ```python
 with open("a.txt", "w", encoding="utf-8") as fp:
@@ -1083,7 +1157,7 @@ finally:
 
 类型注解是写给人和编辑器看的：编辑器能补全、能提前标红，读代码的人一眼知道该传什么。**Python 运行时不检查它**。但后面的 FastAPI、pydantic、SQLAlchemy 都是靠注解干活的，所以一定要会写。
 
-**基本写法**
+### 基本写法
 
 ```python
 age: int = 18
@@ -1100,7 +1174,9 @@ def say(msg: str) -> None:                      # 没有返回值写 None
     print(msg)
 ```
 
-**容器**：方括号里写元素的类型。Python 3.9 以后直接用 `list`、`dict`，不用再 `from typing import List`。
+### 容器
+
+方括号里写元素的类型。Python 3.9 以后直接用 `list`、`dict`，不用再 `from typing import List`。
 
 ```python
 tags: list[str] = ["a", "b"]
@@ -1111,7 +1187,7 @@ unique: set[int] = {1, 2}
 rows: list[dict[str, int]] = [{"id": 1}]        # 可以嵌套
 ```
 
-**可能是 None、或者几种类型之一：用 `|`**
+### 可能是 None、或者几种类型之一：用 `|`
 
 ```python
 def find(name: str) -> int | None:    # 找到返回 int，找不到返回 None
@@ -1127,7 +1203,7 @@ value: int | str = 1                  # int 或 str 都行
 
 老代码里会看到 `Optional[int]`（等于 `int | None`）和 `Union[int, str]`（等于 `int | str`），意思一样。
 
-**只能是几个固定值：`Literal`**
+### 只能是几个固定值：`Literal`
 
 ```python
 from typing import Literal
@@ -1143,7 +1219,7 @@ set_status("done")      # 状态改成 done
 set_status("finish")    # 照样能运行（打印「状态改成 finish」），但编辑器会标红：不在这三个值里
 ```
 
-**函数当参数：`Callable`**
+### 函数当参数：`Callable`
 
 ```python
 from collections.abc import Callable
@@ -1156,7 +1232,7 @@ def apply(func: Callable[[int], int], x: int) -> int:   # 接收「参数是一�
 print(apply(lambda n: n * 2, 3))     # 6
 ```
 
-**自己写的类也是类型**
+### 自己写的类也是类型
 
 ```python
 from dataclasses import dataclass
@@ -1174,9 +1250,11 @@ def names(users: list[User]) -> list[str]:
 print(names([User("Tom"), User("Amy")]))   # ['Tom', 'Amy']
 ```
 
-**文件开头的 `from __future__ import annotations`**：让类型标注推迟解析，这样标注里可以用到「后面才定义的类」。加不加对运行结果基本没影响，很多项目习惯每个文件都写；它必须是文件里的第一条代码。
+### 文件开头的 `from __future__ import annotations`
 
-**注解不会在运行时检查**
+让类型标注推迟解析，这样标注里可以用到「后面才定义的类」。加不加对运行结果基本没影响，很多项目习惯每个文件都写；它必须是文件里的第一条代码。
+
+### 注解不会在运行时检查
 
 ```python
 def double(n: int) -> int:
@@ -1189,7 +1267,9 @@ print(double("ab"))     # abab   标的是 int，传字符串照样运行
 - 想在**运行前**发现这类错：编辑器（Pylance）会直接标红；命令行可以用 `mypy` 或 `pyright` 检查整个项目。
 - 想在**运行时**真的校验数据（比如接口收到的 JSON）：用 pydantic（第 3.3 节），它按注解检查、转换类型，不对就报错。
 
-**写到什么程度**：函数的参数和返回值都写；变量一眼能看出类型的就不写；一时写不出来的类型先用 `Any`（`from typing import Any`），别卡在类型上。
+### 写到什么程度
+
+函数的参数和返回值都写；变量一眼能看出类型的就不写；一时写不出来的类型先用 `Any`（`from typing import Any`），别卡在类型上。
 
 ## 2.2 项目和依赖：uv、pip、pyproject.toml {#tooling}
 
@@ -1308,10 +1388,10 @@ Found 3 errors.
 
 ## 2.3 日志、环境变量、时间 {#logging-env-time}
 
+### 日志：logging
+
 ```python
 import logging
-import os
-from datetime import UTC, datetime, timedelta
 
 # 程序入口配置一次：INFO 及以上都输出；format 是每行日志的格式（时间 级别 logger 名: 内容）
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -1321,19 +1401,11 @@ log.debug("调试细节")                        # 级别低于 INFO，不输出
 log.info("开始处理 %s 条", 3)                # 2026-11-13 14:28:48,622 INFO __main__: 开始处理 3 条
 log.warning("快满了")                        # 2026-11-13 14:28:48,622 WARNING __main__: 快满了
 log.error("失败了")                          # 2026-11-13 14:28:48,622 ERROR __main__: 失败了
-
-# 环境变量：密码、地址这类配置不写死在代码里
-db_url = os.environ.get("DATABASE_URL", "postgresql+psycopg://localhost:5432/todo")   # 读环境变量 DATABASE_URL，没配就用默认值
-print(db_url)                               # 没配时：postgresql+psycopg://localhost:5432/todo
-
-# 时间
-now = datetime.now(UTC)                     # 带时区的当前时间，存库和返回接口都用 UTC
-print(now.isoformat())                      # 2026-11-10T07:00:00.123456+00:00
-print(now.strftime("%Y-%m-%d %H:%M:%S"))    # 2026-11-10 07:00:00
-print(now - timedelta(days=3))              # 3 天前
 ```
 
-**为什么用 logging 不用 print**：能分级别（线上只看 warning 以上）、按 `format` 统一带上时间和模块名、可以统一输出到文件或日志系统。
+### 为什么用 logging 不用 print
+
+能分级别（线上只看 warning 以上）、按 `format` 统一带上时间和模块名、可以统一输出到文件或日志系统。
 
 - `__main__` 是 logger 的名字：直接运行的文件，`__name__` 就是 `__main__`；被别的文件导入时是模块名，比如 `app.db`，一看就知道日志是哪个文件打的。
 - 不写 `format` 时默认格式是 `INFO:__main__:开始处理 3 条`，没有时间，所以一般都会配上。
@@ -1346,6 +1418,26 @@ print(now - timedelta(days=3))              # 3 天前
 | `info` | 正常的关键步骤 |
 | `warning` | 不正常但还能继续 |
 | `error` | 出错了 |
+
+### 环境变量：配置不写死在代码里
+
+```python
+import os
+
+db_url = os.environ.get("DATABASE_URL", "postgresql+psycopg://localhost:5432/todo")   # 读环境变量 DATABASE_URL，没配就用默认值
+print(db_url)                               # 没配时：postgresql+psycopg://localhost:5432/todo
+```
+
+### 时间：统一用带时区的 UTC
+
+```python
+from datetime import UTC, datetime, timedelta
+
+now = datetime.now(UTC)                     # 带时区的当前时间，存库和返回接口都用 UTC
+print(now.isoformat())                      # 2026-11-10T07:00:00.123456+00:00
+print(now.strftime("%Y-%m-%d %H:%M:%S"))    # 2026-11-10 07:00:00
+print(now - timedelta(days=3))              # 3 天前
+```
 
 ## 2.4 调试：看懂报错、打断点 {#debugging}
 
@@ -1937,6 +2029,8 @@ app = FastAPI(lifespan=lifespan)
 
 ## 3.1 项目准备 {#project-setup}
 
+### 建目录、装依赖
+
 ```bash
 mkdir -p todo-api/app todo-api/tests && cd todo-api
 touch app/__init__.py tests/__init__.py
@@ -1957,6 +2051,8 @@ uv pip install fastapi "uvicorn[standard]" sqlalchemy "psycopg[binary]" pytest h
 | python-dotenv | 启动时读取 `.env` 文件里的配置（第 3.7 节） |
 
 `"uvicorn[standard]"`、`"psycopg[binary]"` 要加引号，否则 zsh 会把方括号当通配符。`[binary]` 表示装编译好的版本，不用自己装 Postgres 的开发库。
+
+### 目录结构
 
 最后的目录结构：
 
@@ -1979,7 +2075,7 @@ todo-api/
 
 下面是一组 RESTful 风格的接口示例：同一个资源 `/users`，用不同的 HTTP 方法表示查、增、改、删。分几块写进同一个文件 `app/hello.py`。
 
-**准备：建 app、定义请求体**
+### 准备：建 app、定义请求体
 
 ```python
 # app/hello.py
@@ -1996,7 +2092,7 @@ class User(BaseModel):                          # 请求体格式：{"name": "To
     age: int                                    # 必填，整数
 ```
 
-**查：列表和详情**
+### 查：列表和详情
 
 ```python
 # app/hello.py（接着写）
@@ -2010,7 +2106,7 @@ def get_user(user_id: int) -> dict:             # 名字和路径里的 {user_id
     return {"user_id": user_id}                 # {"user_id": 5}
 ```
 
-**增：请求体**
+### 增：请求体
 
 ```python
 # app/hello.py（接着写）
@@ -2019,7 +2115,7 @@ def create_user(body: User) -> User:            # 类型是 BaseModel 子类 = �
     return body                                 # 直接返回 pydantic 对象，FastAPI 转成 JSON：{"name": "Tom", "age": 18}
 ```
 
-**改：路径参数 + 请求体**
+### 改：路径参数 + 请求体
 
 ```python
 # app/hello.py（接着写）
@@ -2028,7 +2124,7 @@ def update_user(user_id: int, body: User) -> dict:   # 两种参数可以一起�
     return {"user_id": user_id, "updated": body}     # 字典里套 pydantic 对象也行：{"user_id": 5, "updated": {"name": "Tom", "age": 18}}
 ```
 
-**删：路径参数**
+### 删：路径参数
 
 ```python
 # app/hello.py（接着写）
@@ -2037,7 +2133,7 @@ def delete_user(user_id: int) -> dict:
     return {"deleted": user_id}                 # {"deleted": 5}
 ```
 
-**请求头：Header()**
+### 请求头：Header()
 
 ```python
 # app/hello.py（接着写）
@@ -2049,13 +2145,17 @@ def me(x_token: Annotated[str, Header()]) -> dict:   # 类型是 str，Header() 
 - **`Annotated[类型, 说明]`**：`x_token` 的类型是 `str`，`Header()` 说明它从「请求头」里取。
 - **参数名怎么对应请求头**：`x_token` 自动对应 `X-Token`，下划线换成横线，不分大小写。
 
+### 启动试一下
+
 在 `todo-api/` 目录启动，然后打开 http://127.0.0.1:8000/docs 点着试（Try it out → Execute）：
 
 ```bash
 uvicorn app.hello:app --reload
 ```
 
-**参数从哪里来**，看函数参数怎么写：
+### 参数从哪里来
+
+看函数参数怎么写：
 
 | 写法 | 来源 | 例子 |
 |---|---|---|
@@ -2084,6 +2184,8 @@ uvicorn app.hello:app --reload
 - `/docs` 里自动生成接口文档，前端照着对接。
 
 这些模型一般统一放在 `schemas.py` 里，按用途起名：`TaskCreate` 是新建时的请求体，`TaskOut` 是返回给前端的响应体。
+
+### 定义模型：继承 BaseModel
 
 继承 `BaseModel`，写好字段和类型，pydantic 会自动生成 `__init__`，并做**校验和类型转换**：
 
@@ -2114,7 +2216,7 @@ class TaskOut(BaseModel):
     updated_at: datetime
 ```
 
-**请求体：校验前端传来的数据**
+### 请求体：校验前端传来的数据
 
 接口参数的类型写成 `TaskCreate`，FastAPI 就会从请求体读 JSON，按 `TaskCreate` 校验。校验通过才执行函数，`body` 拿到的是一个 `TaskCreate` 对象；不通过就直接返回 422，函数根本不会执行：
 
@@ -2142,7 +2244,7 @@ def create_task(body: TaskCreate) -> dict:
 
 `loc` 说明是哪里出了错：`["body", "title"]` 就是请求体里的 `title`。下一节会把这种默认格式改成项目统一的 `{code, msg, data}`。
 
-**响应体：只返回模型里定义的字段**
+### 响应体：只返回模型里定义的字段
 
 接口的返回类型写成 pydantic 模型，FastAPI 会按模型过滤一遍，模型里没有的字段不会返回给前端。直接返回 dict 就没有这一步：
 
@@ -2169,7 +2271,9 @@ def b() -> UserOut:             # 返回类型写成 UserOut：按模型过滤
 
 所以请求体用 pydantic **校验**前端传来的数据，响应体用 pydantic **规定和过滤**返回给前端的数据。
 
-**pydantic 字段的常用写法**：上面 `TaskCreate`、`TaskOut` 里的字段只写了类型，还可以给字段加更多限制。下面这个 `TaskFilter` 是一个「查任务列表时的筛选条件」模型，演示几种常见的字段写法：
+### pydantic 字段的常用写法
+
+上面 `TaskCreate`、`TaskOut` 里的字段只写了类型，还可以给字段加更多限制。下面这个 `TaskFilter` 是一个「查任务列表时的筛选条件」模型，演示几种常见的字段写法：
 
 ```python
 from typing import Literal
@@ -2230,7 +2334,9 @@ print(out)
 
 这一节先定好格式，再写一个 `success()` 函数，成功时用它包装数据。失败怎么返回，下一节讲。
 
-**约定**：HTTP 状态码照实返回；响应体统一是 `{code, msg, data}`。
+### 约定
+
+HTTP 状态码照实返回；响应体统一是 `{code, msg, data}`。
 
 | 情况 | HTTP 状态码 | 响应体 |
 |---|---|---|
@@ -2251,7 +2357,9 @@ def success(data: object = None, msg: str = "ok") -> dict:
 # success(msg="删除成功")      → {"code": 200, "msg": "删除成功", "data": None}
 ```
 
-**动手试**（不连数据库）：
+### 动手试
+
+不连数据库：
 
 ```python
 # api_demo.py（放在 todo-api/ 下）
@@ -2904,7 +3012,9 @@ createdb todo_test    # 测试专用的库，第 3.11 节用（测试会清空�
 
 **一个类 = 一张表，一个对象 = 一行，一个属性 = 一列。**
 
-**先把配置放进 `.env`**：数据库地址这类配置不写死在代码里。在 `todo-api/` 下新建 `.env`：
+### 先把配置放进 `.env`
+
+数据库地址这类配置不写死在代码里。在 `todo-api/` 下新建 `.env`：
 
 ```
 # .env：自己电脑上真正用的配置
@@ -2932,6 +3042,8 @@ DATABASE_URL=postgresql+psycopg://localhost:5432/todo
 
 现在两个文件里 `DATABASE_URL` 那行一样，是因为本机连接不用密码，示例值就是能用的值。以后换成带密码的云数据库，或者加了密钥这类配置，`.env` 写真实值，`.env.example` 只写 `SECRET_KEY=换成你自己的` 这样的占位。
 
+### 连接数据库：db.py
+
 ```python
 # app/db.py
 from __future__ import annotations
@@ -2954,6 +3066,8 @@ class Base(DeclarativeBase):
     """所有表模型的父类，固定写法。"""
     pass
 ```
+
+### 定义表：models.py
 
 ```python
 # app/models.py
@@ -2984,7 +3098,7 @@ class Task(Base):
     )
 ```
 
-**表定义里的几个点**：
+### 表定义里的几个点
 
 - `Mapped[类型]`：Python 里这一列是什么类型。
 - `mapped_column(...)`：数据库里这一列的定义。
@@ -3210,6 +3324,8 @@ COMMIT                                 COMMIT
 
 每个接口都需要一个 Session，但不想每个接口都重复写「创建、提交、出错回滚、关闭」。把这套流程写成一个函数，接口参数里声明「我要一个 Session」，FastAPI 每次请求都会调用它，把结果传进来。这就是**依赖注入**。
 
+### 写一个依赖：db_session
+
 在 `app/db.py` 末尾补上：
 
 ```python
@@ -3240,7 +3356,9 @@ Db = Annotated[Session, Depends(db_session)]   # 起个短名字，接口里写 
 - **`yield`**：函数执行到 `yield` 时交出一个值并暂停，之后从暂停的地方接着跑。执行顺序：① → 接口函数（一直到 return）→ ② 或 ③ → ④。注意：接口 return 的时候，返回给前端的内容就已经定了，② 出错也改不了它。
 - **`Annotated[Session, Depends(db_session)]`**：「类型是 Session，值由 `db_session` 提供」。
 
-**写数据的接口要自己 commit**：只要接口会改数据库（增、改、删），就在接口里、`return` 之前写一行 `session.commit()`，不要等 ② 帮你提交。
+### 写数据的接口要自己 commit
+
+只要接口会改数据库（增、改、删），就在接口里、`return` 之前写一行 `session.commit()`，不要等 ② 帮你提交。
 
 ```python
 # ❌ 不自己 commit：先说成功，再去存
@@ -3269,6 +3387,8 @@ def create_task(title: str, session: Db) -> dict:
 | 查 `GET` | 不改 | 不用 |
 
 写数据的接口自己提交之后，② 那里已经没东西可提交了，只是兜底。`db_session` 真正省事的是另外两件：出错时 ③ 自动回滚，最后 ④ 一定关闭会话，不用每个接口自己写。
+
+### 接口里使用
 
 接口里使用：参数写 `session: Db`，FastAPI 每次请求先调用 `db_session()` 开好会话再传进来，接口里不用再写 `with SessionLocal() as session:`。拿第 3.8 节的「查一条」和「增」改一下：
 
@@ -5229,6 +5349,8 @@ asyncio.run(main())
 
 模型默认输出的是一段话，程序很难用。要拿去存数据库、给前端渲染，就得让它输出**固定格式的 JSON**，再用 3.3 节的 Pydantic 校验。
 
+### 例子：从一句话里提取任务
+
 例子：用户随口说一句话，提取成一个待办任务。
 
 ```python
@@ -5273,7 +5395,7 @@ print(task.priority)   # high                     已经是 TaskDraft 对象，�
 
 「下周五」被换算成了具体日期，「一定要」被理解成了 `high`：这种「把人话变成结构化数据」，是大模型在业务里最常见的用法。
 
-**JSON 模式的规则（记住就行）**：
+### JSON 模式的规则（记住就行）
 
 1. 写 `response_format={"type": "json_object"}`。
 2. prompt 里**必须出现 `json` 这个词**，否则直接 400：

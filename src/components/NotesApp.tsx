@@ -23,6 +23,7 @@ import FocusBar from "./FocusBar";
 import Home from "./Home";
 import ProgressPage from "./ProgressPage";
 import MoreMenu from "./MoreMenu";
+import SectionLayout from "./SectionToc";
 import SideResizer from "./SideResizer";
 import ThemeToggle from "./ThemeToggle";
 import StudyPanel, { StudyEntry } from "./StudyPanel";
@@ -469,70 +470,72 @@ export default function NotesApp({ notes }: { notes: Notes }) {
 
           {section && !study.guestBlocked && (
             <article key={section.id}>
-              <div className="crumb">
-                <a href="#">首页</a>
-                <span>/</span>
-                <span>{section.part ?? NO_PART}</span>
-                <span className="crumb-count">
-                  第 {index + 1} / {sections.length} 节
-                </span>
-                {!focus && (
-                  <button type="button" className="focus-btn" onClick={enterFocus} title="专注模式（F）：全屏、收起侧栏">
-                    <FocusIcon />
-                    专注
+              <SectionLayout toc={section.toc}>
+                <div className="crumb">
+                  <a href="#">首页</a>
+                  <span>/</span>
+                  <span>{section.part ?? NO_PART}</span>
+                  <span className="crumb-count">
+                    第 {index + 1} / {sections.length} 节
+                  </span>
+                  {!focus && (
+                    <button type="button" className="focus-btn" onClick={enterFocus} title="专注模式（F）：全屏、收起侧栏">
+                      <FocusIcon />
+                      专注
+                    </button>
+                  )}
+                </div>
+                {section.partIntroHtml && (
+                  <div className="part-intro" dangerouslySetInnerHTML={{ __html: section.partIntroHtml }} />
+                )}
+                <h2 id={section.id} className="page-title">
+                  <span>{section.title}</span>
+                  <span className="sec-meta">
+                    <label className="done-toggle">
+                      <input
+                        type="checkbox"
+                        checked={!!study.data.done[section.id]}
+                        onChange={() => study.toggleDone(section.id)}
+                      />
+                      学完了
+                    </label>
+                  </span>
+                </h2>
+                <div dangerouslySetInnerHTML={{ __html: section.html }} />
+
+                <div className="finish">
+                  <button type="button" className="finish-btn" onClick={doneThenNext}>
+                    {study.data.done[section.id]
+                      ? next
+                        ? "下一节 →"
+                        : "已全部学完 🎉"
+                      : next
+                        ? "学完了，下一节 →"
+                        : "学完了 🎉"}
                   </button>
-                )}
-              </div>
-              {section.partIntroHtml && (
-                <div className="part-intro" dangerouslySetInnerHTML={{ __html: section.partIntroHtml }} />
-              )}
-              <h2 id={section.id} className="page-title">
-                <span>{section.title}</span>
-                <span className="sec-meta">
-                  <label className="done-toggle">
-                    <input
-                      type="checkbox"
-                      checked={!!study.data.done[section.id]}
-                      onChange={() => study.toggleDone(section.id)}
-                    />
-                    学完了
-                  </label>
-                </span>
-              </h2>
-              <div dangerouslySetInnerHTML={{ __html: section.html }} />
+                </div>
 
-              <div className="finish">
-                <button type="button" className="finish-btn" onClick={doneThenNext}>
-                  {study.data.done[section.id]
-                    ? next
-                      ? "下一节 →"
-                      : "已全部学完 🎉"
-                    : next
-                      ? "学完了，下一节 →"
-                      : "学完了 🎉"}
-                </button>
-              </div>
-
-              <nav className="pager">
-                {prev ? (
-                  <a href={`#${prev.id}`} className="pager-prev">
-                    <span>← 上一节</span>
-                    <b>{prev.title}</b>
-                  </a>
-                ) : (
-                  <a href="#" className="pager-prev">
-                    <span>← 回到</span>
-                    <b>首页</b>
-                  </a>
-                )}
-                {next && (
-                  <a href={`#${next.id}`} className="pager-next">
-                    <span>下一节 →</span>
-                    <b>{next.title}</b>
-                  </a>
-                )}
-              </nav>
-              <p className="hint pager-hint">键盘 ← → 切换上一节 / 下一节，F 进入专注模式（全屏）</p>
+                <nav className="pager">
+                  {prev ? (
+                    <a href={`#${prev.id}`} className="pager-prev">
+                      <span>← 上一节</span>
+                      <b>{prev.title}</b>
+                    </a>
+                  ) : (
+                    <a href="#" className="pager-prev">
+                      <span>← 回到</span>
+                      <b>首页</b>
+                    </a>
+                  )}
+                  {next && (
+                    <a href={`#${next.id}`} className="pager-next">
+                      <span>下一节 →</span>
+                      <b>{next.title}</b>
+                    </a>
+                  )}
+                </nav>
+                <p className="hint pager-hint">键盘 ← → 切换上一节 / 下一节，F 进入专注模式（全屏）</p>
+              </SectionLayout>
             </article>
           )}
         </div>

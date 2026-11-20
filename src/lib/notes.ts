@@ -14,7 +14,10 @@ export type Section = {
   part: string | null;
   partIntroHtml: string | null; // 一个部分的第一节才有：「# 第X部分」标题下面那段导语
   html: string;
+  toc: TocItem[]; // 本节的小标题（###），右侧「本节目录」用
 };
+/** 一节里的一个小标题：锚点 id 和纯文字。 */
+export type TocItem = { id: string; text: string };
 export type Notes = {
   title: string;
   introHtml: string;
@@ -104,6 +107,7 @@ export function loadNotes(): Notes {
   const flush = () => {
     if (current) {
       const nm = current.title.match(SECTION_NUM);
+      const { html, toc } = collectToc(render(current.tokens));
       sections.push({
         id: current.id,
         title: current.title,
@@ -111,7 +115,8 @@ export function loadNotes(): Notes {
         name: nm ? nm[2] : current.title,
         part: current.part,
         partIntroHtml: current.partIntro?.length ? render(current.partIntro) : null,
-        html: render(current.tokens),
+        html,
+        toc,
       });
     }
   };
@@ -150,6 +155,30 @@ export function loadNotes(): Notes {
   flush();
 
   return { title, introHtml: render(intro), sections, roadmap: loadRoadmap(marked), changelog: loadChangelog(marked) };
+}
+
+/**
+ * 从一节的 HTML 里取出所有 <h3> 做目录。同一节里重名的小标题，id 后面加 -2、-3，保证点击能跳到对的那个。
+ */
+function collectToc(html: string): { html: string; toc: TocItem[] } {
+  const toc: TocItem[] = [];
+  const used = new Map<string, number>();
+  const out = html.replace(/<h3 id="([^"]*)">([\s\S]*?)<\/h3>/g, (_, rawId: string, inner: string) => {
+    const base = rawId || "h";
+    const n = (used.get(base) ?? 0) + 1;
+    used.set(base, n);
+    const id = n === 1 ? base : `${base}-${n}`;
+    const text = inner
+      .replace(/<[^>]+>/g, "")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, "&");
+    toc.push({ id, text });
+    return `<h3 id="${id}">${inner}</h3>`;
+  });
+  return { html: out, toc };
 }
 
 /** 行末的「（次要）」/「（次要：说明）」标记。 */
