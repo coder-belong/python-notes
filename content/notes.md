@@ -3934,6 +3934,10 @@ def current_user(
 CurrentUser = Annotated[User, Depends(current_user)]   # 接口里写 user: CurrentUser 就要求登录
 ```
 
+- **`current_user` 是一个依赖**：和 3.9 节的 `db_session` 一样，接口参数写 `user: CurrentUser`，FastAPI 就先执行它。没带 token、token 被改过、过期了，都会 `raise fail(401, ...)`，接口函数根本不会执行。它自己也依赖 `Db`，依赖可以一层套一层。
+- **`HTTPBearer`**：FastAPI 自带的，负责从请求头 `Authorization: Bearer xxx` 里取出 `xxx`。用它还有个好处：`/docs` 右上角会出现 **Authorize** 按钮，填一次 token，之后点着试的请求都会自动带上。
+- **`raise ... from None`**：在 `except` 里抛新的错误时，不把原来那个 JWT 的报错串在后面，日志干净一些。
+
 注册、登录接口放在 `app/routers/auth.py`：
 
 **开头**
@@ -3969,6 +3973,8 @@ def register(body: AuthIn, session: Db) -> dict:
     return success(TokenOut(token=create_token(user.id), username=user.username), msg="注册成功")   # 直接发 token，等于已经登录
 ```
 
+- **注册成功直接返回 token**：等于注册完就登录了，前端不用再调一次登录接口。
+
 **登录：POST /auth/login**
 
 ```python
@@ -3981,6 +3987,8 @@ def login(body: AuthIn, session: Db) -> dict:
     return success(TokenOut(token=create_token(user.id), username=user.username), msg="登录成功")
 ```
 
+- **登录失败只说「用户名或密码错误」**：如果分别提示「用户不存在」「密码错误」，别人就能一个个试出哪些用户名注册过。
+
 **当前用户：GET /auth/me**
 
 ```python
@@ -3990,13 +3998,17 @@ def me(user: CurrentUser) -> dict:           # 声明要 CurrentUser：没登录
     return success({"id": user.id, "username": user.username})
 ```
 
-`main.py` 里挂上：`from app.routers import auth, tasks`，再加一行 `app.include_router(auth.router)`。`users` 是一张新表，启动时 `create_all` 会自动建上，不用删库。
+`app/main.py` 里挂上新路由，改两处：
 
-- **`current_user` 是一个依赖**：和 3.9 节的 `db_session` 一样，接口参数写 `user: CurrentUser`，FastAPI 就先执行它。没带 token、token 被改过、过期了，都会 `raise fail(401, ...)`，接口函数根本不会执行。它自己也依赖 `Db`，依赖可以一层套一层。
-- **`HTTPBearer`**：FastAPI 自带的，负责从请求头 `Authorization: Bearer xxx` 里取出 `xxx`。用它还有个好处：`/docs` 右上角会出现 **Authorize** 按钮，填一次 token，之后点着试的请求都会自动带上。
-- **登录失败只说「用户名或密码错误」**：如果分别提示「用户不存在」「密码错误」，别人就能一个个试出哪些用户名注册过。
-- **注册成功直接返回 token**：等于注册完就登录了，前端不用再调一次登录接口。
-- **`raise ... from None`**：在 `except` 里抛新的错误时，不把原来那个 JWT 的报错串在后面，日志干净一些。
+```python
+# app/main.py（改这两处，其余不变）
+from app.routers import auth, tasks            # 多导入一个 auth
+
+app.include_router(auth.router)                # 新加：挂上 /auth/... 这几个接口，不挂就是 404
+app.include_router(tasks.router)               # 原来就有
+```
+
+`users` 是一张新表，启动时 `create_all` 会自动建上，不用删库。
 
 实际运行（curl）：
 
@@ -4008,50 +4020,47 @@ def me(user: CurrentUser) -> dict:           # 声明要 CurrentUser：没登录
 | `POST /auth/login`，密码错 | 401 | `{"code":-1,"msg":"用户名或密码错误","data":null}` |
 | `POST /auth/register`，用户名已存在 | 409 | `{"code":-1,"msg":"这个用户名已经被注册了","data":null}` |
 
-**测试**：`client` 这个 fixture 现在两个测试文件都要用，从 `test_tasks.py` 挪到 `tests/conftest.py`。`conftest.py` 是 pytest 约定的文件名，里面的 fixture 同一目录的所有测试文件都能直接用，不用 import。
+### 对比：用中间件做鉴权（了解即可）
 
-**`tests/test_auth.py`**，四个测试：
-
-```python
-# tests/test_auth.py（新建）
-from __future__ import annotations
-
-from fastapi.testclient import TestClient     # client 由 conftest.py 里的 fixture 提供，不用 import
-
-
-def test_register_login_me(client: TestClient) -> None:   # 注册 → 用 token 查自己 → 再登录一次
-    r = client.post("/auth/register", json={"username": "tom", "password": "123456"})
-    assert r.status_code == 201
-    token = r.json()["data"]["token"]          # 拿到注册返回的 token
-
-    r = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})   # headers= 带上请求头
-    assert r.json()["data"]["username"] == "tom"
-
-    r = client.post("/auth/login", json={"username": "tom", "password": "123456"})
-    assert r.status_code == 200
-```
+不用依赖、改用中间件（3.16 节细讲）也能做登录检查，有的项目会这么写。FastAPI 里主流是上面的依赖注入，这段只用来对比，**不用写进项目**：
 
 ```python
-# tests/test_auth.py（接着写）
-def test_wrong_password(client: TestClient) -> None:   # 密码错误
-    client.post("/auth/register", json={"username": "tom", "password": "123456"})
-    r = client.post("/auth/login", json={"username": "tom", "password": "wrong-pass"})
-    assert r.status_code == 401
-    assert r.json()["msg"] == "用户名或密码错误"
+# app/main.py（只做对比，项目里不这样写）
+import jwt
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+PUBLIC_PATHS = {"/auth/register", "/auth/login", "/docs", "/openapi.json"}   # 白名单：这些路径不要求登录；新加公开接口忘了加进来，就会被拦住
 
 
-def test_duplicate_username(client: TestClient) -> None:   # 用户名重复
-    client.post("/auth/register", json={"username": "tom", "password": "123456"})
-    r = client.post("/auth/register", json={"username": "tom", "password": "654321"})
-    assert r.status_code == 409
+@app.middleware("http")                        # 每个请求都会先进这个函数，不管是哪个接口
+async def auth_middleware(request: Request, call_next):
+    if request.url.path in PUBLIC_PATHS:       # 公开接口直接放行
+        return await call_next(request)
+
+    auth = request.headers.get("Authorization", "")   # 自己从请求头取 token（依赖写法里是 HTTPBearer 取的）
+    if not auth.startswith("Bearer "):
+        # 不能 raise fail(...)：中间件在异常处理器外层，抛出去没人接，会变成 500
+        # 只能自己拼统一格式返回
+        return JSONResponse({"code": -1, "msg": "请先登录", "data": None}, status_code=401)
+    try:
+        payload = jwt.decode(auth.removeprefix("Bearer "), settings.jwt_secret, algorithms=["HS256"])
+    except jwt.InvalidTokenError:              # 过期（ExpiredSignatureError）也是它的子类，一起接住
+        return JSONResponse({"code": -1, "msg": "登录无效，请重新登录", "data": None}, status_code=401)
+
+    request.state.user_id = int(payload["sub"])   # 结果没法当参数传给接口，只能挂在 request.state 上
+    return await call_next(request)            # 放行，去执行接口
 
 
-def test_me_requires_token(client: TestClient) -> None:   # 不带 token、带假 token
-    assert client.get("/auth/me").json()["msg"] == "请先登录"   # 没带
-    r = client.get("/auth/me", headers={"Authorization": "Bearer abc"})   # abc 不是合法的 token
-    assert r.status_code == 401
-    assert r.json()["msg"] == "登录无效，请重新登录"
+@app.get("/auth/me")
+def me(request: Request, session: Db) -> dict:   # 要多写一个 request 参数
+    user = session.get(User, request.state.user_id)   # 自己取出 id、自己查用户；request.state 没有类型，编辑器不提示
+    return success({"id": user.id, "username": user.username})
 ```
+
+实际运行：不带 token、带假 token 都返回 401，带对的 token 返回 200，`/auth/login`、`/docs` 不带也能访问；在中间件里改成 `raise fail(401, "请先登录")`，返回的是 `500 Internal Server Error`。
+
+和依赖写法比，要多管白名单、自己拼报错格式、接口里自己取用户。所以 FastAPI 里鉴权用依赖，中间件留给记日志、算耗时这类每个请求都要做、接口不需要结果的事。
 
 ## 3.14 一对多和分页 {#relations-paging}
 
@@ -4242,10 +4251,10 @@ def delete_task(task_id: int, user: CurrentUser, session: Db) -> dict:
 
 表结构又变了（`tasks` 加了 `user_id`），**再删一次库重建**：`dropdb todo && createdb todo`。这种「改一次表就删一次库」的做法到这里为止，下一节换成 alembic。
 
-**测试**：`conftest.py` 里加一个注册用户、返回请求头的小工具，任务的测试都带上它：
+**测试**：`client` 这个 fixture 后面 3.16 节的 `test_main.py` 也要用，先从 `test_tasks.py` 挪到 `tests/conftest.py`。`conftest.py` 是 pytest 约定的文件名，里面的 fixture 同一目录的所有测试文件都能直接用，不用 import。再在末尾加一个注册用户、返回请求头的小工具，任务的测试都带上它：
 
 ```python
-# tests/conftest.py（末尾加上）
+# tests/conftest.py（client fixture 挪过来之后，末尾加上）
 def login(client: TestClient, username: str = "tom") -> dict:
     """注册一个用户，返回带 token 的请求头。"""
     r = client.post("/auth/register", json={"username": username, "password": "123456"})   # 注册就直接拿到 token
@@ -4296,7 +4305,7 @@ def test_pagination(client: TestClient, auth: dict) -> None:   # auth：上面 f
     assert client.get("/tasks", params={"size": 500}, headers=auth).status_code == 422   # 超过 100 条，校验不通过
 ```
 
-`test_tasks.py` 开头要 `from tests.conftest import login`：fixture 能自动用，普通函数还是要 import。跑一下应该是 `12 passed`。
+`test_tasks.py` 开头要 `from tests.conftest import login`：fixture 能自动用，普通函数还是要 import。跑一下应该是 `8 passed`（3.11 节的 5 个加这里新加的 3 个）。
 
 ## 3.15 数据库迁移：Alembic {#alembic}
 
@@ -4636,7 +4645,7 @@ DATABASE_URL='postgresql+psycopg://...线上地址...' alembic upgrade head
 
 > 国内访问 `*.vercel.app` 经常不通（域名被污染），自己测试需要开代理；给别人用的话，绑一个自己的域名。
 
-**测试**：加两个，确认健康检查和 CORS 生效（应该是 `14 passed`）：
+**测试**：加两个，确认健康检查和 CORS 生效（应该是 `10 passed`）：
 
 ```python
 # tests/test_main.py（新建）
