@@ -4178,16 +4178,51 @@ def list_tasks(
         conditions.append(Task.done == done)             # 再加 AND done = ...
 
     total = session.scalar(select(func.count()).select_from(Task).where(*conditions))   # SELECT count(*) ... WHERE 同一组条件
+    # 拼成一条 SQL（以 page=2、size=20、done=false 为例）：
+    # SELECT * FROM tasks WHERE user_id = 1 AND done = false ORDER BY id DESC LIMIT 20 OFFSET 20
     stmt = (
-        select(Task)
-        .where(*conditions)                              # 同一组条件
-        .order_by(Task.id.desc())                        # ORDER BY id DESC
-        .offset((page - 1) * size)                       # OFFSET：跳过前面几页
-        .limit(size)                                     # LIMIT：这一页取几条
+        select(Task)                                     # SELECT * FROM tasks
+        .where(*conditions)                              # WHERE user_id = 1 AND done = false：和上面 count 用同一组条件
+        .order_by(Task.id.desc())                        # ORDER BY id DESC：新的排前面
+        .offset((page - 1) * size)                       # OFFSET 20：跳过前面几页，(2 - 1) × 20 = 20 条
+        .limit(size)                                     # LIMIT 20：这一页取几条
     )
     items = [TaskOut.model_validate(t) for t in session.scalars(stmt)]   # 执行查询，每条转成 TaskOut
     return success(TaskList(items=items, total=total or 0, page=page, size=size))
 ```
+
+实际运行。tom 登录后建了三条：写笔记（已完成）、读书、跑步：
+
+```
+GET /tasks
+Authorization: Bearer <tom 的 token>
+```
+
+```json
+{
+  "code": 200,
+  "msg": "ok",
+  "data": {
+    "items": [
+      {"id": 3, "title": "跑步", "done": false, "note": null, "created_at": "2026-11-20T16:21:04.497317+08:00", "updated_at": "2026-11-20T16:21:04.497318+08:00"},
+      {"id": 2, "title": "读书", "done": false, "note": null, "created_at": "2026-11-20T16:21:04.487204+08:00", "updated_at": "2026-11-20T16:21:04.487206+08:00"},
+      {"id": 1, "title": "写笔记", "done": true, "note": null, "created_at": "2026-11-20T16:21:04.474762+08:00", "updated_at": "2026-11-20T16:21:04.506914+08:00"}
+    ],
+    "total": 3,
+    "page": 1,
+    "size": 20
+  }
+}
+```
+
+其他几种请求（都带 tom 的 token，除非写了「不带」）：
+
+| 请求 | HTTP | 响应 |
+|---|---|---|
+| `GET /tasks?done=false` | 200 | `items` 只有「跑步」「读书」，`"total":2,"page":1,"size":20` |
+| `GET /tasks?page=2&size=2` | 200 | `items` 只有「写笔记」，`"total":3,"page":2,"size":2`：一共 3 条，每页 2 条，第 2 页只剩 1 条 |
+| `GET /tasks`，不带 token | 401 | `{"code":-1,"msg":"请先登录","data":null}` |
+| `GET /tasks?size=500` | 422 | `{"code":-1,"msg":"size：Input should be less than or equal to 100","data":null}` |
 
 **增：同名只在自己的任务里查**
 
@@ -4203,6 +4238,14 @@ def create_task(body: TaskCreate, user: CurrentUser, session: Db) -> dict:
     session.commit()                                     # INSERT
     return success(TaskOut.model_validate(task), msg="创建成功")
 ```
+
+实际运行（jerry 是另一个已注册的用户）：
+
+| 请求 | HTTP | 响应 |
+|---|---|---|
+| `POST /tasks`，tom，`{"title":"写周报","note":"周五前"}` | 201 | `{"code":200,"msg":"创建成功","data":{"id":4,"title":"写周报","done":false,"note":"周五前","created_at":"2026-11-20T08:21:04.552446Z","updated_at":"2026-11-20T08:21:04.552446Z"}}` |
+| `POST /tasks`，tom，`{"title":"读书"}` | 409 | `{"code":-1,"msg":"已经有一条同名的未完成任务","data":null}` |
+| `POST /tasks`，jerry，`{"title":"读书"}` | 201 | `{"code":200,"msg":"创建成功","data":{"id":5,"title":"读书",...}}`：别人的同名任务不算重名 |
 
 **查一条、改、删：都走 load_task**
 
@@ -4227,6 +4270,18 @@ def delete_task(task_id: int, user: CurrentUser, session: Db) -> dict:
     session.commit()                                     # DELETE
     return success(msg="删除成功")
 ```
+
+实际运行（任务 2「读书」、任务 3「跑步」都是 tom 的）：
+
+| 请求 | HTTP | 响应 |
+|---|---|---|
+| `GET /tasks/2`，tom | 200 | `{"code":200,"msg":"ok","data":{"id":2,"title":"读书","done":false,"note":null,...}}` |
+| `GET /tasks/2`，jerry | 404 | `{"code":-1,"msg":"没有这个任务","data":null}`：别人的任务当成不存在 |
+| `PATCH /tasks/2/done`，tom | 200 | `{"code":200,"msg":"ok","data":{"id":2,"title":"读书","done":true,...}}` |
+| `PATCH /tasks/2/done`，jerry | 404 | `{"code":-1,"msg":"没有这个任务","data":null}` |
+| `DELETE /tasks/3`，jerry | 404 | `{"code":-1,"msg":"没有这个任务","data":null}` |
+| `DELETE /tasks/3`，tom | 200 | `{"code":200,"msg":"删除成功","data":null}` |
+| `GET /tasks/3`，tom，删完再查 | 404 | `{"code":-1,"msg":"没有这个任务","data":null}` |
 
 - **每个接口都加了 `user: CurrentUser`**：不登录访问任何任务接口都是 401。
 - **列表**：条件里加 `Task.user_id == user.id`，只查自己的。
