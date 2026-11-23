@@ -101,6 +101,8 @@ uv run uvicorn app.main:app --reload --port 8000
 
 本地不配置也能跑：数据库用 `backend/dev.db`（SQLite）。`npm run dev` 打开的页面会连本机的 8000 端口，其他情况（线上、双击打开的 HTML）连线上的后端。
 
+线上地址：前端 https://notes.belong.run ，后端 https://api.belong.run 。这是两个 Vercel 项目绑的自定义域名，解析在腾讯云 DNSPod（各一条 CNAME，值见 Vercel 项目的 Domains 页）。`*.vercel.app` 在国内被 DNS 污染打不开，所以不用它。
+
 | 接口 | 作用 |
 |---|---|
 | `POST /auth/register` | 注册，直接返回 token |
