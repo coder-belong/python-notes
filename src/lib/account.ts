@@ -8,7 +8,7 @@
 import { emptyData, type StudyData } from "./study-store";
 
 /** 后端地址：本地开发连本机的 uvicorn，其他情况（线上、双击打开的单文件 HTML）连线上。 */
-const PROD_API = process.env.NEXT_PUBLIC_API_URL || "https://api.belong.run"; // 国内 *.vercel.app 被 DNS 污染，用自己的域名
+export const PROD_API = process.env.NEXT_PUBLIC_API_URL || "https://api.belong.run"; // 国内 *.vercel.app 被 DNS 污染，用自己的域名
 
 export function apiBase(): string {
   const host = typeof location === "undefined" ? "" : location.hostname;

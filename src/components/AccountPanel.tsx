@@ -6,6 +6,8 @@ import { apiGet } from "@/lib/account";
 import { formatDuration, STUDIED_DAY_SECONDS } from "@/lib/study-store";
 import type { useStudy } from "@/lib/use-study";
 
+import PushRemote, { isLocalSite } from "./PushRemote";
+
 type Study = ReturnType<typeof useStudy>;
 
 function timeText(at?: number): string {
@@ -369,6 +371,8 @@ export default function AccountPanel({
             )}
           </form>
         )}
+        {/* 本地网站：学的时间只存在本机，这里手动推到线上账号 */}
+        {!gate && isLocalSite() && <PushRemote data={data} />}
       </div>
     </div>
   );

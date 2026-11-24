@@ -1,0 +1,78 @@
+/* 账号弹窗里的「同步到线上」（只在本地网站显示） */
+.push-remote {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  font-size: 13px;
+}
+
+.push-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.push-head b {
+  font-size: 14px;
+}
+
+.push-head span,
+.push-row em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.push-desc {
+  margin: 4px 0 10px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.push-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.push-row .btn {
+  flex: none;
+}
+
+.push-login {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.push-login input {
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.push-login .btn {
+  grid-column: 1 / -1;
+}
+
+.push-msg {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+}
+
+.push-msg.ok {
+  color: var(--done);
+}
+
+.push-msg.err {
+  color: #d1453b;
+}
