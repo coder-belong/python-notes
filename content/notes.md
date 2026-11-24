@@ -4989,7 +4989,7 @@ import os
 
 from openai import OpenAI
 
-client = OpenAI(
+client = OpenAI(                              # 创建客户端对象，后面的请求都通过它发
     api_key=os.environ["DEEPSEEK_API_KEY"],   # 从环境变量读 key
     base_url="https://api.deepseek.com",      # 发到 DeepSeek，不写就是发到 OpenAI
 )
@@ -5000,8 +5000,7 @@ resp = client.chat.completions.create(        # 发一次请求，等模型整�
     extra_body={"thinking": {"type": "disabled"}},   # 关掉思考模式，见下面
 )
 
-print(resp.choices[0].message.content)        # 模型的回答
-# FastAPI 是一个基于 Python 类型提示构建的现代、高性能 Web 框架，用于快速开发 API，支持自动生成交互式文档并具备异步能力。
+print(resp.choices[0].message.content)        # 模型的回答：FastAPI 是一个基于 Python 类型提示构建的现代、高性能 Web 框架，用于快速开发 API，支持自动生成交互式文档并具备异步能力。
 print(resp.choices[0].finish_reason)          # stop：正常说完了
 print(resp.usage.prompt_tokens, resp.usage.completion_tokens, resp.usage.total_tokens)
 # 9 34 43                                     输入 9 个 token，输出 34 个，一共 43 个（按 token 收费）
@@ -5037,8 +5036,9 @@ import os
 
 from openai import OpenAI
 
+# 创建客户端对象：其他文件 from llm import client 直接拿来用
 client = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
-MODEL = "deepseek-flash"
+MODEL = "deepseek-flash"                           # 默认用的模型
 NO_THINKING = {"thinking": {"type": "disabled"}}   # 关掉思考模式
 ```
 
@@ -5046,11 +5046,11 @@ NO_THINKING = {"thinking": {"type": "disabled"}}   # 关掉思考模式
 # think.py：不关思考模式，看看多了什么
 from llm import client
 
-resp = client.chat.completions.create(
+resp = client.chat.completions.create(        # 发一次请求，这次不关思考模式
     model="deepseek-flash",
     messages=[{"role": "user", "content": "一个笼子里有鸡和兔，共 10 个头、28 只脚，鸡兔各几只？只给答案"}],
 )
-msg = resp.choices[0].message
+msg = resp.choices[0].message          # 模型回的这条消息
 print(msg.content)                     # 鸡6只，兔4只。
 print(msg.reasoning_content[:100])     # 思考过程，和 content 平级：
 # We need answer only. Need compute. Let chicken x rabbit y. x+y=10, 2x+4y=28 => x+2y=14 => subtract x
@@ -5059,7 +5059,25 @@ print(resp.usage.completion_tokens, resp.usage.completion_tokens_details.reasoni
 ```
 
 - **关思考**：`extra_body={"thinking": {"type": "disabled"}}`。`extra_body` 是 openai SDK 留的口子：OpenAI 自己没有、DeepSeek 特有的参数放这里。
-- 本阶段的例子都关掉思考；数学、逻辑、写代码这类难题再打开。
+
+同一道题，关掉思考再问一次：
+
+```python
+# think.py（接着写）：关掉思考模式
+resp = client.chat.completions.create(        # 发一次请求，这次关掉思考
+    model="deepseek-flash",
+    messages=[{"role": "user", "content": "一个笼子里有鸡和兔，共 10 个头、28 只脚，鸡兔各几只？只给答案"}],
+    extra_body={"thinking": {"type": "disabled"}},   # 关思考：DeepSeek 特有的参数，放进 extra_body
+)
+msg = resp.choices[0].message                 # 模型回的这条消息
+print(msg.content)                            # 鸡4只，兔6只。   错了（4×2 + 6×4 = 32 只脚）；跑了 11 次，错了 7 次
+print(getattr(msg, "reasoning_content", None))   # None   没有思考过程（直接写 msg.reasoning_content 会报 AttributeError）
+print(resp.usage.completion_tokens)           # 8      只输出了答案本身，比开思考的 76 少很多
+```
+
+- 关思考：更快、更便宜，但这种要算一算的题时对时错。
+- 开思考：先想再答，答对了，但输出 token 多了好几倍。
+- 所以本阶段的例子（翻译、提取、问答）都关掉思考；遇到计算、逻辑、写代码再打开。
 
 > 模型名、价格会变，以 DeepSeek 的 API 文档（api-docs.deepseek.com）为准。写错模型名会直接 400，报错里会列出现在支持的名字。
 
@@ -5117,7 +5135,7 @@ AI 应用里大部分「功能」，其实就是写好的 system prompt：客服
 from llm import MODEL, NO_THINKING, client
 
 
-def ask(messages):
+def ask(messages):                            # 发一次请求，返回回答和这次输入的 token 数
     resp = client.chat.completions.create(model=MODEL, messages=messages, extra_body=NO_THINKING)
     return resp.choices[0].message.content, resp.usage.prompt_tokens   # 回答、这次输入了多少 token
 
@@ -5148,7 +5166,7 @@ print(len(history))                                            # 7：1 条 syste
 from llm import MODEL, NO_THINKING, client
 
 
-def count_tokens(text):
+def count_tokens(text):                       # 算一段文字有多少 token
     resp = client.chat.completions.create(
         model=MODEL, messages=[{"role": "user", "content": text}], max_tokens=1, extra_body=NO_THINKING,
     )                                          # max_tokens=1：只想看输入有多少 token，回答只要 1 个
@@ -5167,7 +5185,7 @@ print(len(en), count_tokens(en))   # 600 165   600 个字母 → 165 个 token�
 
 ```python
 # token_demo.py（接着写）
-resp = client.chat.completions.create(
+resp = client.chat.completions.create(        # 最多只让输出 30 个 token，看回答被截断
     model=MODEL, messages=[{"role": "user", "content": "详细介绍一下 FastAPI"}], max_tokens=30, extra_body=NO_THINKING,
 )
 print(resp.choices[0].message.content)
@@ -5215,7 +5233,7 @@ def cost_usd(usage):
 
 rules = "你是 todo 应用的客服。规则：" + "回答要礼貌、简短，只回答和 todo 应用有关的问题。" * 50   # 故意弄一段很长的 system
 for q in ["怎么新建任务？", "怎么删除任务？"]:
-    resp = client.chat.completions.create(
+    resp = client.chat.completions.create(    # 同一段 system，连问两次
         model=MODEL,
         messages=[{"role": "system", "content": rules}, {"role": "user", "content": q}],
         extra_body=NO_THINKING,
@@ -5243,7 +5261,7 @@ from openai import OpenAI
 
 from llm import MODEL, NO_THINKING
 
-client = OpenAI(
+client = OpenAI(                              # 创建客户端对象，这次带上超时和重试设置
     api_key=os.environ["DEEPSEEK_API_KEY"],
     base_url="https://api.deepseek.com",
     timeout=30,        # 一次请求最多等 30 秒（默认等 600 秒，太长了）
@@ -5308,6 +5326,7 @@ import time
 
 from openai import AsyncOpenAI
 
+# 创建异步客户端对象：请求要 await，可以同时发好几个
 client = AsyncOpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
 limit = asyncio.Semaphore(3)                   # 最多同时 3 个请求
 
@@ -5375,7 +5394,7 @@ SYSTEM = """从用户的话里提取一个待办任务，只输出 json，格式
 
 
 def extract(text: str) -> TaskDraft:
-    resp = client.chat.completions.create(
+    resp = client.chat.completions.create(    # 发请求，要求模型按 SYSTEM 里的格式输出 JSON
         model=MODEL,
         messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": text}],
         response_format={"type": "json_object"},  # JSON 模式：保证输出是合法的 JSON
@@ -5505,10 +5524,10 @@ FUNCTIONS = {"list_tasks": list_tasks, "finish_task": finish_task}   # 函数名
 
 ```python
 # tool_demo.py（接着写）
-resp = client.chat.completions.create(
+resp = client.chat.completions.create(        # 发请求，带上 tools：告诉模型有哪些函数能用
     model=MODEL, messages=[{"role": "user", "content": "我还有哪些任务没做完？"}], tools=TOOLS, extra_body=NO_THINKING,
 )
-m = resp.choices[0].message
+m = resp.choices[0].message      # 模型回的这条消息
 print(repr(m.content))           # '我来查一下你未完成的任务。'   可能带一句话，也可能是空的
 for c in m.tool_calls:
     print(c.id, c.type, c.function.name, repr(c.function.arguments))
@@ -5521,7 +5540,7 @@ for c in m.tool_calls:
 
 ```python
 # tool_demo.py（接着写）
-resp = client.chat.completions.create(
+resp = client.chat.completions.create(        # 同样带上 tools，但问一句和函数无关的话
     model=MODEL, messages=[{"role": "user", "content": "你好"}], tools=TOOLS, extra_body=NO_THINKING,
 )
 print(resp.choices[0].finish_reason, resp.choices[0].message.tool_calls)   # stop None
@@ -5536,8 +5555,9 @@ print(resp.choices[0].finish_reason, resp.choices[0].message.tool_calls)   # sto
 messages = [{"role": "user", "content": "我还有哪些任务没做完？把跑步那个标成完成"}]
 
 for step in range(1, 6):                          # 最多 5 轮，防止模型一直调用停不下来
+    # 带着目前为止的全部历史调一次模型
     resp = client.chat.completions.create(model=MODEL, messages=messages, tools=TOOLS, extra_body=NO_THINKING)
-    msg = resp.choices[0].message
+    msg = resp.choices[0].message                 # 模型回的这条消息
     print(f"第 {step} 次调用，finish_reason={resp.choices[0].finish_reason}")
     if not msg.tool_calls:                        # ① 不要调函数了：这就是最终回答
         print("最终回答：", msg.content)
@@ -5598,7 +5618,7 @@ for step in range(1, 6):                          # 最多 5 轮，防止模型�
 # stream_demo.py
 from llm import MODEL, NO_THINKING, client
 
-stream = client.chat.completions.create(
+stream = client.chat.completions.create(      # 发请求，拿到的是一串片段，不是完整结果
     model=MODEL,
     messages=[{"role": "user", "content": "用三句话介绍 Python"}],
     stream=True,                               # 流式：边生成边返回
@@ -5659,8 +5679,8 @@ from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
-app = FastAPI()
-client = AsyncOpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")   # 接口里用异步的
+app = FastAPI()                               # 创建 FastAPI 应用对象
+client = AsyncOpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")   # 创建异步客户端对象：接口里用异步的
 
 
 class ChatIn(BaseModel):

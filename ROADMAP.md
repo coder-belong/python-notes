@@ -35,6 +35,7 @@
 - [x] FastAPI（第 3.1、3.2 节）
 - [x] 请求与响应（第 3.3、3.4 节）
 - [x] 路由、依赖注入、APIRouter 拆文件（第 3.9、3.10、3.12 节）
+- [ ] 分层架构：router / service / repository 各管什么，业务逻辑不写在路由里
 - [x] Middleware 中间件（第 3.16 节）
 - [x] JWT 身份认证（含密码哈希）（第 3.13 节）
 - [x] 鉴权概念：Cookie、Session、JWT 的区别（第 3.13 节）
@@ -44,7 +45,7 @@
 - [x] SQL 基础：表设计、索引、分页、事务、关联查询、upsert（第 3.6 节，用 PostgreSQL 手写）
 - [x] SQLAlchemy 表关系：一对多（第 3.14 节；多对多只提了思路）
 - [x] MySQL / PostgreSQL：两者区别（第 3.6 节）、换数据库和 alembic 迁移实操（第 3.15 节）
-- [ ] Redis：缓存、计数、过期时间
+- [ ] Redis：缓存、计数、过期时间（开始阶段五前先补：任务队列、限流、会话缓存都要用）
 - [x] 配置管理 pydantic-settings（第 3.12 节）
 - [ ] 文件上传（放到阶段四做 RAG 时一起讲：上传文档）
 
@@ -54,12 +55,18 @@
 - [x] 消息结构、System Prompt、Token 和上下文长度（第 4.2 节）
 - [x] 成本、超时、重试、限流（第 4.3 节）
 - [ ] Prompt Engineering（次要：边做边学，不用单独花时间）
+- [ ] Few-shot：在 prompt 里给几个示例，让输出格式和风格更稳
+- [ ] Transformer、上下文窗口是怎么回事（次要：只要概念，不推公式）
+- [ ] 模型选型：DeepSeek、通义、豆包、Kimi 各自擅长什么，代码里怎么方便切换模型
+- [ ] 多模态：让模型看图（截图、票据、图表），语音转文字；会调接口即可
+- [ ] 本地模型：用 Ollama 在本机跑一个小模型（次要：数据不能出内网的场景会用到）
 - [x] Structured Output（结合 Pydantic）（第 4.4 节）
 - [x] Function Calling（第 4.5 节）
 - [x] Streaming 流式输出（第 4.6 节）
 - [x] SSE：后端推送模型输出和执行事件，前端用 `fetch` + `ReadableStream` 接收；处理连接断开、取消、最终结果保存（第 4.6 节）
 - [ ] Embedding 向量化
 - [ ] RAG 检索增强生成
+- [ ] 文档解析：PDF、Word、网页、表格转成干净文字；扫描件 OCR，去掉页眉页脚
 - [ ] RAG 细节：文档切分、关键词检索（BM25）、混合检索、RRF / Rerank、回答带出处
 - [ ] pgvector：在 PostgreSQL 里做向量检索，业务数据和向量放同一个库
 - [ ] 向量数据库（次要：先用 pgvector，不必单独学一个向量库）
@@ -73,6 +80,7 @@
 - [ ] Tool Calling
 - [ ] 工具系统：Tool Schema、校验模型输出、失败不能无限重试、高风险操作人工确认
 - [ ] 工作流编排
+- [ ] LangChain：PromptTemplate、Chain、Runnable、对话记忆、输出解析（学到能看懂、能用，很多招聘要求写它）
 - [ ] LangGraph（次要：手写过 Runtime 再学）
 - [ ] 多 Agent 协作（次要：先把单 Agent 做扎实）
 - [ ] Memory 记忆机制
@@ -93,11 +101,14 @@
 - [ ] SSE / WebSocket（SSE 放到阶段四和流式输出一起学，这里补 WebSocket 原理）
 - [ ] 错误处理与监控
 - [ ] CI/CD（次要：Vercel、GitHub Actions 会用即可）
+- [ ] Coze / Dify：低代码搭智能体、工作流、知识库（次要：花一两天会用，用来快速做演示）
+- [ ] 微调概念：SFT、LoRA 是什么，什么时候选微调、什么时候选 RAG（次要：只学概念，不动手训练）
 - [ ] HTTPS、环境变量、日志：上线必备
 
 ## 阶段七：综合项目与面试
 
 - [ ] 综合项目：一个业务型 Agent（比如智能工单处理），覆盖知识库检索、业务查询工具、高风险操作人工确认、SSE 展示执行过程、任务记录和失败重试
+- [ ] 备选项目：ChatBI（用自然语言查业务数据，模型生成 SQL、执行、画图表）（次要：时间够再做）
 - [ ] 项目包装：README、架构图、演示视频、简历上的项目描述
 - [ ] 围绕项目的追问准备：为什么用 SSE 不用 WebSocket、为什么限制最大步数、模型输出格式错了怎么办、工具失败怎么处理、为什么混合检索、为什么选 pgvector、长会话为什么要摘要
 - [ ] 前端基础复习：JavaScript、浏览器、React、TypeScript、工程化（求职最先考的部分）
