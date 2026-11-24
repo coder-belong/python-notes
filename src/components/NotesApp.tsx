@@ -29,6 +29,8 @@ import SideResizer from "./SideResizer";
 import ThemeToggle from "./ThemeToggle";
 import StudyPanel, { StudyEntry } from "./StudyPanel";
 
+import "./Layout.css";
+
 /** 看过的最新一条更新日志的日期：比它新的就在「⋯」上显示小红点。 */
 const CHANGELOG_SEEN_KEY = "python-notes:changelog-seen";
 
