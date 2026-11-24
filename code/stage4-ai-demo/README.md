@@ -1,4 +1,4 @@
-# stage4-ai-demo：阶段四练习代码
+# stage4-ai-demo：阶段四「大模型应用基础」练习代码
 
 调大模型的练习：DeepSeek 模型，`openai` SDK。每个文件都能单独运行。
 

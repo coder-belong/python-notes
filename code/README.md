@@ -7,7 +7,7 @@
 | `stage1-python-basics/` | 阶段一：Python 语言基础，每节一个子目录 |
 | `stage2-advanced/` | 阶段二：Python 进阶与工程化，每节一个子目录 |
 | `stage3-todo-api/` | 阶段三：3.16 节结束时的完整 todo 后端（FastAPI + Postgres + Alembic + JWT），带测试 |
-| `stage4-ai-demo/` | 阶段四：调大模型（DeepSeek + openai SDK），4.1～4.6 |
+| `stage4-ai-demo/` | 阶段四：大模型应用基础（DeepSeek + openai SDK），4.1～4.6 |
 
 - 每个工程各自建虚拟环境 `.venv`，不提交；换电脑后按 README 重建。
 - `stage3-todo-api/.env` 放本机的数据库地址和密钥，不提交；照着 `.env.example` 自己建。

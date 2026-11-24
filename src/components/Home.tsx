@@ -12,13 +12,14 @@ type Props = {
   done: Record<string, boolean>;
   reading: Reading | null;
   studyDays: Record<string, number>;
+  onOpenProgress: () => void;
 };
 
-/** 首页：继续学习、学习热力图、各部分进度、12 周学习路线。 */
+/** 首页：继续学习、学习热力图（旁边是「学习过程」抽屉的入口）、学习路线（每个阶段带「已写」和「已学」进度）。各节的列表在侧栏目录里，首页不再重复。 */
 /** 学习路线里优先级的文字：★★★ / ★★ / ★。 */
 const PRIORITY_LABEL = { 3: "必学", 2: "会用", 1: "了解" } as const;
 
-export default function Home({ notes, groups, done, reading, studyDays }: Props) {
+export default function Home({ notes, groups, done, reading, studyDays, onOpenProgress }: Props) {
   const { sections, roadmap } = notes;
   const doneCount = sections.filter((s) => done[s.id]).length;
   const last = reading && sections.find((s) => s.id === reading.id);
@@ -46,73 +47,16 @@ export default function Home({ notes, groups, done, reading, studyDays }: Props)
 
       <h2 className="home-h">
         学习热力图
-        <a className="home-h-link" href="#progress">
+        <button type="button" className="home-h-link" onClick={onOpenProgress}>
           学习过程 →
-        </a>
+        </button>
       </h2>
       <Heatmap days={studyDays} />
-
-      <h2 className="home-h">笔记目录</h2>
-      {/* 「开始之前」这种不编号的部分只有一两节，放成一行，不占一张大卡片 */}
-      {groups
-        .filter((g) => g.items.every((s) => !s.num))
-        .map((g) => (
-          <div key={g.part} className="part-pre">
-            <span className="part-pre-label">{g.part}</span>
-            {g.items.map((s) => (
-              <a key={s.id} href={`#${s.id}`} className={done[s.id] ? "done" : ""}>
-                <span className="dot" />
-                {s.title}
-              </a>
-            ))}
-          </div>
-        ))}
-      <div className="part-cards">
-        {groups
-          .filter((g) => g.items.some((s) => s.num))
-          .map((g) => {
-            const n = g.items.filter((s) => done[s.id]).length;
-            const todo = g.items.find((s) => !done[s.id]) ?? g.items[0];
-            // 「阶段一：Python 语言基础」拆成小标签和标题两行，标题不容易折行
-            const [stage, name] = g.part.includes("：") ? g.part.split("：", 2) : [null, g.part];
-            return (
-              <div key={g.part} className="part-card">
-                <div className="part-card-head">
-                  <div>
-                    {stage && <span className="part-card-stage">{stage}</span>}
-                    <b>{name}</b>
-                  </div>
-                  <span className="part-card-count">
-                    {n}/{g.items.length}
-                  </span>
-                </div>
-                <span className="mini-bar wide">
-                  <i style={{ width: `${(n / g.items.length) * 100}%` }} />
-                </span>
-                <ul>
-                  {g.items.map((s) => (
-                    <li key={s.id} className={done[s.id] ? "done" : ""}>
-                      <a href={`#${s.id}`}>
-                        <span className="dot" />
-                        <span className="sec-num">{s.num}</span>
-                        <span className="part-card-name">{s.name}</span>
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-                <a className="part-card-go" href={`#${todo.id}`}>
-                  {n === g.items.length ? "复习这部分" : n === 0 ? "开始这部分" : "接着学"}
-                  <span aria-hidden>→</span>
-                </a>
-              </div>
-            );
-          })}
-      </div>
 
       {roadmap.length > 0 && (
         <>
           <h2 className="home-h">学习路线</h2>
-          <p className="hint">打勾的是笔记里已经写了的，没勾的是后面要补的内容。</p>
+          <p className="hint">「已写」是这个阶段的内容笔记里写了多少（打勾的项），「已学」是这个阶段的笔记你学完了几节。</p>
           <p className="prio-legend">
             <span className="prio p3">必学</span>面试必问、工作常用
             <span className="prio p2">会用</span>能上手、讲得清原理
@@ -121,6 +65,10 @@ export default function Home({ notes, groups, done, reading, studyDays }: Props)
           <div className="stages">
             {roadmap.map((stage, i) => {
               const written = stage.items.filter((it) => it.done).length;
+              // 笔记里对应的部分：按「阶段X」对上（路线标题带周数，笔记标题不带）
+              const key = stage.title.split("：")[0];
+              const group = groups.find((g) => g.part.split("：")[0] === key);
+              const learned = group ? group.items.filter((s) => done[s.id]).length : 0;
               return (
                 <details key={stage.title} className="stage" open={i < 3}>
                   <summary>
@@ -129,6 +77,14 @@ export default function Home({ notes, groups, done, reading, studyDays }: Props)
                     <span className="stage-weeks">{stage.title.match(/（(.+)）/)?.[1]}</span>
                     <span className="stage-count">
                       已写 {written}/{stage.items.length}
+                      {group && (
+                        <>
+                          {" · "}
+                          <span className={learned === group.items.length ? "stage-learned all" : "stage-learned"}>
+                            已学 {learned}/{group.items.length} 节
+                          </span>
+                        </>
+                      )}
                     </span>
                   </summary>
                   <ul>

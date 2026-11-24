@@ -22,7 +22,7 @@ import AskAI from "./AskAI";
 import ChangelogPanel from "./ChangelogPanel";
 import FocusBar from "./FocusBar";
 import Home from "./Home";
-import ProgressPage from "./ProgressPage";
+import ProgressDrawer from "./ProgressDrawer";
 import MoreMenu from "./MoreMenu";
 import SectionLayout from "./SectionToc";
 import SideResizer from "./SideResizer";
@@ -33,6 +33,17 @@ import StudyPanel, { StudyEntry } from "./StudyPanel";
 const CHANGELOG_SEEN_KEY = "python-notes:changelog-seen";
 
 /** 第 0 节没有所属部分，侧栏里归到这一组。 */
+/** 这个标签页是不是第一次打开网站：第一次返回 true，并记下来；之后（包括刷新）都返回 false。 */
+function firstOpenInTab(): boolean {
+  try {
+    if (sessionStorage.getItem("python-notes:opened")) return false;
+    sessionStorage.setItem("python-notes:opened", "1");
+  } catch {
+    // 存不了就当第一次：顶多多跳一次
+  }
+  return true;
+}
+
 const NO_PART = "开始之前";
 
 export type Group = { part: string; items: Section[] };
@@ -45,8 +56,8 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   const { sections } = notes;
   // undefined：还没读到网址（服务端预渲染和刚打开的一瞬间）；null：首页
   const [route, setRoute] = useState<string | null | undefined>(undefined);
-  /** 不是某一节的单独页面：#progress 是学习过程页。route 这时是 null。 */
-  const [page, setPage] = useState<"progress" | null>(null);
+  /** 学习过程抽屉：首页「学习热力图」旁边点开。 */
+  const [progressOpen, setProgressOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -118,8 +129,10 @@ export default function NotesApp({ notes }: { notes: Notes }) {
     // 只能在浏览器里读 localStorage 和网址，读完同步到 state
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setReading(saved);
-    // 打开网站时网址没带 #：直接回到上次读的那一节（之后点「首页」不再跳）
-    if (!location.hash && saved && sections.some((s) => s.id === saved.id)) {
+    // 新打开网站、网址没带 # 时：直接回到上次读的那一节。
+    // 只在这个标签页第一次打开时跳：在首页刷新还是首页（sessionStorage 跟着标签页走，刷新不会清掉）
+    const first = firstOpenInTab();   // 先记下「这个标签页打开过了」，带 # 打开的也算
+    if (first && !location.hash && saved && sections.some((s) => s.id === saved.id)) {
       history.replaceState(null, "", `#${encodeURIComponent(saved.id)}`);
     }
     const apply = () => {
@@ -127,7 +140,11 @@ export default function NotesApp({ notes }: { notes: Notes }) {
       const found = sections.some((s) => s.id === id);
       restoreY.current = found ? loadPosition(id) : null;   // 每节各记各的位置，没读过就从头
       setRoute(found ? id : null);
-      setPage(id === "progress" ? "progress" : null);
+      // 以前的学习过程页网址 #progress：现在是抽屉，回到首页再打开它
+      if (id === "progress") {
+        history.replaceState(null, "", location.pathname);
+        setProgressOpen(true);
+      }
       setNavOpen(false);
     };
     apply();
@@ -154,7 +171,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setOpenParts((s) => (s.has(part) ? s : new Set(s).add(part)));
     }
-  }, [route, section, page]);
+  }, [route, section]);
 
   // 记住读到哪：停止滚动半秒后存一次
   useEffect(() => {
@@ -249,7 +266,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   // 键盘：← → 切换上一节 / 下一节（在输入框里、或者开着弹窗时不响应）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (statsOpen || accountOpen || adminOpen || changelogOpen || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (statsOpen || progressOpen || accountOpen || adminOpen || changelogOpen || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if ((e.target as HTMLElement).closest?.("input, textarea, [contenteditable]")) return;
       // \ 收起 / 展开侧栏
       if (e.key === "\\") {
@@ -271,7 +288,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [prev, next, statsOpen, accountOpen, adminOpen, changelogOpen, focus, enterFocus, exitFocus]);
+  }, [prev, next, statsOpen, progressOpen, accountOpen, adminOpen, changelogOpen, focus, enterFocus, exitFocus]);
 
   // 专注模式：给 <html> 加个 class，CSS 负责收起侧栏、正文居中
   useEffect(() => {
@@ -395,7 +412,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
             <ThemeToggle />
           </div>
           <StudyEntry study={study} onOpen={() => setStatsOpen(true)} />
-          {/* 首页、学习过程收进「⋯」菜单（标题也能回首页），目录只留各阶段的节 */}
+          {/* 首页收进「⋯」菜单（标题也能回首页），学习过程在首页打开；目录只留各阶段的节 */}
           <nav>
             {groups.map((g) => {
               const done = g.items.filter((s) => study.data.done[s.id]).length;
@@ -456,12 +473,15 @@ export default function NotesApp({ notes }: { notes: Notes }) {
             </div>
           )}
 
-          {page === "progress" && !study.guestBlocked && (
-            <ProgressPage groups={groups} data={study.data} />
-          )}
-
-          {route === null && !page && !study.guestBlocked && (
-            <Home notes={notes} groups={groups} done={study.data.done} reading={reading} studyDays={study.data.days} />
+          {route === null && !study.guestBlocked && (
+            <Home
+              notes={notes}
+              groups={groups}
+              done={study.data.done}
+              reading={reading}
+              studyDays={study.data.days}
+              onOpenProgress={() => setProgressOpen(true)}
+            />
           )}
 
           {section && !study.guestBlocked && (
@@ -568,6 +588,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
         />
       )}
       {statsOpen && <StudyPanel study={study} sections={sections} onClose={() => setStatsOpen(false)} />}
+      {progressOpen && <ProgressDrawer groups={groups} data={study.data} onClose={() => setProgressOpen(false)} />}
       {study.guestBlocked && (
         // 免费时间用完：挡住页面的注册 / 登录弹窗，关不掉，登录成功后自动消失
         <AccountPanel study={study} gate onClose={() => {}} onOpenAdmin={() => {}} />

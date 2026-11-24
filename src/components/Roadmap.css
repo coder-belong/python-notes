@@ -63,6 +63,10 @@
 /* 首页小标题右边的链接：学习热力图 → 学习过程 */
 .home-h-link {
   float: right;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
   margin-top: 2px;
   color: var(--accent);
   font-size: 13px;
@@ -72,4 +76,10 @@
 
 .home-h-link:hover {
   text-decoration: underline;
+}
+
+/* 阶段标题行里的「已学 n/m 节」：学完整个阶段变绿 */
+.stage-learned.all {
+  color: var(--done);
+  font-weight: 600;
 }
