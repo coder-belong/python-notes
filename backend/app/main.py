@@ -1,4 +1,4 @@
-"""接口：注册、登录、查当前用户、同步学习进度、访客上报时长，以及管理员查看所有用户和访客。"""
+"""接口：注册、登录、查当前用户、同步学习进度、访客上报时长，管理员查看所有用户和访客，以及问 AI（ai.py）。"""
 
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
@@ -10,7 +10,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
-from . import errors
+from . import ai, errors
 from .db import Base, Db, engine
 from .errors import fail, success
 from .models import Guest, GuestDay, SectionDate, SectionStat, StudyDay, SyncBatch, User
@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AI 应用开发笔记 API", lifespan=lifespan)
 errors.install(app)
+app.include_router(ai.router)  # 问 AI：/ai/chat
 
 # 前端和接口不在同一个域名（单文件 HTML 甚至是 file:// 打开的），浏览器要求接口声明允许跨域。
 # 登录凭证放在 Authorization 请求头里而不是 cookie，所以允许所有来源也不会被别的网站冒用

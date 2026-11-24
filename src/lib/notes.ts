@@ -34,11 +34,11 @@ export type ChangelogDay = { date: string; entries: ChangelogEntry[] };
 export type RoadmapItem = {
   done: boolean;
   html: string;
-  /** 标了「（次要）」或「（次要：说明）」的项：首页显示成淡色加「次要」标签，说明放在后面。 */
-  minor: boolean;
-  minorNote: string | null;
+  /** 优先级：行首写 ★★★ / ★★ / ★。3 必学，2 会用，1 了解（首页显示成淡色）；没写是 null。 */
+  priority: 1 | 2 | 3 | null;
 };
-export type RoadmapStage = { title: string; items: RoadmapItem[] };
+/** check：这个阶段的验收标准（ROADMAP 里阶段下面「验收：」开头的那一段）。 */
+export type RoadmapStage = { title: string; items: RoadmapItem[]; check: string | null };
 
 const NOTES_PATH = path.join(process.cwd(), "content", "notes.md");
 const ROADMAP_PATH = path.join(process.cwd(), "ROADMAP.md");
@@ -181,10 +181,12 @@ function collectToc(html: string): { html: string; toc: TocItem[] } {
   return { html: out, toc };
 }
 
-/** 行末的「（次要）」/「（次要：说明）」标记。 */
 // 节号写成「阶段.第几节」：## 2.5 async / await
 const SECTION_NUM = /^(\d+\.\d+)\s+(.+)$/;
-const MINOR = /（次要(?:：([^）]*))?）\s*$/;
+/** 行首的优先级：★★★ 必学、★★ 会用、★ 了解。 */
+const PRIORITY = /^(★{1,3})\s*/;
+/** 阶段下面的验收标准：「验收：……」 */
+const CHECK = /^验收：\s*/;
 
 /** 读 ROADMAP.md：只取「## 阶段…」下面的勾选清单，放到首页的学习路线里。 */
 function loadRoadmap(marked: Marked): RoadmapStage[] {
@@ -194,20 +196,22 @@ function loadRoadmap(marked: Marked): RoadmapStage[] {
   for (const token of tokens) {
     if (token.type === "heading" && (token as Tokens.Heading).depth === 2) {
       const text = (token as Tokens.Heading).text;
-      current = text.startsWith("阶段") ? { title: text, items: [] } : null;
+      current = text.startsWith("阶段") ? { title: text, items: [], check: null } : null;
       if (current) stages.push(current);
+      continue;
+    }
+    if (current && token.type === "paragraph" && CHECK.test((token as Tokens.Paragraph).text)) {
+      current.check = marked.parseInline((token as Tokens.Paragraph).text.replace(CHECK, "")) as string;
       continue;
     }
     if (current && token.type === "list") {
       for (const item of (token as Tokens.List).items) {
         const raw = item.tokens.find((t) => t.type === "text")?.raw ?? item.text;
-        const minor = raw.match(MINOR);
-        const body = minor ? raw.slice(0, minor.index).trim() : raw;
+        const star = raw.match(PRIORITY);
         current.items.push({
           done: !!item.checked,
-          html: marked.parseInline(body) as string,
-          minor: !!minor,
-          minorNote: minor?.[1] ? (marked.parseInline(minor[1]) as string) : null,
+          html: marked.parseInline(star ? raw.slice(star[0].length) : raw) as string,
+          priority: star ? (star[1].length as 1 | 2 | 3) : null,
         });
       }
     }

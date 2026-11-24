@@ -1,0 +1,5 @@
+/* 「⋯」菜单里的链接（首页、学习过程）：和按钮项长得一样，不要下划线 */
+a.menu-item {
+  color: inherit;
+  text-decoration: none;
+}

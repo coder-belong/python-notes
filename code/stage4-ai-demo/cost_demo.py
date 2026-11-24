@@ -4,10 +4,11 @@ from llm import MODEL, NO_THINKING, client
 PRICE = {"hit": 0.006, "miss": 0.3, "output": 1.2}   # deepseek-flash 高峰价，美元 / 百万 token
 
 
-def cost_usd(usage):
+def cost_usd(usage):                          # 按这次请求的 usage 算花了多少美元
     hit = usage.prompt_cache_hit_tokens       # 输入里命中缓存的 token
     miss = usage.prompt_cache_miss_tokens     # 输入里没命中的 token
     out = usage.completion_tokens             # 输出的 token
+    # 三部分 token × 各自单价，加起来；单价是「每百万 token」的价格，所以最后除以 100 万
     return (hit * PRICE["hit"] + miss * PRICE["miss"] + out * PRICE["output"]) / 1_000_000
 
 

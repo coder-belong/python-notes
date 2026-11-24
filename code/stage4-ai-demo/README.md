@@ -21,7 +21,7 @@ uv pip install openai pydantic fastapi uvicorn
 | 4.3 成本、超时、限流 | `cost_demo.py` 算钱和缓存；`error_demo.py` 超时和常见错误；`limit_demo.py` 用 Semaphore 控制并发 | `python cost_demo.py` |
 | 4.4 Structured Output | `json_demo.py` JSON 模式 + Pydantic 校验 | `python json_demo.py` |
 | 4.5 Function Calling | `tool_demo.py` 模型调用查任务、完成任务两个函数 | `python tool_demo.py` |
-| 4.6 流式和 SSE | `stream_demo.py` 流式输出；`chat_api.py` FastAPI SSE 接口；`chat.mjs` 前端接收和取消 | 见下面 |
+| 4.6 流式和 SSE | `stream_demo.py` 流式输出；`chat_api_min.py` SSE 最小版；`chat_api.py` FastAPI SSE 完整版（断开、出错、保存）；`chat.mjs` 前端接收和取消 | 见下面 |
 
 4.6 要开两个终端：
 

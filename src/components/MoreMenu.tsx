@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { applyPrefs, DEFAULT_PREFS, FONT_SIZES, loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
 
+import "./MoreMenu.css";
+
 const SIZE_LABEL: Record<number, string> = {
   14: "小",
   16: "标准",
@@ -22,7 +24,7 @@ type Props = {
 };
 
 /**
- * 侧栏顶部的「⋯」：不常用的设置和入口都收在这里（正文字号、更新日志、收起侧栏），
+ * 侧栏顶部的「⋯」：不常用的设置和入口都收在这里（首页、学习过程、正文字号、更新日志、收起侧栏），
  * 以后再加设置项也往这里放，侧栏顶部不再加按钮。浅色 / 深色切换常用，单独放在外面。
  */
 export default function MoreMenu({ hasNew, onOpenChangelog, collapsed, onToggleSidebar, placement }: Props) {
@@ -67,7 +69,7 @@ export default function MoreMenu({ hasNew, onOpenChangelog, collapsed, onToggleS
         type="button"
         className={`icon-btn ${open ? "active" : ""}`}
         onClick={() => setOpen((v) => !v)}
-        aria-label="更多：字号、更新日志"
+        aria-label="更多：首页、学习过程、字号、更新日志"
         aria-expanded={open}
         title="更多"
       >
@@ -81,6 +83,14 @@ export default function MoreMenu({ hasNew, onOpenChangelog, collapsed, onToggleS
 
       {open && (
         <div className={`menu-pop ${placement}`} role="menu">
+          {/* 两个整页的入口：不放在侧栏目录里，目录只留各阶段的节 */}
+          <a role="menuitem" className="menu-item" href="#" onClick={() => setOpen(false)}>
+            <span>首页 · 学习路线</span>
+          </a>
+          <a role="menuitem" className="menu-item" href="#progress" onClick={() => setOpen(false)}>
+            <span>学习过程</span>
+          </a>
+          <div className="menu-sep" />
           <div className="menu-row">
             <span>正文字号</span>
             <div className="font-step" aria-label="正文字号">

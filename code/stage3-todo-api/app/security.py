@@ -1,6 +1,7 @@
-# app/security.py（3.13）
+# app/security.py（3.13；3.18 末尾加 require_role / AdminUser）
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -56,3 +57,19 @@ def current_user(
 
 
 CurrentUser = Annotated[User, Depends(current_user)]   # 接口里写 user: CurrentUser 就要求登录
+
+
+# ---- 3.18：按角色限制 ----
+
+def require_role(*roles: str) -> Callable[[User], User]:
+    """生成一个依赖：先要求登录（CurrentUser），再要求角色在 roles 里，不在就 403。"""
+
+    def checker(user: CurrentUser) -> User:    # 依赖里再用依赖：先跑 current_user，没登录直接 401
+        if user.role not in roles:             # 登录了，但角色不够
+            raise fail(403, "没有权限")
+        return user
+
+    return checker
+
+
+AdminUser = Annotated[User, Depends(require_role("admin"))]   # 接口里写 _admin: AdminUser 就只有管理员能进

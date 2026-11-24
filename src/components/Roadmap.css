@@ -1,0 +1,75 @@
+/* 学习路线的优先级标签：必学 / 会用 / 了解 */
+.prio {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.prio.p3 {
+  background: color-mix(in srgb, #e5534b 14%, transparent);
+  color: #d1453b;
+}
+
+.prio.p2 {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.prio.p1 {
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.prio-legend {
+  margin: -4px 0 14px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 2;
+}
+
+.prio-legend .prio {
+  margin-left: 12px;
+}
+
+.prio-legend .prio:first-child {
+  margin-left: 0;
+}
+
+/* 阶段的验收标准 */
+.stage-check {
+  display: flex;
+  gap: 8px;
+  margin: 2px 14px 12px 48px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--done) 8%, transparent);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.stage-check b {
+  flex: none;
+  color: var(--done);
+}
+
+/* 首页小标题右边的链接：学习热力图 → 学习过程 */
+.home-h-link {
+  float: right;
+  margin-top: 2px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 400;
+  text-decoration: none;
+}
+
+.home-h-link:hover {
+  text-decoration: underline;
+}

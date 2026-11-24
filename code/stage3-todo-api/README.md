@@ -1,6 +1,6 @@
 # stage3-todo-api
 
-Python 学习笔记「阶段三：FastAPI 后端开发」做到 3.16 节结束时的完整 todo 后端：注册登录（JWT）、每人只看自己的任务、分页、统一响应格式 `{code, msg, data}`、Alembic 迁移、CORS、请求日志、可部署到 Vercel。
+Python 学习笔记「阶段三：FastAPI 后端开发」做到 3.20 节结束时的完整 todo 后端：注册登录（JWT）、每人只看自己的任务、分页、统一响应格式 `{code, msg, data}`、Alembic 迁移、CORS、请求日志、可部署到 Vercel；3.17 拆出 service 层，3.18 管理员角色（`/admin/users`），3.19 文件上传（`/files`），3.20 Redis（登录失败限制、管理员接口缓存）。
 
 ## 1. 建虚拟环境、装依赖
 
@@ -22,6 +22,16 @@ createdb stage3_todo         # 接口用的库
 createdb stage3_todo_test    # 测试专用的库：每个测试都会清空它
 ```
 
+## 2.5 装 Redis（3.20 起要用）
+
+```bash
+brew install redis
+brew services start redis    # 或者临时运行：redis-server
+redis-cli ping               # PONG
+```
+
+开发用 0 号库，测试用 15 号库（每个测试前清空）。
+
 ## 3. 配置 .env
 
 ```bash
@@ -36,6 +46,8 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"   # 生成的随机
 | `JWT_SECRET` | 签 token 的密钥 | `dev-secret-change-me`（`VERCEL=1` 时用它会启动失败） |
 | `TOKEN_DAYS` | token 几天过期 | `7` |
 | `CORS_ORIGINS` | 允许跨域的前端网址，JSON 格式 | `["http://localhost:5173"]` |
+| `UPLOAD_DIR` | 上传文件存放的文件夹 | `uploads` |
+| `REDIS_URL` | Redis 地址 | `redis://localhost:6379/0` |
 
 `.env` 不提交（已写进 `.gitignore`）。
 

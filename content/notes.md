@@ -11,6 +11,18 @@
 
 ---
 
+# 阶段一：Python 语言基础
+
+这个阶段学 Python 本身的语法，只讲写后端常用的写法，不常用的先跳过。
+
+**学完这个阶段，你将会：**
+
+- 装好 Python 和 uv，建好虚拟环境（准备环境）
+- 用变量、判断、循环、列表、字典处理数据（1.1～1.4）
+- 写函数，看懂装饰器：FastAPI 的 `@app.get` 就是装饰器（1.5～1.6）
+- 用模块拆分代码，用类和 dataclass 组织数据（1.7～1.10）
+- 用 `try / except` 处理错误，读写文件和 JSON（1.11～1.12）
+
 ## 准备环境 {#setup}
 
 ### 用 uv 建虚拟环境
@@ -51,19 +63,6 @@ Cursor / VS Code 装 Python 插件和 Ruff 插件，右下角把解释器选成 
   }
 }
 ```
-
----
-
-# 阶段一：Python 语言基础
-
-这个阶段学 Python 本身的语法，只讲写后端常用的写法，不常用的先跳过。
-
-**学完这个阶段，你将会：**
-
-- 用变量、判断、循环、列表、字典处理数据（1.1～1.4）
-- 写函数，看懂装饰器：FastAPI 的 `@app.get` 就是装饰器（1.5～1.6）
-- 用模块拆分代码，用类和 dataclass 组织数据（1.7～1.10）
-- 用 `try / except` 处理错误，读写文件和 JSON（1.11～1.12）
 
 ## 1.1 变量、类型、缩进 {#variables}
 
@@ -2026,6 +2025,7 @@ app = FastAPI(lifespan=lifespan)
 - 给接口写自动化测试，按业务拆分文件（3.11～3.12）
 - 做注册登录，让每个人只能看到自己的数据（3.13～3.14）
 - 用 Alembic 管理表结构的变化，把后端部署上线（3.15～3.16）
+- 把业务逻辑拆成 service 层，加上管理员权限、文件上传和 Redis（3.17～3.20）
 
 ## 3.1 项目准备 {#project-setup}
 
@@ -4925,6 +4925,896 @@ DATABASE_URL='postgresql+psycopg://...线上地址...' alembic upgrade head
 
 > 国内访问 `*.vercel.app` 经常不通（域名被污染），自己测试需要开代理；给别人用的话，绑一个自己的域名。
 
+## 3.17 分层架构：router 和 service {#layers}
+
+到 3.16 为止，任务的所有逻辑都写在路由函数里：查数据库、检查重名、判断是不是自己的，全挤在一起。接口少的时候没问题，项目一大就会遇到两个麻烦：
+
+- **路由函数越来越长**：一个接口里既有 HTTP 的事（参数、状态码、响应格式），又有业务规则，读的时候分不清。
+- **业务逻辑没法复用**：同样是「新建任务」，定时脚本要用、阶段四的 AI 工具函数（4.5 节）也要用，但它们没有 HTTP 请求，调不了路由函数。
+
+做法是把代码按职责分层。
+
+### 三层各管什么
+
+| 层 | 放在哪 | 管什么 | 不管什么 |
+|---|---|---|---|
+| router（路由层） | `app/routers/` | 接收请求、校验参数、要求登录、包装响应格式 | 业务规则 |
+| service（业务层） | `app/services/` | 业务规则：能不能做、怎么做、做完改哪些数据 | HTTP：不出现 `Request`、状态码、`success()` |
+| repository（数据层） | `app/repositories/` | 只管怎么查、怎么存 | 业务规则 |
+
+调用方向固定：**router → service → repository → 数据库**，只能上层调下层，下层不知道上层的存在。
+
+规则：
+
+- **路由函数只做三件事**：拿参数、调 service、包装返回值。看到路由里有 `select`、`if 重名`，就该搬到 service。
+- **service 的参数是普通的 Python 值**（session、user、pydantic 模型、id），不接收 `Request`，所以脚本、测试、AI 工具都能直接调。
+- **repository 不是必须的**：SQLAlchemy 的 `select(...)` 本身已经很清楚，大部分 FastAPI 项目只分 router 和 service 两层。等同一个复杂查询在好几个 service 里重复出现时，再把它抽成 repository。这个项目先不拆。
+
+### 改之前：逻辑都在路由里
+
+以「新建任务」为例，3.14 的写法：
+
+```python
+# app/routers/tasks.py（3.14 的写法）
+@router.post("", status_code=201)
+def create_task(body: TaskCreate, user: CurrentUser, session: Db) -> dict:
+    same = select(Task).where(Task.user_id == user.id, Task.title == body.title, Task.done.is_(False))
+    if session.scalar(same):                         # 业务规则：不能重名
+        raise fail(409, "已经有一条同名的未完成任务")
+    task = Task(user_id=user.id, title=body.title, note=body.note)
+    session.add(task)
+    session.commit()                                 # 存数据库
+    return success(TaskOut.model_validate(task), msg="创建成功")   # HTTP：包装响应
+```
+
+### 改之后：业务逻辑搬到 service
+
+新建 `app/services/` 目录（里面放一个空的 `__init__.py`），任务相关的业务逻辑都放进 `tasks.py`：
+
+```python
+# app/services/tasks.py（3.17 新建：任务的业务逻辑。只管「能不能做、怎么做」，不管 HTTP）
+from __future__ import annotations
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.errors import fail, task_not_found
+from app.models import Task, User
+from app.schemas import TaskCreate
+
+
+def get_task(session: Session, user: User, task_id: int) -> Task:
+    """取自己的一条任务。别人的任务也当成不存在：抛 404。"""
+    task = session.get(Task, task_id)                    # SELECT * FROM tasks WHERE id = ...
+    if task is None or task.user_id != user.id:          # 不存在，或者不是自己的
+        raise task_not_found()
+    return task
+
+
+def list_tasks(session: Session, user: User, done: bool | None, page: int, size: int) -> tuple[list[Task], int]:
+    """查自己的任务，返回（这一页的任务，符合条件的总数）。"""
+    conditions = [Task.user_id == user.id]               # WHERE user_id = 1
+    if done is not None:
+        conditions.append(Task.done == done)             # AND done = ...
+    total = session.scalar(select(func.count()).select_from(Task).where(*conditions)) or 0   # SELECT count(*) ...
+    stmt = select(Task).where(*conditions).order_by(Task.id.desc()).offset((page - 1) * size).limit(size)
+    return list(session.scalars(stmt)), total
+
+
+def create_task(session: Session, user: User, data: TaskCreate) -> Task:
+    """新建任务：同一个人不能有两条同名的未完成任务。"""
+    same = select(Task).where(Task.user_id == user.id, Task.title == data.title, Task.done.is_(False))
+    if session.scalar(same):                             # 查到一条就算重名
+        raise fail(409, "已经有一条同名的未完成任务")
+    task = Task(user_id=user.id, title=data.title, note=data.note)
+    session.add(task)
+    session.commit()                                     # INSERT INTO tasks ...
+    return task
+
+
+def finish_task(session: Session, user: User, task_id: int) -> Task:
+    task = get_task(session, user, task_id)              # 先确认是自己的
+    task.done = True
+    session.commit()                                     # UPDATE tasks SET done = true ...
+    return task
+
+
+def delete_task(session: Session, user: User, task_id: int) -> None:
+    session.delete(get_task(session, user, task_id))     # 先确认是自己的，再记下「要删除」
+    session.commit()                                     # DELETE FROM tasks WHERE id = ...
+```
+
+- service 返回的是 `Task` 对象，不是 `success(...)` 包好的字典：怎么返回给前端是路由的事。
+- 出错还是 `raise fail(...)`：`ApiError` 是我们自己定义的异常，不依赖 FastAPI，脚本里调用也能用 `try` 接住。
+
+路由文件整个换成这样，每个接口只剩两三行：
+
+```python
+# app/routers/tasks.py（3.17 整个换成这样：业务逻辑搬到 services/tasks.py，这里只管 HTTP）
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import APIRouter, Query
+
+from app.db import Db
+from app.response import success
+from app.schemas import TaskCreate, TaskList, TaskOut
+from app.security import CurrentUser
+from app.services import tasks as task_service   # 业务逻辑都在这里；起个别名，免得和下面的接口函数重名
+
+router = APIRouter(prefix="/tasks", tags=["任务"])
+
+
+@router.get("")
+def list_tasks(
+    user: CurrentUser,
+    session: Db,
+    done: bool | None = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> dict:
+    items, total = task_service.list_tasks(session, user, done, page, size)   # 查数据交给 service
+    return success(TaskList(items=[TaskOut.model_validate(t) for t in items], total=total, page=page, size=size))
+
+
+@router.post("", status_code=201)
+def create_task(body: TaskCreate, user: CurrentUser, session: Db) -> dict:
+    task = task_service.create_task(session, user, body)   # 重名检查、插入都在 service 里
+    return success(TaskOut.model_validate(task), msg="创建成功")
+
+
+@router.get("/{task_id}")
+def get_task(task_id: int, user: CurrentUser, session: Db) -> dict:
+    return success(TaskOut.model_validate(task_service.get_task(session, user, task_id)))
+
+
+@router.patch("/{task_id}/done")
+def finish_task(task_id: int, user: CurrentUser, session: Db) -> dict:
+    return success(TaskOut.model_validate(task_service.finish_task(session, user, task_id)))
+
+
+@router.delete("/{task_id}")
+def delete_task(task_id: int, user: CurrentUser, session: Db) -> dict:
+    task_service.delete_task(session, user, task_id)
+    return success(msg="删除成功")
+```
+
+接口的行为一点没变，3.11 写的测试原样全部通过（`pytest` → `18 passed`）。这就是测试的价值：重构完跑一遍，就知道有没有改坏。
+
+### 好处：不经过 HTTP 也能调用
+
+service 不依赖请求，写个脚本就能直接用。阶段四里给模型用的工具函数（4.5 节的 `list_tasks`、`finish_task`），在真实项目里就是这样调 service：
+
+```python
+# 随便一个脚本：不启动服务，直接调 service
+from app.db import SessionLocal
+from app.models import User
+from app.schemas import TaskCreate
+from app.services import tasks as task_service
+
+with SessionLocal() as session:                      # 自己开一个数据库会话
+    tom = session.get(User, 1)                       # 拿到用户 tom
+    items, total = task_service.list_tasks(session, tom, done=False, page=1, size=20)
+    print(total, [t.title for t in items])           # 2 ['跑步', '读书']
+    try:
+        task_service.create_task(session, tom, TaskCreate(title="读书"))   # 已经有一条「读书」了
+    except Exception as e:
+        print(type(e).__name__, e.status, e.msg)     # ApiError 409 已经有一条同名的未完成任务
+```
+
+重名检查这条业务规则写在 service 里，所以不管从接口来、从脚本来、还是从 AI 来，都会被检查到，不会出现「接口里检查了，脚本里忘了」的情况。
+
+### 拆到什么程度
+
+- **按业务拆文件**：任务的放 `services/tasks.py`，以后有用户相关的业务就放 `services/users.py`，和 `routers/` 一一对应。
+- **登录、注册这种很短的接口**（`routers/auth.py`）可以先不拆。分层是为了让代码好读、好复用，不是为了凑层数；一个接口两三行就写完，硬拆一层反而要多跳一个文件。
+- 判断要不要拆的信号：路由函数超过十几行，或者同一段逻辑要在第二个地方用。
+
+## 3.18 角色权限：RBAC {#rbac}
+
+3.14 解决了「只能操作自己的任务」。但有些接口要按**身份**来限制：比如管理员要能看所有用户的情况，普通用户不行。最常用的做法是 **RBAC**（Role-Based Access Control，基于角色的权限控制）：
+
+- 给每个用户一个**角色**（普通用户、管理员……）
+- 接口规定「哪些角色能进」
+- 请求来了，看当前用户的角色在不在里面
+
+### 401 和 403 的区别
+
+| 状态码 | 意思 | 例子 |
+|---|---|---|
+| 401 | 不知道你是谁 | 没带 token、token 过期 |
+| 403 | 知道你是谁，但你没权限 | 普通用户访问管理员接口 |
+
+前端收到 401 应该跳去登录页；收到 403 跳登录也没用，应该提示「没有权限」。
+
+### 第一步：用户表加一列 role
+
+```python
+# app/models.py（User 加一行）
+class User(Base):
+    ...                                                               # 原来的字段不变
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="user", server_default="user")   # 角色：user 普通用户 / admin 管理员
+```
+
+改了表结构，按 3.15 节生成并执行迁移：
+
+```bash
+alembic revision --autogenerate -m "add user role"
+alembic upgrade head
+```
+
+生成的迁移只有一行，已有的用户因为 `server_default="user"` 自动成了普通用户：
+
+```python
+op.add_column('users', sa.Column('role', sa.String(length=20), server_default='user', nullable=False))
+```
+
+### 第二步：写一个「要求某个角色」的依赖
+
+```python
+# app/security.py（末尾加上）
+from collections.abc import Callable          # 加到文件开头的 import 里
+
+
+def require_role(*roles: str) -> Callable[[User], User]:
+    """生成一个依赖：先要求登录（CurrentUser），再要求角色在 roles 里，不在就 403。"""
+
+    def checker(user: CurrentUser) -> User:    # 依赖里再用依赖：先跑 current_user，没登录直接 401
+        if user.role not in roles:             # 登录了，但角色不够
+            raise fail(403, "没有权限")
+        return user
+
+    return checker
+
+
+AdminUser = Annotated[User, Depends(require_role("admin"))]   # 接口里写 _admin: AdminUser 就只有管理员能进
+```
+
+- `require_role("admin")` 不是依赖本身，它**返回**一个依赖函数 `checker`。这样写的好处是角色可以随意组合：`require_role("admin", "editor")` 就是管理员和编辑都能进。
+- `checker` 的参数写了 `user: CurrentUser`，所以 FastAPI 会先执行 3.13 的 `current_user`：没登录在那一步就是 401，根本走不到角色检查。
+- 和 `CurrentUser` 一样，起个短名字 `AdminUser`，接口里一写就生效。
+
+### 第三步：管理员接口
+
+查所有用户和每人的任务数。按 3.17 的分层，查询写在 service 里：
+
+```python
+# app/services/users.py（新建）
+from __future__ import annotations
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.models import Task, User
+
+
+def list_users_with_counts(session: Session) -> list[dict]:
+    """所有用户，以及每人有几条任务、完成了几条。"""
+    stmt = (
+        select(
+            User.id,
+            User.username,
+            User.role,
+            func.count(Task.id).label("total"),                              # 一共几条任务
+            func.count(Task.id).filter(Task.done.is_(True)).label("done"),   # 其中完成了几条
+        )
+        .outerjoin(Task, Task.user_id == User.id)    # LEFT JOIN：没有任务的用户也要列出来
+        .group_by(User.id)                           # 按用户分组统计
+        .order_by(User.id)
+    )
+    # SELECT users.id, users.username, users.role, count(tasks.id), count(tasks.id) FILTER (WHERE tasks.done IS true)
+    # FROM users LEFT JOIN tasks ON tasks.user_id = users.id GROUP BY users.id ORDER BY users.id
+    return [row._asdict() for row in session.execute(stmt)]   # 每行转成字典
+```
+
+```python
+# app/routers/admin.py（新建）
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+from app.db import Db
+from app.response import success
+from app.security import AdminUser
+from app.services import users as user_service
+
+router = APIRouter(prefix="/admin", tags=["管理员"])
+
+
+@router.get("/users")
+def list_users(_admin: AdminUser, session: Db) -> dict:   # _admin：只用来检查权限，函数里用不到，名字前加 _
+    return success(user_service.list_users_with_counts(session))
+```
+
+```python
+# app/main.py（改两处）
+from app.routers import admin, auth, tasks
+
+app.include_router(admin.router)         # /admin/...
+```
+
+顺便让 `/auth/me` 也返回角色，前端按它决定要不要显示「管理后台」入口：
+
+```python
+# app/routers/auth.py（me 接口的返回值改成这样）
+    return success({"id": user.id, "username": user.username, "role": user.role})
+```
+
+### 谁来当管理员
+
+**不要做「把自己设成管理员」的接口**，否则任何人都能给自己提权。管理员由人直接在数据库里设：
+
+```sql
+UPDATE users SET role = 'admin' WHERE username = 'tom';
+```
+
+实际跑一下（tom 先是普通用户，改库后 token 不用换，下一个请求就生效，因为 `current_user` 每次都从数据库重新查用户）：
+
+```bash
+curl localhost:8000/admin/users -H "Authorization: Bearer $TOKEN"
+# {"code":-1,"msg":"没有权限","data":null}                                      普通用户：403
+
+# 执行上面那条 UPDATE 之后
+curl localhost:8000/admin/users -H "Authorization: Bearer $TOKEN"
+# {"code":200,"msg":"ok","data":[{"id":1,"username":"tom","role":"admin","total":2,"done":0}]}
+```
+
+### 测试
+
+```python
+# tests/test_admin.py
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+from sqlalchemy import update
+
+from app.models import User
+from tests.conftest import TestSession, login
+
+
+def make_admin(username: str) -> None:
+    """测试里直接改库，把某个用户设成管理员。"""
+    with TestSession() as session:
+        session.execute(update(User).where(User.username == username).values(role="admin"))
+        session.commit()
+
+
+def test_admin_only(client: TestClient, auth: dict) -> None:
+    r = client.get("/admin/users")                   # 没登录
+    assert r.status_code == 401
+
+    r = client.get("/admin/users", headers=auth)     # tom 登录了，但是普通用户
+    assert r.status_code == 403
+    assert r.json() == {"code": -1, "msg": "没有权限", "data": None}
+
+    make_admin("tom")                                # 把 tom 设成管理员，token 不用换
+    client.post("/tasks", json={"title": "写笔记"}, headers=auth)
+    login(client, "jerry")                           # 再来一个普通用户，没有任务
+    r = client.get("/admin/users", headers=auth)
+    assert r.status_code == 200
+    assert r.json()["data"] == [
+        {"id": 1, "username": "tom", "role": "admin", "total": 1, "done": 0},
+        {"id": 2, "username": "jerry", "role": "user", "total": 0, "done": 0},
+    ]
+```
+
+`pytest` → `20 passed`。
+
+### 规则
+
+- **权限检查放在后端**。前端隐藏按钮只是为了好看，别人可以直接调接口，真正拦住的是后端的 403。
+- **角色存在数据库里，不存在 token 里**。token 里写死角色的话，降级一个管理员要等他的 token 过期才生效；每次从库里查，改完立刻生效。
+- **数据隔离和角色是两回事**：「只能看自己的任务」（3.14）是按数据归属判断，「只有管理员能进」是按角色判断，两种检查经常同时存在。
+
+> **完整的 RBAC** 还会再拆一层「权限」：建 `roles`、`permissions` 两张表和中间表，角色拥有一组权限（`task:delete`、`user:list`……），接口检查的是权限而不是角色名。角色多、要在后台随时调整谁能做什么时才需要，一般项目一列 `role` 就够了。
+
+## 3.19 文件上传 {#upload}
+
+头像、附件、阶段四做知识库时上传的文档，都要用到文件上传。这一节加两个接口：上传一个文件、把自己的文件下载回来。
+
+### 上传用的不是 JSON
+
+前面的接口请求体都是 JSON。文件是二进制数据，要用另一种格式 `multipart/form-data`（网页里 `<form>` 上传文件用的就是它）。FastAPI 解析这种格式要多装一个包：
+
+```bash
+uv pip install python-multipart
+```
+
+`requirements.txt` 里也加上 `python-multipart`，不然部署后上传接口会报错。
+
+接口参数写成 `UploadFile` 类型，就会从表单里取同名的文件：
+
+```python
+@router.post("")
+async def upload(file: UploadFile) -> dict:   # 表单里名叫 file 的那个文件
+    data = await file.read()                  # 文件内容，bytes
+    print(file.filename, len(data))           # 周报.md 46：原来的文件名、大小
+```
+
+### 规则：上传接口一定要检查的几件事
+
+| 检查 | 为什么 | 怎么做 |
+|---|---|---|
+| 大小 | 不限制的话，别人传个几 GB 的文件就能把磁盘塞满 | 超过上限返回 413 |
+| 类型 | 防止上传可执行文件、网页文件（`.html` 被打开时能执行脚本） | **白名单**：只允许列出来的扩展名 |
+| 文件名 | 用户给的名字可能重名，也可能是 `../../app/main.py` 这种，存盘时会写到别的目录去 | 存盘用自己生成的随机名，原名只记下来显示用 |
+| 归属 | 和任务一样，只能拿自己的文件 | 每个用户一个文件夹，只在自己的文件夹里找 |
+
+### 写成 service
+
+按 3.17 的分层，检查和保存放在 service 里。先在配置里加一项存放位置：
+
+```python
+# app/config.py（Settings 里加一个字段）
+    upload_dir: str = "uploads"               # 上传的文件存在哪个文件夹（相对于启动目录）
+```
+
+```python
+# app/services/files.py（新建）
+from __future__ import annotations
+
+import re
+import uuid
+from pathlib import Path
+
+from app.config import settings
+from app.errors import fail
+from app.models import User
+
+MAX_SIZE = 5 * 1024 * 1024                    # 最大 5 MB
+ALLOWED = {".png", ".jpg", ".jpeg", ".pdf", ".txt", ".md"}   # 允许的扩展名：白名单，不在里面的一律拒绝
+SAVED_NAME = re.compile(r"^[0-9a-f]{32}\.[a-z]+$")          # 保存后的文件名格式：32 位随机串 + 扩展名
+
+
+def user_dir(user: User) -> Path:
+    """每个用户一个文件夹：uploads/1/、uploads/2/……"""
+    return Path(settings.upload_dir) / str(user.id)
+
+
+def save_file(user: User, filename: str, data: bytes) -> dict:
+    """检查并保存一个上传的文件，返回文件信息。"""
+    ext = Path(filename).suffix.lower()       # "报告.PDF" → ".pdf"
+    if ext not in ALLOWED:
+        raise fail(400, f"不支持的文件类型：{ext or '没有扩展名'}")
+    if len(data) > MAX_SIZE:
+        raise fail(413, "文件不能超过 5 MB")
+    if not data:
+        raise fail(400, "文件是空的")
+
+    name = f"{uuid.uuid4().hex}{ext}"         # 存盘用随机名：不用用户给的名字，防止重名覆盖、防止 ../ 这种路径
+    folder = user_dir(user)
+    folder.mkdir(parents=True, exist_ok=True)   # 文件夹不存在就建，存在也不报错
+    (folder / name).write_bytes(data)         # 写到磁盘
+    return {"name": name, "original": filename, "size": len(data), "url": f"/files/{name}"}
+
+
+def file_path(user: User, name: str) -> Path:
+    """找自己的一个文件，找不到 404。"""
+    if not SAVED_NAME.match(name):            # 名字格式不对（比如 ../../.env），直接当不存在
+        raise fail(404, "没有这个文件")
+    path = user_dir(user) / name              # 只在自己的文件夹里找：别人的文件拿不到
+    if not path.is_file():
+        raise fail(404, "没有这个文件")
+    return path
+```
+
+- `uuid.uuid4().hex`：生成 32 位的随机字符串，几乎不可能重复。
+- `Path(...)`：标准库处理路径的类，`/` 用来拼路径，`.suffix` 取扩展名，`.write_bytes()` 写文件。
+- 扩展名只是第一道检查，改个后缀就能骗过。要求更严的场景（比如只收图片），还要检查文件开头的几个字节（图片、PDF 都有固定的开头），或者用图片库真打开一次。
+
+### 接口
+
+```python
+# app/routers/files.py（新建）
+from __future__ import annotations
+
+from fastapi import APIRouter, UploadFile
+from fastapi.responses import FileResponse
+
+from app.response import success
+from app.security import CurrentUser
+from app.services import files as file_service
+
+router = APIRouter(prefix="/files", tags=["文件"])
+
+
+@router.post("", status_code=201)
+async def upload(file: UploadFile, user: CurrentUser) -> dict:   # 参数类型写 UploadFile：从表单里取名叫 file 的文件
+    data = await file.read(file_service.MAX_SIZE + 1)   # 最多读「上限 + 1」个字节：超过上限就够判断了，不用把大文件全读进内存
+    info = file_service.save_file(user, file.filename or "", data)
+    return success(info, msg="上传成功")
+
+
+@router.get("/{name}")
+def download(name: str, user: CurrentUser) -> FileResponse:
+    return FileResponse(file_service.file_path(user, name))   # 把文件原样返回，Content-Type 按扩展名自动设
+```
+
+```python
+# app/main.py（改两处）
+from app.routers import admin, auth, files, tasks
+
+app.include_router(files.router)         # /files/...
+```
+
+- 上传接口是 `async def`，因为 `file.read()` 要 `await`。
+- `FileResponse`：直接把磁盘上的文件作为响应返回，比自己读出来再返回省内存。
+
+### 跑一下
+
+curl 上传文件用 `-F "file=@文件路径"`（`-F` 就是发 `multipart/form-data`，`@` 表示读这个文件）：
+
+```bash
+curl -X POST localhost:8000/files -H "Authorization: Bearer $TOKEN" -F "file=@周报.md"
+# {"code":200,"msg":"上传成功","data":{"name":"5daf2d890ca5418786fbe7fed6da170f.md","original":"周报.md","size":46,"url":"/files/5daf2d890ca5418786fbe7fed6da170f.md"}}
+
+curl -i localhost:8000/files/5daf2d890ca5418786fbe7fed6da170f.md -H "Authorization: Bearer $TOKEN"
+# HTTP/1.1 200 OK
+# content-type: text/markdown; charset=utf-8
+# content-length: 46
+#
+# # 周报
+# 本周完成了 3.19 文件上传。
+
+curl -X POST localhost:8000/files -H "Authorization: Bearer $TOKEN" -F "file=@a.exe"
+# {"code":-1,"msg":"不支持的文件类型：.exe","data":null}
+```
+
+磁盘上存成了 `uploads/1/5daf2d890ca5418786fbe7fed6da170f.md`（`1` 是 tom 的用户 id）。`uploads/` 要写进 `.gitignore`，用户上传的东西不进代码仓库。
+
+在 `/docs` 里也能测：上传接口会显示一个「选择文件」按钮。
+
+### 测试
+
+`TestClient` 用 `files=` 发文件，格式是 `{"表单字段名": (文件名, 内容, 类型)}`：
+
+```python
+# tests/test_files.py
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.config import settings
+from tests.conftest import login
+
+
+@pytest.fixture(autouse=True)                        # autouse：这个文件里的每个测试都自动用上
+def tmp_upload_dir(tmp_path, monkeypatch) -> None:   # tmp_path：pytest 给的临时文件夹，测完自动清理
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path))   # 测试时文件存到临时文件夹，不弄脏项目
+
+
+def test_upload_and_download(client: TestClient, auth: dict) -> None:
+    r = client.post("/files", files={"file": ("笔记.md", "# hello".encode(), "text/markdown")}, headers=auth)
+    assert r.status_code == 201
+    info = r.json()["data"]
+    assert info["original"] == "笔记.md" and info["size"] == 7 and info["name"].endswith(".md")
+
+    r = client.get(info["url"], headers=auth)        # 下载回来，内容一样
+    assert r.status_code == 200
+    assert r.content == b"# hello"
+
+    jerry = login(client, "jerry")
+    assert client.get(info["url"], headers=jerry).status_code == 404   # 别人拿不到
+
+
+def test_upload_rejected(client: TestClient, auth: dict) -> None:
+    r = client.post("/files", files={"file": ("run.exe", b"MZ", "application/octet-stream")}, headers=auth)
+    assert r.status_code == 400
+    assert r.json()["msg"] == "不支持的文件类型：.exe"
+
+    big = b"0" * (5 * 1024 * 1024 + 1)               # 比 5 MB 多 1 个字节
+    r = client.post("/files", files={"file": ("big.txt", big, "text/plain")}, headers=auth)
+    assert r.status_code == 413
+
+    assert client.get("/files/..%2F..%2F.env", headers=auth).status_code == 404   # 想用 ../ 读别的文件
+```
+
+`monkeypatch.setattr(对象, 属性, 新值)`：测试期间临时把 `settings.upload_dir` 换掉，测试结束自动改回来。`pytest` → `22 passed`。
+
+### 上线时文件存哪
+
+存在服务器本地磁盘只适合自己的电脑或者一台固定的服务器。**Vercel 这类平台不能这样存**：每次部署、每次函数重新启动，本地文件都会丢，而且 Vercel 限制请求体最大 4.5 MB。
+
+线上的做法是存到**对象存储**：阿里云 OSS、腾讯云 COS、AWS S3、Vercel Blob 等。流程一样，只是 `write_bytes` 换成调用它们的 SDK 上传，数据库里记下文件的地址。文件大或者多的时候，还会让前端拿一个临时授权的地址**直接传到对象存储**，不经过自己的后端。
+
+## 3.20 Redis：缓存、计数、过期 {#redis}
+
+PostgreSQL 把数据存在磁盘上，适合长期保存、复杂查询。还有一类数据：**用得频繁、过一会儿就没用了**，比如「这个用户 10 分钟内输错了几次密码」「这个查询结果先存 60 秒」。这类数据放 **Redis** 更合适：
+
+- **存在内存里**：读写都在毫秒以内，比查数据库快得多。
+- **自带过期时间**：存的时候说一声「300 秒后删掉」，到点自动消失，不用自己写清理代码。
+- **结构简单**：最常用的就是「key → value」，像一个所有请求共用的大字典。
+
+常见用途：缓存、计数和限流、验证码这类临时数据、任务队列（阶段六）、登录会话。
+
+### 安装和启动
+
+```bash
+brew install redis
+brew services start redis      # 后台运行，开机自动启动；只想临时用就执行 redis-server
+redis-cli ping                 # PONG：连上了
+```
+
+Python 里用 `redis` 包：`uv pip install redis`，`requirements.txt` 里也加上 `redis`。
+
+### 先用 redis-cli 玩一下
+
+`redis-cli` 是 Redis 自带的命令行，敲命令直接看结果：
+
+```bash
+redis-cli SET name tom              # OK              存：key 是 name，value 是 tom
+redis-cli GET name                  # tom             取
+redis-cli GET nobody                # （空）           没有这个 key
+redis-cli SET code 8361 EX 300      # OK              存的同时设置 300 秒后过期（验证码就这么存）
+redis-cli TTL code                  # 300             还剩几秒过期
+redis-cli TTL name                  # -1              -1：没设过期时间，永久保存
+redis-cli INCR visits               # 1               计数 +1：key 不存在时先当成 0
+redis-cli INCR visits               # 2
+redis-cli EXPIRE visits 60          # 1               给已有的 key 设置过期时间
+redis-cli TTL visits                # 60
+redis-cli DEL name code visits      # 3               删掉，返回删了几个
+redis-cli EXISTS name               # 0               还在不在：0 不在
+```
+
+记住这几个就够用：`SET`（可带 `EX`）、`GET`、`DEL`、`INCR`、`EXPIRE`、`TTL`。
+
+**key 的命名**：用冒号分段，`业务:标识`，比如 `login_fail:tom`、`admin:users`。所有数据都在一个大字典里，有前缀才不会撞名，一看就知道是干什么的。
+
+### 在项目里连 Redis
+
+和 3.9 节连数据库的写法一样：配置里加地址，写一个依赖。
+
+```python
+# app/config.py（Settings 里加一个字段）
+    redis_url: str = "redis://localhost:6379/0"   # Redis 地址，最后的 /0 是第几个库（默认有 0～15 共 16 个）
+```
+
+```python
+# app/redis_client.py（新建）
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import Depends
+from redis import Redis
+
+from app.config import settings
+
+redis = Redis.from_url(settings.redis_url, decode_responses=True)   # decode_responses：取出来的是 str，不是 bytes
+
+
+def get_redis() -> Redis:
+    """依赖：接口里拿到 Redis 客户端。写成依赖，测试时能换成测试用的库（和 3.11 换数据库一样）。"""
+    return redis
+
+
+RedisDep = Annotated[Redis, Depends(get_redis)]   # 接口里写 r: RedisDep
+```
+
+Python 里的方法名和命令一一对应：`r.set(key, value, ex=300)`、`r.get(key)`、`r.incr(key)`、`r.expire(key, 60)`、`r.ttl(key)`、`r.delete(key)`。
+
+### 用法一：登录失败次数限制
+
+3.13 的登录接口，别人可以不停地试密码（暴力破解）。加一条规则：**同一个用户名 10 分钟内连错 5 次，就先不让登录**。
+
+用 Redis 计数正合适：错一次 `INCR` 一下，第一次错的时候设置 10 分钟过期，到点计数自动清零。
+
+```python
+# app/services/login_limit.py（新建）
+from __future__ import annotations
+
+from redis import Redis
+
+from app.errors import fail
+
+MAX_FAILS = 5                 # 最多连续错几次
+WINDOW = 10 * 60              # 在多长时间内（秒）：10 分钟
+
+
+def _key(username: str) -> str:
+    return f"login_fail:{username}"   # 每个用户名一个计数器，key 加前缀，一看就知道是干什么的
+
+
+def check(r: Redis, username: str) -> None:
+    """登录前检查：错太多次就直接拒绝，连密码都不验。"""
+    fails = int(r.get(_key(username)) or 0)    # 没有这个 key 时 get 返回 None，当成 0
+    if fails >= MAX_FAILS:
+        minutes = (r.ttl(_key(username)) + 59) // 60   # 还要等几分钟：剩余秒数向上取整
+        raise fail(429, f"密码错误次数太多，请 {minutes} 分钟后再试")
+
+
+def record_fail(r: Redis, username: str) -> None:
+    """密码错了：计数 +1；第一次错的时候设置过期时间，10 分钟后自动清零。"""
+    fails = r.incr(_key(username))             # INCR：key 不存在时先当成 0，再加 1，返回加完的值
+    if fails == 1:
+        r.expire(_key(username), WINDOW)       # 只在第一次设：之后再错不会延长时间
+
+
+def reset(r: Redis, username: str) -> None:
+    """登录成功：清掉计数。"""
+    r.delete(_key(username))
+```
+
+登录接口加三行：
+
+```python
+# app/routers/auth.py（login 改成这样）
+from app.redis_client import RedisDep
+from app.services import login_limit
+
+
+@router.post("/login")
+def login(body: AuthIn, session: Db, r: RedisDep) -> dict:
+    login_limit.check(r, body.username)        # 错太多次，直接 429
+    user = session.scalar(select(User).where(User.username == body.username))
+    if user is None or not verify_password(body.password, user.password_hash):
+        login_limit.record_fail(r, body.username)   # 记一次失败
+        raise fail(401, "用户名或密码错误")
+    login_limit.reset(r, body.username)        # 登录成功，清零
+    return success(TokenOut(token=create_token(user.id), username=user.username), msg="登录成功")
+```
+
+实际跑一下，连续用错误密码登录 tom：
+
+```
+第 1 次（错密码）：{"code":-1,"msg":"用户名或密码错误","data":null}
+...
+第 5 次（错密码）：{"code":-1,"msg":"用户名或密码错误","data":null}
+第 6 次（错密码）：{"code":-1,"msg":"密码错误次数太多，请 10 分钟后再试","data":null}
+密码对了：      {"code":-1,"msg":"密码错误次数太多，请 10 分钟后再试","data":null}
+```
+
+这时看 Redis 里存的：
+
+```bash
+redis-cli GET login_fail:tom        # 5
+redis-cli TTL login_fail:tom        # 600     10 分钟后自动删除，删除后就能再登录了
+```
+
+- **429** 是「请求太多」的状态码，限流都用它。
+- 计数器按**用户名**算，所以攻击者换着用户名试就拦不住。真实项目一般再加一个按 **IP** 的计数（`login_fail_ip:1.2.3.4`），写法一样。
+
+### 用法二：缓存查询结果
+
+3.18 的 `/admin/users` 要统计每个用户的任务数，用户多了会慢，而这个数字晚一分钟更新也没关系。这种「查得慢、变化不急」的结果适合缓存。
+
+写一个通用的缓存函数：
+
+```python
+# app/services/cache.py（新建）
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from typing import Any
+
+from redis import Redis
+
+
+def cached(r: Redis, key: str, seconds: int, load: Callable[[], Any]) -> Any:
+    """先查缓存，有就直接返回；没有才调 load() 去查数据库，结果存进缓存，seconds 秒后自动过期。"""
+    hit = r.get(key)
+    if hit is not None:                        # 缓存里有：不查数据库
+        return json.loads(hit)                 # Redis 里存的是字符串，转回 Python 对象
+    value = load()                             # 缓存里没有：真的去查
+    r.set(key, json.dumps(value, ensure_ascii=False, default=str), ex=seconds)   # 存成 JSON 字符串，ex：几秒后过期
+    return value
+```
+
+```python
+# app/routers/admin.py（list_users 改成这样）
+from app.redis_client import RedisDep
+from app.services.cache import cached
+
+
+@router.get("/users")
+def list_users(_admin: AdminUser, session: Db, r: RedisDep) -> dict:
+    users = cached(r, "admin:users", 60, lambda: user_service.list_users_with_counts(session))   # 60 秒内重复请求不查数据库
+    return success(users)
+```
+
+- `load` 传的是一个函数（`lambda: ...`），不是查询结果：缓存命中时根本不会执行它，数据库就不用查了。
+- Redis 只能存字符串，所以用 `json.dumps` 存、`json.loads` 取。
+
+实际跑一下，连着请求两次：
+
+```
+第 1 次：0.0078s       缓存里没有：查数据库，存进 Redis
+第 2 次：0.0026s       直接从 Redis 拿
+```
+
+```bash
+redis-cli GET admin:users      # [{"id": 1, "username": "tom", "role": "admin", "total": 2, "done": 0}]
+redis-cli TTL admin:users      # 60
+```
+
+本地数据少，看不出太大差别；数据量大、查询复杂的时候，差距就是几百毫秒和几毫秒。
+
+**缓存的代价是数据会旧**：这 60 秒里新注册的用户，管理员是看不到的。所以：
+
+- 能接受旧多久，过期时间就设多久。
+- 数据改了必须马上看到的（比如任务列表，用户改完要立刻看到），要么不缓存，要么在修改的地方 `r.delete(key)` 主动删掉缓存。
+
+### 测试
+
+和数据库一样，测试用单独的库：Redis 用 15 号库，每个测试开始前清空。`tests/conftest.py` 的 `client` fixture 里加两行：
+
+```python
+# tests/conftest.py（改动的部分）
+from redis import Redis
+
+from app.redis_client import get_redis
+
+test_redis = Redis.from_url("redis://localhost:6379/15", decode_responses=True)   # 测试用 15 号库，和开发用的 0 号分开
+
+
+@pytest.fixture
+def client() -> Iterator[TestClient]:
+    ...                                                         # 原来的删表、建表不变
+    test_redis.flushdb()                                        # 清空测试用的 Redis 库
+    app.dependency_overrides[db_session] = test_db_session
+    app.dependency_overrides[get_redis] = lambda: test_redis    # Redis 也换成测试库
+    ...
+```
+
+```python
+# tests/test_redis.py
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+from tests.conftest import login, test_redis
+from tests.test_admin import make_admin
+
+
+def test_login_locked_after_5_fails(client: TestClient) -> None:
+    login(client, "tom", "123456")                   # 先注册 tom
+    wrong = {"username": "tom", "password": "wrong-password"}
+    for _ in range(5):                               # 连错 5 次
+        assert client.post("/auth/login", json=wrong).status_code == 401
+
+    r = client.post("/auth/login", json={"username": "tom", "password": "123456"})   # 第 6 次：密码对了也不行
+    assert r.status_code == 429
+    assert r.json()["msg"] == "密码错误次数太多，请 10 分钟后再试"
+
+    test_redis.delete("login_fail:tom")              # 模拟 10 分钟过去：计数器过期
+    r = client.post("/auth/login", json={"username": "tom", "password": "123456"})
+    assert r.status_code == 200
+
+
+def test_success_resets_counter(client: TestClient) -> None:
+    login(client, "tom", "123456")
+    client.post("/auth/login", json={"username": "tom", "password": "wrong-password"})
+    assert test_redis.get("login_fail:tom") == "1"   # 错了一次
+    client.post("/auth/login", json={"username": "tom", "password": "123456"})
+    assert test_redis.get("login_fail:tom") is None  # 登录成功，清零
+
+
+def test_admin_users_cached(client: TestClient, auth: dict) -> None:
+    make_admin("tom")
+    first = client.get("/admin/users", headers=auth).json()["data"]
+    assert test_redis.ttl("admin:users") > 0         # 结果进了缓存，还有过期时间
+
+    login(client, "jerry")                           # 新注册一个用户
+    again = client.get("/admin/users", headers=auth).json()["data"]
+    assert again == first                            # 60 秒内拿的是缓存：看不到 jerry
+
+    test_redis.delete("admin:users")                 # 删掉缓存
+    assert len(client.get("/admin/users", headers=auth).json()["data"]) == 2   # 重新查库，jerry 出来了
+```
+
+`pytest` → `25 passed`。
+
+### 规则
+
+- **Redis 里的数据随时可能丢**（重启、内存满了被清掉），只放「丢了也能重新算出来」的东西。用户、任务这些正式数据还是存 PostgreSQL。
+- **缓存、计数一定设过期时间**，不然 key 只增不减，内存迟早被占满。
+- **key 用 `业务:标识` 的格式命名**，测试用单独的库号。
+
+> **上线**：Vercel 上没有 Redis，要用托管服务，比如 Upstash（有免费额度，按请求收费，很适合 Vercel）、阿里云 Redis。拿到地址后配到环境变量 `REDIS_URL`。
+
 ### 阶段三做完了什么
 
 从 3.1 的一个 hello 接口，到现在是一个能上线的多用户后端：
@@ -4941,6 +5831,10 @@ DATABASE_URL='postgresql+psycopg://...线上地址...' alembic upgrade head
 | 数据隔离、一对多、分页 | 3.14 |
 | 数据库迁移、换 Postgres | 3.15 |
 | 跨域、请求日志、部署 | 3.16 |
+| 分层：router 和 service | 3.17 |
+| 角色权限（RBAC） | 3.18 |
+| 文件上传 | 3.19 |
+| Redis：缓存、登录失败限制 | 3.20 |
 
 接下来的阶段四，就是在这样的后端里接入大模型。
 
@@ -5097,6 +5991,29 @@ print(resp.usage.completion_tokens)           # 8      只输出了答案本身�
 
 ### System Prompt：定规则
 
+System Prompt 就是 `role` 为 `system` 的那条消息，是**开发者写给模型的指令**，告诉模型这段对话里它是谁、怎么回答、不能做什么：
+
+```python
+{"role": "system", "content": "你是编程老师。回答不超过 30 个字，不用 Markdown。"}
+```
+
+- **谁写的**：开发者，写在后端代码里。用户在界面上看不到，也改不了。
+- **放哪**：`messages` 的第一条。
+- **管多久**：整段对话。后面每个问题，模型都按它来答（前提是每次请求都带上，见下一小节）。
+- **优先级**：用户的话和 system 冲突时，模型一般听 system 的。
+- **可以不写**：不写也能调用，模型就按自己的默认习惯回答。
+
+常写进 system 的内容：
+
+| 写什么 | 例子 |
+|---|---|
+| 身份 | 你是 todo 应用的客服 |
+| 回答格式 | 不超过 30 个字；不用 Markdown；只输出 json |
+| 范围限制 | 只回答和 todo 应用有关的问题，其他的礼貌拒绝 |
+| 固定的背景资料 | 产品有哪些功能、退款规则（会变的内容放后面的消息里，见下一小节） |
+
+加和不加的区别：
+
 ```python
 # sys_demo.py
 from llm import MODEL, NO_THINKING, client
@@ -5125,6 +6042,34 @@ print(resp.usage.completion_tokens)           # 16：输出少了，钱也少了
 ```
 
 AI 应用里大部分「功能」，其实就是写好的 system prompt：客服、翻译、提取信息，换的主要是这一段。它由后端写死，用户看不到也改不了。
+
+### System Prompt 不会被记住：每次请求都要带上
+
+system 对整段对话起作用，但它不是存在服务器上的设置，只是 `messages` 里的第一条。API 不保存任何东西，下一次请求不带它，规则就没了：
+
+```python
+# sys_demo.py（接着写）
+system = {"role": "system", "content": "你是编程老师。回答不超过 30 个字，不用 Markdown。"}
+history = [                                   # 前一轮的对话
+    {"role": "user", "content": "Python 和 JavaScript 有什么区别？"},
+    {"role": "assistant", "content": "Python 重可读和数据分析，JS 重浏览器和网页交互。"},
+    {"role": "user", "content": "那 Go 呢？"},  # 这一轮的新问题
+]
+
+# ① 第二轮也带上 system：照规则回答
+resp = client.chat.completions.create(model=MODEL, messages=[system, *history], extra_body=NO_THINKING)
+print(resp.choices[0].message.content)        # Go 语法简洁，编译快，擅长并发和后端服务。
+print(resp.usage.completion_tokens)           # 14
+
+# ② 第二轮忘了带 system：规则没了，又写成带 Markdown 的长文
+resp = client.chat.completions.create(model=MODEL, messages=history, extra_body=NO_THINKING)
+print(resp.choices[0].message.content[:30])   # Go 的定位和前两者又不太一样，简单对比一下：
+print(resp.usage.completion_tokens)           # 367
+```
+
+- `[system, *history]`：把 system 放最前面，后面接上历史，拼成一个新列表。
+- system 每次都发，所以**每次都按输入计费**。它每次都一样、又在最前面，正好能命中缓存，按便宜很多的价格算（见第 4.3 节）。
+- 所以 system 要放第一条、内容固定；会变的东西（用户信息、检索到的资料）放到后面的消息里。
 
 ### 模型没有记忆：多轮对话要自己带上历史
 
@@ -5159,43 +6104,12 @@ print(len(history))                                            # 7：1 条 syste
 
 ### Token：按它收费，也按它限制长度
 
-模型不是按字、按单词处理文字，而是切成 **token**。DeepSeek 文档给的估算：1 个中文字约 0.6 个 token，1 个英文字母约 0.3 个 token。实测一下：
+模型不是按字、按单词处理文字，而是切成 **token**。了解这几点就够：
 
-```python
-# token_demo.py
-from llm import MODEL, NO_THINKING, client
-
-
-def count_tokens(text):                       # 算一段文字有多少 token
-    resp = client.chat.completions.create(
-        model=MODEL, messages=[{"role": "user", "content": text}], max_tokens=1, extra_body=NO_THINKING,
-    )                                          # max_tokens=1：只想看输入有多少 token，回答只要 1 个
-    return resp.usage.prompt_tokens
-
-
-zh = "今天天气不错，我们去公园散步吧。" * 10
-en = "The weather is nice today, let's go for a walk in the park. " * 10
-print(len(zh), count_tokens(zh))   # 160 94    160 个字 → 94 个 token，约 0.6
-print(len(en), count_tokens(en))   # 600 165   600 个字母 → 165 个 token，约 0.3
-```
-
-- **准确的数字以 `resp.usage` 为准**，估算只用来心里有数。
-- **上下文长度**：一次请求里输入加输出最多能有多少 token。DeepSeek 现在是 1M（一百万）。超过就报错，长对话要裁剪历史（阶段五细讲）。
-- **`max_tokens`**：限制这次最多输出多少个 token。到了上限就硬截断，`finish_reason` 变成 `length`：
-
-```python
-# token_demo.py（接着写）
-resp = client.chat.completions.create(        # 最多只让输出 30 个 token，看回答被截断
-    model=MODEL, messages=[{"role": "user", "content": "详细介绍一下 FastAPI"}], max_tokens=30, extra_body=NO_THINKING,
-)
-print(resp.choices[0].message.content)
-# # FastAPI 详细介绍
-#
-# ## 一、什么是 FastAPI
-#
-# FastAPI 是一个现代、快速（高性能）的 Python Web 框架，
-print(resp.choices[0].finish_reason, resp.usage.completion_tokens)   # length 30   话没说完就被截断了
-```
+- **怎么估算**：DeepSeek 文档给的是 1 个中文字约 0.6 个 token，1 个英文字母约 0.3 个 token。实际以 `resp.usage` 里的数字为准，估算只用来心里有数。
+- **按它收费**：输入、输出都按 token 算钱，怎么算见第 4.3 节。
+- **上下文长度**：一次请求里输入加输出最多能有多少 token，DeepSeek 现在是 1M（一百万）。超过就报错，长对话要裁剪历史（阶段五细讲）。
+- **`max_tokens`**：调用时传 `max_tokens=30`，限制这次最多输出 30 个 token。到了上限会硬截断，话没说完，`finish_reason` 变成 `length`。
 
 拿到回答要先看 `finish_reason`：是 `length` 就说明内容不完整，不能直接当结果用（4.4 节解析 JSON 时尤其要注意）。
 
@@ -5224,10 +6138,11 @@ from llm import MODEL, NO_THINKING, client
 PRICE = {"hit": 0.006, "miss": 0.3, "output": 1.2}   # deepseek-flash 高峰价，美元 / 百万 token
 
 
-def cost_usd(usage):
+def cost_usd(usage):                          # 按这次请求的 usage 算花了多少美元
     hit = usage.prompt_cache_hit_tokens       # 输入里命中缓存的 token
     miss = usage.prompt_cache_miss_tokens     # 输入里没命中的 token
     out = usage.completion_tokens             # 输出的 token
+    # 三部分 token × 各自单价，加起来；单价是「每百万 token」的价格，所以最后除以 100 万
     return (hit * PRICE["hit"] + miss * PRICE["miss"] + out * PRICE["output"]) / 1_000_000
 
 
@@ -5448,17 +6363,24 @@ except ValidationError as e:
 
 ## 4.5 Function Calling：让模型调用你的函数 {#function-calling}
 
-模型只会生成文字，不能查你的数据库，也不知道今天的任务。**Function Calling**（也叫 Tool Calling）就是：你告诉模型有哪些函数可以用，模型判断需要时，返回「我要调用哪个函数、参数是什么」，**由你的代码去执行**，再把结果交回给模型，模型根据结果回答。
+模型只会生成文字，不能查你的数据库，也不知道你有哪些任务。**Function Calling**（也叫 Tool Calling）解决这个问题：
+
+1. 调模型时，顺便告诉它「有哪些函数能用」
+2. 模型觉得需要时，不直接回答，而是返回「我要调用哪个函数、参数是什么」
+3. **你的代码**去执行这个函数（模型自己执行不了）
+4. 把执行结果发回给模型，模型根据结果回答用户
 
 ```
 用户：我还有哪些任务没做完？
-  → 模型：要调用 list_tasks(done=false)        ← 模型只是「说要调用」，不会自己执行
-  → 你的代码：执行 list_tasks，得到结果
+  → 模型：要调用 list_tasks(done=false)        ← 模型只是「说要调用」
+  → 你的代码：执行 list_tasks，得到两个任务
   → 把结果发回给模型
   → 模型：你还有「交季度报告」「跑步 5 公里」两个任务
 ```
 
-### ① 准备函数，写给模型看的说明
+### 先手动走一遍：一个函数、调两次模型
+
+先准备一个普通的 Python 函数，再写一份「给模型看的说明」`TOOLS`（下一小节细讲怎么写）：
 
 ```python
 # tool_demo.py
@@ -5473,70 +6395,125 @@ TASKS = [                                         # 假装是数据库里的任�
 ]
 
 
-def list_tasks(done: bool | None = None) -> list[dict]:   # 普通的 Python 函数
+def list_tasks(done: bool | None = None) -> list[dict]:   # 普通的 Python 函数：查任务
     if done is None:
         return TASKS
     return [t for t in TASKS if t["done"] == done]
 
 
-def finish_task(task_id: int) -> dict:
-    for t in TASKS:
-        if t["id"] == task_id:
-            t["done"] = True
-            return {"ok": True, "task": t}
-    return {"ok": False, "error": f"没有 id 为 {task_id} 的任务"}   # 出错也返回给模型，让它告诉用户
-
-
-TOOLS = [                                         # 给模型看的函数说明：名字、做什么、参数（JSON Schema 格式）
-    {
-        "type": "function",
+TOOLS = [                                         # 给模型看的说明：列表，有几个函数就放几项
+    {                                             # 一项描述一个函数
+        "type": "function",                       # 固定写 function
         "function": {
-            "name": "list_tasks",
-            "description": "查询用户的待办任务列表",   # 模型靠 description 判断什么时候该用，要写清楚
-            "parameters": {
-                "type": "object",
-                "properties": {
+            "name": "list_tasks",                 # 函数名：模型要调用时就返回这个名字
+            "description": "查询用户的待办任务列表",   # 做什么：模型靠它判断什么时候该用
+            "parameters": {                       # 参数说明（JSON Schema 格式）
+                "type": "object",                 # 固定写 object：参数整体是一个字典
+                "properties": {                   # 每个参数：名字 → 类型和说明
+                    # done 参数：布尔值；description 告诉模型 true / false / 不传 分别是什么意思
                     "done": {"type": "boolean", "description": "true 只查已完成，false 只查未完成，不传查全部"},
                 },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "finish_task",
-            "description": "把一个任务标记为已完成",
-            "parameters": {
-                "type": "object",
-                "properties": {"task_id": {"type": "integer", "description": "任务 id"}},
-                "required": ["task_id"],          # 必须传的参数
+                # 没写 required：done 有默认值，模型可以不传
             },
         },
     },
 ]
-
-FUNCTIONS = {"list_tasks": list_tasks, "finish_task": finish_task}   # 函数名 → 真正的函数，执行时按名字找
 ```
 
-### ② 模型返回的「要调用」长什么样
+然后按上面的 4 步，一步一步写。
 
-调用时多传一个 `tools=TOOLS`。模型决定要用函数时，回答里不是文字，而是 `tool_calls`：
+> 注意：「模型调用函数」不是模型自己去执行。模型只是在回答里写出「要调用哪个函数、参数是什么」，**执行的永远是你的代码**。这里拆成 4 步手写，只是为了看清每一步发生了什么；实际用的是后面「写成循环」那一小节，调哪个函数、调几次全由模型决定，代码照着执行就行，不用手动一步步写。
+
 
 ```python
 # tool_demo.py（接着写）
-resp = client.chat.completions.create(        # 发请求，带上 tools：告诉模型有哪些函数能用
-    model=MODEL, messages=[{"role": "user", "content": "我还有哪些任务没做完？"}], tools=TOOLS, extra_body=NO_THINKING,
-)
-m = resp.choices[0].message      # 模型回的这条消息
-print(repr(m.content))           # '我来查一下你未完成的任务。'   可能带一句话，也可能是空的
-for c in m.tool_calls:
-    print(c.id, c.type, c.function.name, repr(c.function.arguments))
-# call_00_yedAQk8XZOs2YqNUiXZn4849 function list_tasks '{"done": false}'
-#   id：这次调用的编号，回传结果时要带上
-#   arguments：参数是 JSON 字符串，要自己 json.loads
+messages = [{"role": "user", "content": "我还有哪些任务没做完？"}]
+
+# 第 1 步：带上 tools 调模型
+resp = client.chat.completions.create(model=MODEL, messages=messages, tools=TOOLS, extra_body=NO_THINKING)
+msg = resp.choices[0].message                 # 模型回的这条消息
+print(resp.choices[0].finish_reason)          # tool_calls   不是 stop：模型要调函数，还没回答
+call = msg.tool_calls[0]                      # 要调用的函数（可能有好几个，这里只有一个）
+print(call.function.name, call.function.arguments)
+# list_tasks {"done": false}                  函数名，和参数（是 JSON 字符串，不是字典）
+
+# 第 2 步：你的代码执行这个函数
+args = json.loads(call.function.arguments)    # JSON 字符串 → 字典：{"done": False}
+result = list_tasks(**args)                   # 等于 list_tasks(done=False)
+print(result)
+# [{'id': 2, 'title': '交季度报告', 'done': False}, {'id': 3, 'title': '跑步 5 公里', 'done': False}]
+
+# 第 3 步：把「模型要调用」和「执行结果」都放进历史
+messages.append(msg)                          # 模型那条「要调用 list_tasks」的消息，原样放进去
+messages.append({
+    "role": "tool",                           # 新角色：函数的执行结果
+    "tool_call_id": call.id,                  # 这是哪一次调用的结果（第 1 步里模型给的编号）
+    "content": json.dumps(result, ensure_ascii=False),   # 结果要转成字符串
+})
+
+# 第 4 步：带着历史再调一次模型，它根据结果回答
+resp = client.chat.completions.create(model=MODEL, messages=messages, tools=TOOLS, extra_body=NO_THINKING)
+print(resp.choices[0].finish_reason)          # stop   这次是正常回答了
+print(resp.choices[0].message.content)
+# 你还有 2 个任务没完成：
+#
+# 1. **交季度报告**
+# 2. **跑步 5 公里**
+#
+# 需要我帮你标记其中某个为已完成吗？
 ```
 
-用户的话和函数无关时，模型就正常回答，`tool_calls` 是 `None`：
+第二次调模型时，`messages` 里有三条：
+
+| role | 内容 | 谁放进去的 |
+|---|---|---|
+| `user` | 我还有哪些任务没做完？ | 你，一开始 |
+| `assistant` | 要调用 `list_tasks`，参数 `{"done": false}` | 你，第 3 步原样放回模型的消息 |
+| `tool` | `[{"id": 2, ...}, {"id": 3, ...}]` | 你，第 3 步放的执行结果 |
+
+和 4.2 节的多轮对话是同一个道理：模型没有记忆，「它刚才要调什么」「结果是什么」都得放进历史里再发一次，它才知道接下来怎么回答。
+
+### tools 怎么写：照着函数签名翻译
+
+`TOOLS` 里每一项描述一个函数，格式固定，照着 Python 函数翻译就行：
+
+```python
+def finish_task(task_id: int) -> dict:        # 要描述的函数
+    ...
+
+{
+    "type": "function",                       # 固定写 function
+    "function": {
+        "name": "finish_task",                # 函数名：模型调用时就返回这个名字
+        "description": "把一个任务标记为已完成",   # 做什么：模型靠它判断什么时候该用，要写清楚
+        "parameters": {                       # 参数，固定写 type: object + properties
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "integer", "description": "任务 id"},   # 参数名、类型、说明
+            },
+            "required": ["task_id"],          # 没有默认值的参数写进 required
+        },
+    },
+}
+```
+
+类型对应：
+
+| Python | 写成 |
+|---|---|
+| `str` | `"string"` |
+| `int` | `"integer"` |
+| `float` | `"number"` |
+| `bool` | `"boolean"` |
+| `list` | `"array"` |
+| `dict` | `"object"` |
+
+- `description` 是写给模型看的，函数和每个参数都要写，写得越清楚，模型越不容易调错。
+- 有默认值的参数（比如 `list_tasks` 的 `done`）不写进 `required`，模型可以不传。
+
+### 模型不一定会调用
+
+带上了 tools，模型也会自己判断：用户的话和函数无关时，模型就正常回答，`tool_calls` 是 `None`：
 
 ```python
 # tool_demo.py（接着写）
@@ -5546,9 +6523,37 @@ resp = client.chat.completions.create(        # 同样带上 tools，但问一�
 print(resp.choices[0].finish_reason, resp.choices[0].message.tool_calls)   # stop None
 ```
 
-### ③ 循环：调模型 → 执行函数 → 把结果交回去 → 直到模型给出最终回答
+### 多个函数、多轮：写成循环
 
-一句话可能要调好几次函数（先查、再改），所以写成循环：
+再加一个函数 `finish_task`，放进 `TOOLS`，并建一个「函数名 → 函数」的字典，执行时按模型给的名字找：
+
+```python
+# tool_demo.py（接着写）
+def finish_task(task_id: int) -> dict:
+    for t in TASKS:
+        if t["id"] == task_id:
+            t["done"] = True
+            return {"ok": True, "task": t}
+    return {"ok": False, "error": f"没有 id 为 {task_id} 的任务"}   # 出错也返回给模型，让它告诉用户
+
+
+TOOLS.append({                                    # 上一小节翻译好的 finish_task 说明
+    "type": "function",
+    "function": {
+        "name": "finish_task",
+        "description": "把一个任务标记为已完成",
+        "parameters": {
+            "type": "object",
+            "properties": {"task_id": {"type": "integer", "description": "任务 id"}},
+            "required": ["task_id"],
+        },
+    },
+})
+
+FUNCTIONS = {"list_tasks": list_tasks, "finish_task": finish_task}   # 函数名 → 真正的函数
+```
+
+「把跑步那个标成完成」要先查列表、再改状态，得调两次函数。上面那四步每次都一样，所以写成循环，直到模型不再要求调用函数：
 
 ```python
 # tool_demo.py（接着写）
@@ -5618,6 +6623,14 @@ for step in range(1, 6):                          # 最多 5 轮，防止模型�
 # stream_demo.py
 from llm import MODEL, NO_THINKING, client
 
+# stream 可以当成一个「片段列表」来理解，只是片段是边生成边送过来的，for 的时候一个一个读：
+# [
+#     chunk(choices=[Choice(delta=Delta(content=""))]),      第 1 个：常常是空字符串
+#     chunk(choices=[Choice(delta=Delta(content="1"))]),     第 2 个：一两个字
+#     chunk(choices=[Choice(delta=Delta(content="."))]),
+#     ...
+#     chunk(choices=[], usage=CompletionUsage(...)),          最后一个：没有文字，只有 usage
+# ]
 stream = client.chat.completions.create(      # 发请求，拿到的是一串片段，不是完整结果
     model=MODEL,
     messages=[{"role": "user", "content": "用三句话介绍 Python"}],
@@ -5626,32 +6639,41 @@ stream = client.chat.completions.create(      # 发请求，拿到的是一串�
     extra_body=NO_THINKING,
 )
 
-parts = []                                     # 把片段攒起来，最后拼成完整回答
+parts = []                                     # 同时把片段攒起来，最后拼成完整回答（存数据库等要用）
 for i, chunk in enumerate(stream):             # 每生成一点，循环就走一次
-    if i < 3:                                  # 看看前 3 个片段装的是什么
-        print(repr(chunk.choices[0].delta.content) if chunk.choices else None)
-    if chunk.choices and chunk.choices[0].delta.content:   # 片段里的文字在 delta.content，不是 message.content
-        parts.append(chunk.choices[0].delta.content)
-    if chunk.usage:                            # 最后那个片段：choices 是空的，只有 usage
-        print("usage:", chunk.usage.prompt_tokens, chunk.usage.completion_tokens, "chunks:", i + 1)
-print("".join(parts))
+    # 这个片段的文字：在 delta.content，不是 message.content；最后那个只带 usage 的片段 choices 是空的
+    text = chunk.choices[0].delta.content if chunk.choices else None
+    if text:                                   # 第一个片段常常是空字符串，和 None 一起跳过
+        print(text, end="", flush=True)        # 收到就打印：end="" 不换行，flush=True 立刻显示出来
+        parts.append(text)
+    if chunk.usage:                            # 最后那个片段：只有 usage，回答已经打印完了
+        print("\nusage:", chunk.usage.prompt_tokens, chunk.usage.completion_tokens, "chunks:", i + 1)
+answer = "".join(parts)                        # 完整回答
 ```
 
 ```
-''
-'1'
-'.'
-usage: 9 69 chunks: 71
-1. Python 是一种语法简洁、易读易学的高级编程语言，广泛适用于数据分析、人工智能、Web 开发等众多领域。  
-2. 它拥有丰富的标准库和第三方生态，能大幅提升开发效率。  
-3. Python 跨平台、社区活跃，是编程入门与快速原型的理想选择。
+1. Python 是一种简洁易读的高级编程语言，语法清晰、上手快，非常适合编程初学者入门。  
+2. 它拥有丰富的标准库和第三方生态，广泛应用于数据分析、人工智能、Web 开发、自动化脚本等领域。  
+3. Python 跨平台、开源且社区活跃，能让你用更少的代码高效地完成从原型到生产的开发任务。
+usage: 9 78 chunks: 80
 ```
 
-- 每个片段只有一两个字，69 个 token 的回答分成了 71 个片段返回。
-- 第一个片段的文字常常是空字符串，要判断一下再用。
-- 想在终端里看到打字效果，把 `parts.append` 换成 `print(text, end="", flush=True)`。
+- 运行时回答是一段一段冒出来的，最后才出现 usage：和接收的顺序一样。
+- 每个片段只有一两个字，78 个 token 的回答分成了 80 个片段返回。
+- `print` 默认每次换行，而且可能先攒在缓冲区里不马上显示；`end=""` 让片段接着上一个打印，`flush=True` 让它立刻显示。
 
-### SSE：后端把片段推给前端
+上面那段话是 80 个片段首尾相连拼出来的。把 `end=""` 换成 `end="|"` 再跑一次，就能看清每个片段（两个 `|` 之间是一个片段）：
+
+```
+1|.| Python| |是一种|简洁|易|读|的高级|编程|语言|，|语法|清晰|、|上手|快|，|适合|编程|初学者|和专业|开发者|。|  
+|2|.| |它|拥有|丰富的|标准|库|和|第三方|生态|，|广泛应用于|数据分析|、|人工智能|、|Web| |开发|、|自动化|脚本|等领域|。|  
+|3|.| Python| |跨|平台|、|开源|且|社区|活跃|，|能|帮助|开发者|用|…
+```
+
+- 每个片段大多是一两个词，`print` 每次只打印这么一点。
+- 「2.」前面换行，不是 `print` 换的（`end=""` 不会换行），而是模型输出的文字里本来就有换行符：第一句末尾那个片段是 `"  \n"`（两个空格加一个换行，Markdown 里行尾两个空格也表示换行）。`|` 也因此出现在了下一行的开头。
+
+### SSE 是什么：后端把片段推给前端的格式
 
 后端拿到片段后，要一个个转发给浏览器。最常用的格式是 **SSE**（Server-Sent Events）：一个普通的 HTTP 响应，`Content-Type` 是 `text/event-stream`，连接不断开，后端往里一段段写：
 
@@ -5668,8 +6690,91 @@ data: {"length": 54}
 
 FastAPI 用 `StreamingResponse` 加一个生成器（2.8 节 `yield`）实现，再装两个包：`uv pip install fastapi uvicorn`。
 
+### SSE 最小版：能把片段推给前端
+
 ```python
-# chat_api.py
+# chat_api_min.py
+import json
+import os
+
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+from openai import AsyncOpenAI
+from pydantic import BaseModel
+
+app = FastAPI()                               # 创建 FastAPI 应用对象
+client = AsyncOpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")   # 创建异步客户端对象：接口里用异步的
+
+
+class ChatIn(BaseModel):
+    question: str
+
+
+def sse(event: str, data: dict) -> str:
+    """拼一个 SSE 事件：event 一行、data 一行、最后一个空行。"""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@app.post("/chat/stream")
+async def chat_stream(body: ChatIn) -> StreamingResponse:
+    async def events():                       # 生成器：每 yield 一次，就往响应里写一段
+        stream = await client.chat.completions.create(
+            model="deepseek-flash",
+            messages=[{"role": "user", "content": body.question}],
+            stream=True,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        async for chunk in stream:            # 异步版的 for：模型每给一个片段走一次
+            text = chunk.choices[0].delta.content if chunk.choices else None
+            if text:
+                yield sse("delta", {"text": text})   # 片段推给前端
+
+    return StreamingResponse(events(), media_type="text/event-stream")   # 把生成器包成 SSE 响应
+```
+
+核心就是三件事：调模型时加 `stream=True`；`async for` 一个个读片段；每个片段用 `yield` 写进响应。
+
+启动 `uvicorn chat_api_min:app --port 8410`，用 curl 看原始响应（`-N`：收到一点就显示一点，不缓存）：
+
+```bash
+curl -N -X POST localhost:8410/chat/stream -H 'Content-Type: application/json' -d '{"question":"用一句话介绍 SSE"}'
+```
+
+```
+event: delta
+data: {"text": "SS"}
+
+event: delta
+data: {"text": "E"}
+
+event: delta
+data: {"text": "（"}
+
+...（中间省略）
+
+event: delta
+data: {"text": "。"}
+
+```
+
+学习、本地试，这个版本就够用了。
+
+### SSE 上线前要补的几种情况
+
+最小版只考虑了「一切正常」。真给别人用时，还会遇到这些情况：
+
+| 情况 | 最小版会怎样 | 怎么补 |
+|---|---|---|
+| ① 用户关了页面、点了停止 | 后端还在读模型输出，**继续计费** | 每读一个片段前检查 `request.is_disconnected()`，断开就 `break` |
+| ③ 回答说完了 | 前端分不清「说完了」还是「网络断了」 | 最后发一个 `done` 事件 |
+| ④ 中途出错（模型超时、限流） | 回答突然停住，前端不知道发生了什么 | `except` 里发一个 `error` 事件 |
+| ⑤ 不管正常结束还是断开 | 和模型的连接可能没关，继续生成、继续收费 | `finally` 里 `stream.close()` |
+| ⑥ 要保存聊天记录 | 用户中途断开，这次对话就丢了 | `finally` 里保存，完整的、中途断开的都记下来 |
+
+（②就是最小版里本来就有的「片段推给前端」。）①④⑤上线基本是标配；⑥看要不要保存聊天记录。把这几处补上，就是完整版：
+
+```python
+# chat_api.py：完整版，在最小版的基础上补齐 ①～⑥
 import json
 import os
 from collections.abc import AsyncIterator
@@ -5724,23 +6829,11 @@ async def chat_stream(body: ChatIn, request: Request) -> StreamingResponse:
     return StreamingResponse(events(), media_type="text/event-stream")   # 把生成器包成 SSE 响应
 ```
 
-启动 `uvicorn chat_api:app --port 8410`，用 curl 看原始响应（`-N`：收到一点就显示一点，不缓存）：
 
-```bash
-curl -N -X POST localhost:8410/chat/stream -H 'Content-Type: application/json' -d '{"question":"用一句话介绍 SSE"}'
-```
+启动 `uvicorn chat_api:app --port 8410`，正常问一句话，输出和最小版一样，只是最后多了一个 `done` 事件：
 
 ```
-event: delta
-data: {"text": "SS"}
-
-event: delta
-data: {"text": "E"}
-
-event: delta
-data: {"text": "（"}
-
-...（中间省略）
+...（前面和最小版一样）
 
 event: delta
 data: {"text": "。"}

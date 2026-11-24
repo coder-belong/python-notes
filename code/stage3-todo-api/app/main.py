@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import errors
 from app.config import settings
 from app.response import success              # 拼装补充：笔记 health() 写的是 errors.success，errors 里没有 success，改用 response.success
-from app.routers import auth, tasks
+from app.routers import admin, auth, files, tasks
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")   # 日志格式
 logger = logging.getLogger("todo-api")
@@ -39,6 +39,8 @@ async def log_requests(request: Request, call_next: Callable[[Request], Awaitabl
 
 app.include_router(auth.router)          # /auth/...
 app.include_router(tasks.router)         # /tasks/...
+app.include_router(admin.router)         # /admin/...（3.18）
+app.include_router(files.router)         # /files/...（3.19）
 
 
 @app.get("/", tags=["健康检查"])         # GET /，/docs 里单独一组

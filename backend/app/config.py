@@ -21,3 +21,8 @@ TOKEN_DAYS = 30
 
 # 管理员：能看所有用户的学习时长。多个用逗号隔开，线上可以用环境变量 ADMIN_USERNAMES 改
 ADMIN_USERNAMES = {name.strip() for name in os.getenv("ADMIN_USERNAMES", "belong").split(",") if name.strip()}
+
+# 问 AI 用的 DeepSeek key。不填的话「问 AI」接口返回 503，其他接口不受影响
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+# 问 AI 用的模型
+AI_MODEL = os.getenv("AI_MODEL", "deepseek-flash")

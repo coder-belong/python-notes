@@ -1,0 +1,576 @@
+/* 问 AI：选中正文后出现的按钮 + 右侧对话面板（只有管理员能看到） */
+
+.ask-ai,
+.ask-ai-btn,
+.ask-ai-fab {
+  --ai-a: #6d5dfc; /* 面板的主色：渐变的两端 */
+  --ai-b: #2f8cff;
+  --ai-grad: linear-gradient(135deg, var(--ai-a), var(--ai-b));
+  --ai-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 选中文字后出现的按钮 */
+.ask-ai-btn {
+  position: fixed;
+  z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px 6px 11px;
+  border: none;
+  border-radius: 999px;
+  background: var(--ai-grad);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow:
+    0 6px 18px color-mix(in srgb, var(--ai-a) 40%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  animation: ask-ai-pop 0.22s var(--ai-ease);
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
+}
+
+.ask-ai-btn:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 8px 22px color-mix(in srgb, var(--ai-a) 50%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+/* 右侧面板 */
+.ask-ai {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  width: min(440px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.18),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+  font-size: 14px;
+  animation: ask-ai-in 0.32s var(--ai-ease);
+}
+
+.ask-ai.closing {
+  animation: ask-ai-out 0.22s ease-in forwards;
+}
+
+/* 顶部一条细细的渐变，和按钮呼应 */
+.ask-ai::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--ai-grad);
+}
+
+.ask-ai-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 14px 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ask-ai-logo {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--ai-grad);
+  color: #fff;
+}
+
+.ask-ai-logo svg {
+  width: 16px;
+  height: 16px;
+}
+
+.ask-ai-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.ask-ai-title b {
+  display: block;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.ask-ai-title span {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ask-ai-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.ask-ai-icon:hover {
+  background: var(--code-bg);
+  color: var(--text);
+}
+
+/* 对话列表 */
+.ask-ai-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  overscroll-behavior: contain; /* 滚到头时不带着后面的页面一起滚 */
+}
+
+.ask-ai-quote {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--ai-a) 22%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ai-a) 6%, var(--panel));
+  animation: ask-ai-rise 0.3s var(--ai-ease);
+}
+
+.ask-ai-quote figcaption {
+  margin-bottom: 4px;
+  color: var(--ai-a);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.ask-ai-quote blockquote {
+  max-height: 150px;
+  overflow-y: auto;
+  margin: 0;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ask-ai-empty {
+  animation: ask-ai-rise 0.35s 0.05s var(--ai-ease) both;
+}
+
+.ask-ai-empty p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.ask-ai-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ask-ai-quick button {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+
+.ask-ai-quick button:hover {
+  border-color: var(--ai-a);
+  background: color-mix(in srgb, var(--ai-a) 8%, var(--panel));
+  color: var(--ai-a);
+}
+
+/* 我的问题：右边的气泡 */
+.ask-ai-q {
+  width: fit-content;
+  max-width: 85%;
+  margin: 18px 0 14px auto;
+  padding: 9px 13px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--ai-grad);
+  color: #fff;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  animation: ask-ai-rise 0.28s var(--ai-ease);
+}
+
+/* 模型的回答：左边头像 + 正文 */
+.ask-ai-a {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 6px;
+  animation: ask-ai-rise 0.28s var(--ai-ease);
+}
+
+.ask-ai-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ai-a) 14%, var(--panel));
+  color: var(--ai-a);
+}
+
+.ask-ai-avatar svg {
+  width: 12px;
+  height: 12px;
+}
+
+.ask-ai-body {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.75;
+}
+
+.ask-ai-md > :first-child {
+  margin-top: 0;
+}
+
+.ask-ai-md > :last-child {
+  margin-bottom: 0;
+}
+
+.ask-ai-md p,
+.ask-ai-md ul,
+.ask-ai-md ol {
+  margin: 6px 0;
+}
+
+.ask-ai-md ul,
+.ask-ai-md ol {
+  padding-left: 20px;
+}
+
+.ask-ai-md h1,
+.ask-ai-md h2,
+.ask-ai-md h3,
+.ask-ai-md h4 {
+  margin: 14px 0 6px;
+  font-size: 14.5px;
+}
+
+.ask-ai-md pre {
+  overflow-x: auto;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--code-bg);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.ask-ai-md pre code {
+  padding: 0; /* 全局的 .hljs 有自己的内边距，这里 pre 已经留了 */
+  background: none;
+}
+
+.ask-ai-md :not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  font-size: 0.9em;
+}
+
+.ask-ai-md table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ask-ai-md th,
+.ask-ai-md td {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+}
+
+/* 正在输出时，末尾跟一个闪烁的光标 */
+.ask-ai-md.streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1em;
+  margin-left: 3px;
+  border-radius: 2px;
+  background: var(--ai-a);
+  vertical-align: -0.15em;
+  animation: ask-ai-blink 1s steps(2) infinite;
+}
+
+/* 还没出第一个字：三个跳动的点 */
+.ask-ai-dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 9px 0;
+}
+
+.ask-ai-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ai-a);
+  animation: ask-ai-dot 1.1s infinite ease-in-out;
+}
+
+.ask-ai-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.ask-ai-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.ask-ai-meta {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.ask-ai-err {
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #d1453b 10%, var(--panel));
+  color: #d1453b;
+  font-size: 13px;
+}
+
+/* 底部输入区 */
+.ask-ai-form {
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line);
+}
+
+.ask-ai-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.ask-ai-box:focus-within {
+  border-color: var(--ai-a);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ai-a) 16%, transparent);
+}
+
+.ask-ai-box textarea {
+  flex: 1;
+  max-height: 140px;
+  padding: 6px 0;
+  border: none;
+  outline: none;
+  resize: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+}
+
+.ask-ai-send {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 10px;
+  background: var(--ai-grad);
+  color: #fff;
+  cursor: pointer;
+  transition:
+    opacity 0.15s,
+    transform 0.15s;
+}
+
+.ask-ai-send:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.ask-ai-send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.ask-ai-send.stop {
+  background: var(--text);
+  color: var(--panel);
+}
+
+.ask-ai-hint {
+  margin: 6px 2px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* 窄屏：面板铺满整屏 */
+@media (max-width: 600px) {
+  .ask-ai {
+    inset: 0;
+    width: 100%;
+    border: none;
+    border-radius: 0;
+  }
+}
+
+@keyframes ask-ai-in {
+  from {
+    opacity: 0;
+    transform: translateX(32px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ask-ai-out {
+  to {
+    opacity: 0;
+    transform: translateX(32px) scale(0.98);
+  }
+}
+
+@keyframes ask-ai-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ask-ai-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ask-ai-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes ask-ai-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+/* 右下角的入口：在「回到顶部」按钮上面 */
+.ask-ai-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 76px;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: var(--ai-grad);
+  color: #fff;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--ai-a) 40%, transparent);
+  cursor: pointer;
+  animation: ask-ai-pop 0.25s var(--ai-ease);
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s;
+}
+
+.ask-ai-fab svg {
+  width: 18px;
+  height: 18px;
+}
+
+.ask-ai-fab:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ai-a) 50%, transparent);
+}
+
+.ask-ai-empty .ask-ai-tip {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--code-bg);
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+@media (max-width: 520px) {
+  .ask-ai-fab {
+    right: 16px;
+    bottom: 68px;
+  }
+}
+
+/* 系统设置了「减少动态效果」：不播放滑入、弹出这些动画 */
+@media (prefers-reduced-motion: reduce) {
+  .ask-ai,
+  .ask-ai.closing,
+  .ask-ai-btn,
+  .ask-ai-fab,
+  .ask-ai-q,
+  .ask-ai-a,
+  .ask-ai-quote,
+  .ask-ai-empty {
+    animation: none;
+  }
+}

@@ -1,4 +1,4 @@
-# app/models.py（3.7 新建 Task；3.13 加 User；3.14 加 user_id 和 relationship；3.15 加 priority）
+# app/models.py（3.7 新建 Task；3.13 加 User；3.14 加 user_id 和 relationship；3.15 加 priority；3.18 User 加 role）
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -19,6 +19,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)   # unique：不能重名
     password_hash: Mapped[str] = mapped_column(String(200), nullable=False)          # 只存哈希，不存密码
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="user", server_default="user")   # 3.18：角色，user 普通用户 / admin 管理员
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_now)
     tasks: Mapped[list[Task]] = relationship(back_populates="user", cascade="all, delete-orphan")   # 用户 → 他的所有任务（不是表里的列）
 

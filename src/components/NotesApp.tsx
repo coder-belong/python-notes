@@ -18,6 +18,7 @@ import { useStudy } from "@/lib/use-study";
 
 import AccountPanel, { AccountEntry } from "./AccountPanel";
 import AdminPanel from "./AdminPanel";
+import AskAI from "./AskAI";
 import ChangelogPanel from "./ChangelogPanel";
 import FocusBar from "./FocusBar";
 import Home from "./Home";
@@ -380,7 +381,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
             >
               <SidebarIcon />
             </button>
-            <a className="brand" href="#">
+            <a className="brand" href="#" title="回到首页 · 学习路线">
               {notes.title}
             </a>
             <MoreMenu
@@ -394,13 +395,8 @@ export default function NotesApp({ notes }: { notes: Notes }) {
             <ThemeToggle />
           </div>
           <StudyEntry study={study} onOpen={() => setStatsOpen(true)} />
+          {/* 首页、学习过程收进「⋯」菜单（标题也能回首页），目录只留各阶段的节 */}
           <nav>
-            <a href="#" className={`nav-home ${route === null && !page ? "active" : ""}`}>
-              首页 · 学习路线
-            </a>
-            <a href="#progress" className={`nav-home ${page === "progress" ? "active" : ""}`}>
-              学习过程
-            </a>
             {groups.map((g) => {
               const done = g.items.filter((s) => study.data.done[s.id]).length;
               const open = openParts.has(g.part);
@@ -586,6 +582,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
           }}
         />
       )}
+      {study.account && section && !study.guestBlocked && <AskAI key={section.id} token={study.account.token} section={section} />}
       {adminOpen && study.account && (
         <AdminPanel token={study.account.token} me={study.account.username} onClose={() => setAdminOpen(false)} />
       )}

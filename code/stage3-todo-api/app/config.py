@@ -1,4 +1,4 @@
-# app/config.py（3.12 新建；3.13 加 jwt_secret / token_days；3.16 加 cors_origins、vercel 和检查）
+# app/config.py（3.12 新建；3.13 加 jwt_secret / token_days；3.16 加 cors_origins、vercel 和检查；3.19 加 upload_dir；3.20 加 redis_url）
 from __future__ import annotations
 
 from pydantic import model_validator          # 拼装补充：3.16 用到了 @model_validator，笔记没写这行导入
@@ -25,6 +25,12 @@ class Settings(BaseSettings):                 # 继承 BaseSettings：字段从�
     # 3.16
     cors_origins: list[str] = ["http://localhost:5173"]   # 允许跨域的前端网址；环境变量写成 JSON：CORS_ORIGINS='["https://todo.example.com"]'
     vercel: bool = False                      # Vercel 上会自动设置 VERCEL=1
+
+    # 3.19
+    upload_dir: str = "uploads"               # 上传的文件存在哪个文件夹（相对于启动目录）
+
+    # 3.20
+    redis_url: str = "redis://localhost:6379/0"   # Redis 地址，最后的 /0 是第几个库（默认有 0～15 共 16 个）
 
     @model_validator(mode="after")            # 所有字段读完之后再执行这个检查
     def check_secret(self) -> Settings:

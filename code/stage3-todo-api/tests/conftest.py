@@ -7,10 +7,12 @@ from collections.abc import Iterator
 
 import pytest                                       # 测试框架
 from fastapi.testclient import TestClient           # 不启动服务，直接在代码里给 app 发请求
+from redis import Redis
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db import Base, db_session                 # db_session：要被换掉的那个依赖（第 3.9 节）
+from app.redis_client import get_redis              # 3.20：Redis 也换成测试用的库
 from app.main import app                            # 要测的 app
 
 
@@ -18,6 +20,7 @@ from app.main import app                            # 要测的 app
 TEST_DATABASE_URL = "postgresql+psycopg://localhost:5432/stage3_todo_test"
 engine = create_engine(TEST_DATABASE_URL)                                       # 连测试库
 TestSession = sessionmaker(engine, autoflush=False, expire_on_commit=False)    # 测试库的会话工厂，参数和 db.py 里一样
+test_redis = Redis.from_url("redis://localhost:6379/15", decode_responses=True)   # 3.20：测试用 15 号库，和开发用的 0 号分开
 
 
 @pytest.fixture                                     # 标记成 fixture：测试函数参数里写 client，pytest 就先跑它
@@ -34,7 +37,9 @@ def client() -> Iterator[TestClient]:
         finally:
             session.close()                         # 不管怎样都关闭
 
+    test_redis.flushdb()                            # 3.20：清空测试用的 Redis 库
     app.dependency_overrides[db_session] = test_db_session   # 把真库换成测试库；current_user 里的 Db 也会跟着换
+    app.dependency_overrides[get_redis] = lambda: test_redis   # 3.20：Redis 也换成测试库
     with TestClient(app) as c:                      # with：启动、关闭 app
         yield c                                     # 把 client 交给测试函数，测试跑完再回到这里
     app.dependency_overrides.clear()                # 收尾：撤掉替换，不影响别的地方

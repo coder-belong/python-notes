@@ -4,6 +4,8 @@ import type { Reading } from "@/lib/study-store";
 import Heatmap from "./Heatmap";
 import type { Group } from "./NotesApp";
 
+import "./Roadmap.css";
+
 type Props = {
   notes: Notes;
   groups: Group[];
@@ -13,6 +15,9 @@ type Props = {
 };
 
 /** 首页：继续学习、学习热力图、各部分进度、12 周学习路线。 */
+/** 学习路线里优先级的文字：★★★ / ★★ / ★。 */
+const PRIORITY_LABEL = { 3: "必学", 2: "会用", 1: "了解" } as const;
+
 export default function Home({ notes, groups, done, reading, studyDays }: Props) {
   const { sections, roadmap } = notes;
   const doneCount = sections.filter((s) => done[s.id]).length;
@@ -39,7 +44,12 @@ export default function Home({ notes, groups, done, reading, studyDays }: Props)
         <span className="resume-go">→</span>
       </a>
 
-      <h2 className="home-h">学习热力图</h2>
+      <h2 className="home-h">
+        学习热力图
+        <a className="home-h-link" href="#progress">
+          学习过程 →
+        </a>
+      </h2>
       <Heatmap days={studyDays} />
 
       <h2 className="home-h">笔记目录</h2>
@@ -102,7 +112,12 @@ export default function Home({ notes, groups, done, reading, studyDays }: Props)
       {roadmap.length > 0 && (
         <>
           <h2 className="home-h">学习路线</h2>
-          <p className="hint">打勾的是笔记里已经写了的，没勾的是后面要补的内容；标「次要」的了解即可，时间紧可以先跳过。</p>
+          <p className="hint">打勾的是笔记里已经写了的，没勾的是后面要补的内容。</p>
+          <p className="prio-legend">
+            <span className="prio p3">必学</span>面试必问、工作常用
+            <span className="prio p2">会用</span>能上手、讲得清原理
+            <span className="prio p1">了解</span>知道是什么、什么时候用，时间紧可以先跳过
+          </p>
           <div className="stages">
             {roadmap.map((stage, i) => {
               const written = stage.items.filter((it) => it.done).length;
@@ -118,18 +133,23 @@ export default function Home({ notes, groups, done, reading, studyDays }: Props)
                   </summary>
                   <ul>
                     {stage.items.map((it, j) => (
-                      <li key={j} className={[it.done ? "done" : "", it.minor ? "minor" : ""].join(" ")}>
+                      <li key={j} className={[it.done ? "done" : "", it.priority === 1 ? "minor" : ""].join(" ")}>
                         <span className="check">{it.done ? "✓" : ""}</span>
                         <span>
-                          <span dangerouslySetInnerHTML={{ __html: it.html }} />
-                          {it.minor && <span className="minor-tag">次要</span>}
-                          {it.minorNote && (
-                            <span className="minor-note" dangerouslySetInnerHTML={{ __html: it.minorNote }} />
+                          {it.priority && (
+                            <span className={`prio p${it.priority}`}>{PRIORITY_LABEL[it.priority]}</span>
                           )}
+                          <span dangerouslySetInnerHTML={{ __html: it.html }} />
                         </span>
                       </li>
                     ))}
                   </ul>
+                  {stage.check && (
+                    <p className="stage-check">
+                      <b>验收</b>
+                      <span dangerouslySetInnerHTML={{ __html: stage.check }} />
+                    </p>
+                  )}
                 </details>
               );
             })}
