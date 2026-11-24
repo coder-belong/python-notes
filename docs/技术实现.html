@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>python-notes 技术实现</title>
+<style>
+:root {
+  --bg: #f7f8fa; --panel: #ffffff; --text: #1f2328; --muted: #656d76; --line: #e5e7eb;
+  --accent: #2f6fdf; --accent-soft: #e8f0fd; --code-bg: #f3f4f6; --ok: #1a7f37; --warn: #9a6700;
+  --box-fe: #e8f0fd; --box-be: #e9f7ef; --box-db: #fff4e5; --box-ext: #f3e8fd;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115; --panel: #171a21; --text: #e6e6e6; --muted: #9aa0a6; --line: #2a2f3a;
+    --accent: #7aa7ff; --accent-soft: #1d2a45; --code-bg: #1f232c; --ok: #4ac26b; --warn: #d4a72c;
+    --box-fe: #1d2a45; --box-be: #16302a; --box-db: #3a2d16; --box-ext: #2c1f3d;
+  }
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.75 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+:not(pre) > code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto; line-height: 1.6; margin: 12px 0; }
+
+.layout { display: flex; max-width: 1440px; margin: 0 auto; }
+nav.toc { position: sticky; top: 0; align-self: flex-start; width: 250px; flex: none; height: 100vh; overflow-y: auto;
+  padding: 28px 12px 40px 20px; border-right: 1px solid var(--line); }
+nav.toc .brand { font-weight: 700; font-size: 16px; margin: 0 0 4px 10px; }
+nav.toc .sub { color: var(--muted); font-size: 12px; margin: 0 0 18px 10px; }
+nav.toc a { display: block; padding: 5px 10px; border-radius: 6px; color: var(--muted); font-size: 13.5px; border-left: 2px solid transparent; }
+nav.toc a:hover { color: var(--text); background: var(--accent-soft); }
+nav.toc a.active { color: var(--accent); font-weight: 600; background: var(--accent-soft); border-left-color: var(--accent); }
+main { flex: 1; min-width: 0; padding: 36px 48px 120px; }
+.content { max-width: 1040px; }
+h1 { font-size: 28px; margin: 0 0 8px; }
+.lead { color: var(--muted); margin: 0 0 28px; }
+section { scroll-margin-top: 20px; margin-bottom: 44px; }
+h2 { font-size: 21px; margin: 0 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 16px; margin: 22px 0 8px; }
+p { margin: 8px 0; }
+ul, ol { padding-left: 22px; margin: 8px 0; }
+li { margin: 3px 0; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; background: var(--panel); border-radius: 8px; overflow: hidden; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--code-bg); font-weight: 600; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin: 12px 0; }
+.note { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 6px; margin: 12px 0; }
+.tag { display: inline-block; font-size: 12px; padding: 0 8px; border-radius: 10px; background: var(--code-bg); color: var(--muted); margin-right: 4px; }
+
+/* 架构图 */
+.arch { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 10px; align-items: center; margin: 16px 0; }
+.box { border-radius: 10px; padding: 12px 14px; border: 1px solid var(--line); min-height: 118px; }
+.box b { display: block; margin-bottom: 4px; }
+.box small { color: var(--muted); display: block; line-height: 1.55; }
+.fe { background: var(--box-fe); } .be { background: var(--box-be); } .db { background: var(--box-db); } .ext { background: var(--box-ext); }
+.arrow { color: var(--muted); font-size: 12px; text-align: center; line-height: 1.4; }
+.arrow span { display: block; font-size: 20px; }
+.flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.flow .step { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font-size: 13.5px; }
+.flow .to { color: var(--muted); }
+.seq { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 0; margin: 12px 0; }
+.seq .row { display: grid; grid-template-columns: 120px 1fr 120px; align-items: center; padding: 6px 16px; font-size: 13.5px; }
+.seq .row .l { text-align: right; color: var(--muted); } .seq .row .r { color: var(--muted); }
+.seq .msg { text-align: center; border-bottom: 1px dashed var(--line); padding: 2px 10px 4px; }
+.seq .msg.back { color: var(--ok); }
+
+@media (max-width: 900px) {
+  nav.toc { display: none; }
+  main { padding: 24px 16px 80px; }
+  .arch { grid-template-columns: 1fr; }
+  .arrow span { transform: rotate(90deg); }
+  .seq .row { grid-template-columns: 70px 1fr 70px; padding: 6px 8px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav class="toc" id="toc">
+  <div class="brand">python-notes</div>
+  <div class="sub">技术实现说明 · 2026-11-23</div>
+  <a href="#overview">1. 整体结构</a>
+  <a href="#stack">2. 技术栈</a>
+  <a href="#dirs">3. 目录结构</a>
+  <a href="#build">4. 笔记怎么变成网页</a>
+  <a href="#routing">5. 页面切换：网址里的 #</a>
+  <a href="#timer">6. 学习计时</a>
+  <a href="#storage">7. 浏览器本地存储</a>
+  <a href="#auth">8. 注册和登录</a>
+  <a href="#sync">9. 学习记录同步</a>
+  <a href="#api">10. 后端接口</a>
+  <a href="#db">11. 数据库表</a>
+  <a href="#guest">12. 访客和管理员</a>
+  <a href="#deploy">13. 部署和域名</a>
+  <a href="#local">14. 本地开发</a>
+  <a href="#map">15. 和笔记的对应关系</a>
+</nav>
+
+<main><div class="content">
+<h1>python-notes 技术实现</h1>
+<p class="lead">「AI 应用开发笔记」网站：前端 Next.js 静态页面，后端 FastAPI，部署在 Vercel，线上地址 notes.belong.run。下面按「页面怎么出来 → 学习记录怎么记 → 怎么同步到账号 → 怎么部署」的顺序讲。</p>
+
+<section id="overview">
+<h2>1. 整体结构</h2>
+<div class="arch">
+  <div class="box fe"><b>浏览器（前端）</b><small>Next.js 静态页面<br>每秒记学习时长<br>存在 localStorage<br>登录后每 60 秒同步</small></div>
+  <div class="arrow"><span>⇄</span>HTTPS<br>POST /sync</div>
+  <div class="box be"><b>后端 API</b><small>FastAPI + SQLAlchemy<br>Vercel Serverless Functions<br>注册登录、同步、统计</small></div>
+  <div class="arrow"><span>⇄</span>SQL</div>
+  <div class="box db"><b>数据库</b><small>线上：Neon（云 Postgres）<br>本地：SQLite 文件<br>backend/dev.db</small></div>
+</div>
+<ul>
+  <li><b>前端</b>：笔记内容在构建时就转成了 HTML，线上是纯静态文件，打开就是成品，不需要服务器现做页面。</li>
+  <li><b>后端</b>：只管账号和学习记录，不参与显示笔记。不登录也能看笔记、记时长，只是记录只在本机。</li>
+  <li><b>两者怎么通信</b>：普通 HTTP 请求，浏览器主动发，后端应答。没有 WebSocket，也没有服务器推送。</li>
+</ul>
+</section>
+
+<section id="stack">
+<h2>2. 技术栈</h2>
+<table>
+  <tr><th>部分</th><th>用了什么</th><th>做什么</th></tr>
+  <tr><td>前端框架</td><td>Next.js 16、React 19、TypeScript</td><td>页面、侧栏、学习计时、同步</td></tr>
+  <tr><td>Markdown 转换</td><td>marked</td><td>构建时把 <code>content/notes.md</code> 转成 HTML</td></tr>
+  <tr><td>代码高亮</td><td>highlight.js</td><td>构建时就给代码块上好色，浏览器不用再跑高亮脚本</td></tr>
+  <tr><td>前端输出</td><td>静态导出（<code>output: "export"</code>）+ 自己写的 <code>scripts/single-html.mjs</code></td><td>线上是静态文件；另外能打成一个双击就能打开的单文件 HTML</td></tr>
+  <tr><td>后端框架</td><td>FastAPI、SQLAlchemy 2.0</td><td>8 个接口：健康检查、注册登录、同步、访客上报、管理员统计</td></tr>
+  <tr><td>登录</td><td>JWT（pyjwt）、Argon2 密码哈希（pwdlib）</td><td>密码只存哈希；登录后发 token，之后放在请求头里</td></tr>
+  <tr><td>数据库</td><td>线上 Neon Postgres（psycopg 驱动），本地 SQLite</td><td>用户、每天时长、每节时长和学完状态、同步批次、访客统计</td></tr>
+  <tr><td>部署</td><td>Vercel（两个项目）</td><td>推送到 GitHub main 分支后自动部署</td></tr>
+  <tr><td>域名</td><td>belong.run，解析在腾讯云 DNSPod</td><td>前端 notes.belong.run，后端 api.belong.run</td></tr>
+</table>
+</section>
+
+<section id="dirs">
+<h2>3. 目录结构</h2>
+<pre>python-notes/
+├── content/
+│   ├── notes.md            笔记正文：网站的内容全部来自这一个文件
+│   └── changelog.md        更新日志（「⋯」菜单里看）
+├── ROADMAP.md              学习路线（首页的勾选清单）
+├── src/
+│   ├── app/page.tsx        构建时读 notes.md，交给 NotesApp
+│   ├── lib/
+│   │   ├── notes.ts        Markdown → 按「阶段 / 节」拆好的 HTML，顺便取出每节的小标题做右侧目录
+│   │   ├── use-study.ts    学习计时、学完了、番茄钟、登录后的同步
+│   │   ├── study-store.ts  学习记录在 localStorage 里的读写
+│   │   ├── account.ts      调后端接口、登录信息、待同步的增量
+│   │   ├── guest.ts        访客：免费 10 分钟、访客 id
+│   │   └── legacy-ids.ts   旧版节 id → 新 id，老的学习记录自动迁移
+│   ├── components/         页面组件：NotesApp、Home、Heatmap、SectionToc、AccountPanel……
+│   └── styles/globals.css  全部样式
+├── scripts/single-html.mjs 把构建结果打成一个 HTML 文件
+├── backend/
+│   ├── index.py            Vercel 的入口（找里面的 app）
+│   └── app/                main.py 接口、models.py 表、security.py 登录、db.py 连库……
+└── code/                   笔记配套的练习工程（阶段一到四），和网站运行无关</pre>
+</section>
+
+<section id="build">
+<h2>4. 笔记怎么变成网页</h2>
+<p>所有笔记写在一个 Markdown 文件里，构建时一次性处理好：</p>
+<div class="flow">
+  <div class="step">content/notes.md</div><div class="to">→</div>
+  <div class="step">marked 解析成 token</div><div class="to">→</div>
+  <div class="step">按 <code># 阶段</code> 分组、按 <code>## 节</code> 切开</div><div class="to">→</div>
+  <div class="step">每节转 HTML，代码块用 highlight.js 上色</div><div class="to">→</div>
+  <div class="step">取出 <code>###</code> 做右侧目录</div><div class="to">→</div>
+  <div class="step">next build 静态导出到 out/</div>
+</div>
+<ul>
+  <li><b>Markdown 约定</b>：第一个 <code>#</code> 是书名；<code># 阶段X：…</code> 是分组；每个 <code>## 节</code> 是一页；标题后面写固定 id，比如 <code>## 1.6 迭代器 {#iter-gen-deco}</code>，学习记录按这个 id 存，改标题、改编号都不会丢。</li>
+  <li><b>代码在 <code>src/lib/notes.ts</code></b>：<code>loadNotes()</code> 只在构建时运行（文件开头 <code>import "server-only"</code>），浏览器里拿到的已经是处理好的 HTML。</li>
+  <li><b>单文件 HTML</b>：<code>npm run build</code> 之后，<code>scripts/single-html.mjs</code> 把 CSS、JS 全部内联进 <code>index.html</code>，生成 <code>dist/AI应用开发笔记.html</code>，拷到哪里都能双击打开。</li>
+</ul>
+</section>
+
+<section id="routing">
+<h2>5. 页面切换：网址里的 #</h2>
+<p>整个网站只有一个页面，切换节靠网址里 <code>#</code> 后面的部分：</p>
+<table>
+  <tr><th>网址</th><th>显示</th></tr>
+  <tr><td><code>notes.belong.run/</code></td><td>首页：继续学习、热力图、目录卡片、学习路线</td></tr>
+  <tr><td><code>#llm-call</code></td><td>id 为 llm-call 的那一节（4.1）</td></tr>
+  <tr><td><code>#progress</code></td><td>学习过程页</td></tr>
+</table>
+<ul>
+  <li>监听浏览器的 <code>hashchange</code> 事件，<code>#</code> 变了就换成对应的节。不用路由库，也不会刷新页面。</li>
+  <li>每节记住各自的滚动位置，回来时滚到上次读到的地方。</li>
+  <li>右侧「本节目录」点击时只滚动、不改 <code>#</code>，因为 <code>#</code> 被用来切换节了。</li>
+  <li>节的 id 以前是按标题自动生成的，后来改成写死；<code>legacy-ids.ts</code> 里有一张「旧 id → 新 id」的表，打开页面时自动把老记录换成新 id。</li>
+</ul>
+</section>
+
+<section id="timer">
+<h2>6. 学习计时</h2>
+<p><code>src/lib/use-study.ts</code> 每秒检查一次，三个条件都满足才加 1 秒：</p>
+<ol>
+  <li>页面在前台（没切到别的标签页）；</li>
+  <li>浏览器窗口有焦点；</li>
+  <li>最近 90 秒内有过滚动、鼠标、键盘或触摸操作。</li>
+</ol>
+<p>加的这 1 秒同时记到三个地方：今天的总时长（热力图）、当前这一节的时长；这一节第一次学的话，再记下开始日期（学习过程页）。</p>
+<table>
+  <tr><th>频率</th><th>做什么</th></tr>
+  <tr><td>每 1 秒</td><td>判断在不在学，在学就在内存里加 1 秒</td></tr>
+  <tr><td>每 10 秒</td><td>写一次 localStorage（切走、关闭页面时马上写）</td></tr>
+  <tr><td>每 60 秒</td><td>登录了的话，把新增的部分同步到后端（见第 9 节）</td></tr>
+</table>
+<div class="note">「一天学满 10 分钟才点亮热力图、才算连续学习天数」的判断也在前端：<code>STUDIED_DAY_SECONDS = 10 * 60</code>。</div>
+</section>
+
+<section id="storage">
+<h2>7. 浏览器本地存储</h2>
+<p>都存在 localStorage，键名以 <code>python-notes:</code> 开头：</p>
+<table>
+  <tr><th>键</th><th>内容</th></tr>
+  <tr><td><code>python-notes:study</code></td><td>学习记录：每天秒数、每节秒数、学完了、番茄钟、开始和学完日期</td></tr>
+  <tr><td><code>python-notes:auth</code></td><td>登录信息：token 和用户名</td></tr>
+  <tr><td><code>python-notes:sync</code></td><td>同步状态：还没发出去的增量、发出去还没确认的那一批</td></tr>
+  <tr><td><code>python-notes:reading</code></td><td>上次读到哪一节</td></tr>
+  <tr><td><code>python-notes:positions</code></td><td>每节的滚动位置</td></tr>
+</table>
+<p>学习记录长这样（前后端用的是同一个格式）：</p>
+<pre>{
+  "days":      { "2026-11-23": 1820 },          // 日期 → 当天学了多少秒
+  "sections":  { "llm-call": 640 },             // 节 id → 累计秒数
+  "done":      { "llm-call": true },            // 节 id → 勾了「学完了」
+  "pomodoros": { "2026-11-23": 2 },             // 日期 → 完成几个番茄钟
+  "started":   { "llm-call": "2026-11-20" },    // 节 id → 第一次学的日期
+  "finished":  { "llm-call": "2026-11-21" }     // 节 id → 学完的日期
+}</pre>
+<div class="note"><b>localStorage 按网址分开</b>：<code>python-notes-one.vercel.app</code> 和 <code>notes.belong.run</code> 各存各的。换域名后要在新网址重新登录一次，服务器上的记录会同步回来。</div>
+</section>
+
+<section id="auth">
+<h2>8. 注册和登录</h2>
+<div class="flow">
+  <div class="step">POST /auth/login<br><small>用户名 + 密码</small></div><div class="to">→</div>
+  <div class="step">后端用 Argon2 校验密码哈希</div><div class="to">→</div>
+  <div class="step">签一个 JWT 返回<br><small>30 天有效</small></div><div class="to">→</div>
+  <div class="step">前端存进 localStorage</div><div class="to">→</div>
+  <div class="step">之后每个请求带<br><code>Authorization: Bearer …</code></div>
+</div>
+<ul>
+  <li><b>密码</b>：只存 Argon2 哈希，不存明文（<code>backend/app/security.py</code>）。</li>
+  <li><b>token 放请求头，不用 Cookie</b>：所以后端 CORS 可以写 <code>allow_origins=["*"]</code>，别的网站拿不到你的 token，开放也不会被冒用。单文件 HTML 用 <code>file://</code> 打开时也能调接口。</li>
+  <li><b>token 失效</b>：后端返回 401，前端自动退出登录，本机记录保留，下次登录接着传。</li>
+  <li><b>密钥</b>：签 token 用环境变量 <code>JWT_SECRET</code>；线上没配会直接启动失败，避免用默认密钥上线。</li>
+</ul>
+</section>
+
+<section id="sync">
+<h2>9. 学习记录同步</h2>
+<h3>方式：定时发普通 HTTP 请求</h3>
+<div class="seq">
+  <div class="row"><div class="l">浏览器</div><div class="msg">POST /sync　{ 新增的时长……, batch_id }　→</div><div class="r">后端</div></div>
+  <div class="row"><div class="l"></div><div class="msg">按 batch_id 去重，把增量加进数据库</div><div class="r"></div></div>
+  <div class="row"><div class="l">浏览器</div><div class="msg back">←　返回账号的全部记录</div><div class="r">后端</div></div>
+  <div class="row"><div class="l"></div><div class="msg">前端用返回值覆盖本地（再加上请求期间新增的）</div><div class="r"></div></div>
+</div>
+<p>什么时候发：登录后每 60 秒一次；切走、关闭页面时补发一次（<code>fetch</code> 带 <code>keepalive</code>，页面关了也能发出去）；刚登录、刚打开页面时发一次。</p>
+
+<h3>发「增量」不发「总数」</h3>
+<ul>
+  <li>发的是「今天又学了 60 秒、3.13 节又学了 60 秒」，后端用 <code>INSERT … ON CONFLICT DO UPDATE</code> 在原值上相加。</li>
+  <li>两台电脑各学各的，加起来就是总时长，不会互相覆盖；数据库一条语句完成，两台同时同步也不会丢数据。</li>
+</ul>
+
+<h3>同一批不会算两次</h3>
+<ul>
+  <li>每批带一个随机 <code>batch_id</code>，后端处理过的记在 <code>sync_batches</code> 表里。网络断了前端重发同一批，后端发现处理过就不再加。</li>
+  <li>前端把待同步的数据分成两份：<code>pending</code>（还没发）和 <code>inflight</code>（发出去还没收到回复）。没确认的那批下次用同一个 <code>batch_id</code> 重发。</li>
+</ul>
+
+<h3>第一次登录：本机原有记录并进账号</h3>
+<p>一台电脑第一次登录时，把本机已有的全部记录当成一批增量传上去，和账号里原有的加在一起（<code>claimed</code> 标记保证只传一次）。所以先当访客学、后注册，时长也不会丢。</p>
+
+<h3>为什么不用 WebSocket</h3>
+<ul>
+  <li>学习记录只由你自己的浏览器产生，没有需要后端实时推送的消息；另一台电脑的数据晚一分钟过来可以接受。</li>
+  <li>后端跑在 Vercel 的 Serverless Functions 上，每个请求处理完就结束，不能维持 WebSocket 长连接。</li>
+  <li>普通 HTTP 断网了下次重发就行，不用处理断线重连和心跳。</li>
+</ul>
+</section>
+
+<section id="api">
+<h2>10. 后端接口</h2>
+<p>都在 <code>backend/app/main.py</code>，统一返回 <code>{ "code": 200, "msg": "ok", "data": … }</code>，出错时 <code>code</code> 是 -1。</p>
+<table>
+  <tr><th>接口</th><th>要登录</th><th>作用</th></tr>
+  <tr><td><code>GET /</code></td><td>否</td><td>健康检查，返回服务名</td></tr>
+  <tr><td><code>POST /auth/register</code></td><td>否</td><td>注册，成功直接返回 token（等于已经登录）</td></tr>
+  <tr><td><code>POST /auth/login</code></td><td>否</td><td>登录，返回 token</td></tr>
+  <tr><td><code>GET /auth/me</code></td><td>是</td><td>查当前用户，前端用来判断 token 还有没有效、是不是管理员</td></tr>
+  <tr><td><code>POST /sync</code></td><td>是</td><td>上传增量、取回全部学习记录</td></tr>
+  <tr><td><code>POST /guest/sync</code></td><td>否</td><td>没登录的访客上报学习时长</td></tr>
+  <tr><td><code>GET /admin/users</code></td><td>管理员</td><td>所有用户的学习情况</td></tr>
+  <tr><td><code>GET /admin/guests</code></td><td>管理员</td><td>访客统计</td></tr>
+</table>
+<p>注册、登录时如果带着访客 id，后端会记下「这个访客后来成了哪个用户」。</p>
+</section>
+
+<section id="db">
+<h2>11. 数据库表</h2>
+<p><code>backend/app/models.py</code>，启动时 <code>create_all</code> 自动建表（还没用 Alembic）。</p>
+<table>
+  <tr><th>表</th><th>主键</th><th>存什么</th><th>对应前端字段</th></tr>
+  <tr><td><code>users</code></td><td>id</td><td>用户名、密码哈希、注册时间</td><td>—</td></tr>
+  <tr><td><code>study_days</code></td><td>user_id + day</td><td>每天学了多少秒、几个番茄钟</td><td>days、pomodoros</td></tr>
+  <tr><td><code>section_stats</code></td><td>user_id + section_id</td><td>每节学了多少秒、学完了没</td><td>sections、done</td></tr>
+  <tr><td><code>section_dates</code></td><td>user_id + section_id</td><td>每节开始学、学完的日期</td><td>started、finished</td></tr>
+  <tr><td><code>sync_batches</code></td><td>user_id + batch_id</td><td>处理过的同步批次（去重用）</td><td>—</td></tr>
+  <tr><td><code>guests</code></td><td>id</td><td>访客 id、第一次和最近一次出现时间、后来成了哪个用户</td><td>—</td></tr>
+  <tr><td><code>guest_days</code></td><td>guest_id + day</td><td>访客每天学了多少秒</td><td>—</td></tr>
+</table>
+<ul>
+  <li>开始日期两台电脑都有时取早的；学完日期以最新发来的为准，取消「学完了」就清空。</li>
+  <li><code>section_dates</code> 单独建表，而不是给 <code>section_stats</code> 加列：<code>create_all</code> 只会建新表，不会给已有的表加列。</li>
+</ul>
+</section>
+
+<section id="guest">
+<h2>12. 访客和管理员</h2>
+<ul>
+  <li><b>访客</b>：没登录时前端随机生成一个访客 id 存在浏览器里，学习时长每分钟报给 <code>/guest/sync</code>。线上访客能免费看 10 分钟（<code>GUEST_LIMIT</code>），用完要注册或登录；本地开发不限时（<code>GUEST_LIMIT_ON</code> 只在非开发环境开）。</li>
+  <li><b>管理员</b>：用户名在环境变量 <code>ADMIN_USERNAMES</code> 里的就是管理员（默认 <code>belong</code>）。登录后在账号弹窗里多一个「所有用户的学习情况」，能看到每个用户和访客的时长。</li>
+</ul>
+</section>
+
+<section id="deploy">
+<h2>13. 部署和域名</h2>
+<table>
+  <tr><th></th><th>前端</th><th>后端</th></tr>
+  <tr><td>Vercel 项目</td><td>python-notes</td><td>python-notes-api（根目录是 <code>backend/</code>）</td></tr>
+  <tr><td>怎么部署</td><td colspan="2">同一个 GitHub 仓库，推送到 main 后两个项目都会自动重新部署</td></tr>
+  <tr><td>运行方式</td><td>静态文件</td><td>Serverless Functions，入口 <code>backend/index.py</code></td></tr>
+  <tr><td>域名</td><td>notes.belong.run</td><td>api.belong.run</td></tr>
+  <tr><td>环境变量</td><td><code>NEXT_PUBLIC_API_URL=https://api.belong.run</code>（代码里默认值也是它）</td><td><code>DATABASE_URL</code>（Neon）、<code>JWT_SECRET</code>、<code>ADMIN_USERNAMES</code></td></tr>
+</table>
+<h3>域名是怎么接上的</h3>
+<div class="flow">
+  <div class="step">浏览器查 notes.belong.run</div><div class="to">→</div>
+  <div class="step">腾讯云 DNSPod 回答：CNAME 到 <code>dbcbc7509afe473c.vercel-dns-017.com</code></div><div class="to">→</div>
+  <div class="step">查到 Vercel 服务器的 IP</div><div class="to">→</div>
+  <div class="step">浏览器直接连 Vercel</div><div class="to">→</div>
+  <div class="step">Vercel 按域名找到 python-notes 项目</div>
+</div>
+<ul>
+  <li>腾讯云只负责「告诉浏览器去哪」，网页和接口的数据是浏览器和 Vercel 直接传，不经过腾讯云。</li>
+  <li>原来的 <code>*.vercel.app</code> 在国内被 DNS 污染，查到的是假地址；换成自己的域名，查地址这一步走腾讯云，就绕开了。</li>
+  <li>HTTPS 证书由 Vercel 在检测到 DNS 生效后自动申请、自动续期。</li>
+  <li>belong.run 在 2026-12-27 到期，腾讯云开着自动续费，记得保证余额。</li>
+</ul>
+</section>
+
+<section id="local">
+<h2>14. 本地开发</h2>
+<pre># 前端（http://localhost:3100）
+npm install
+npm run dev
+
+# 后端（http://localhost:8000），不配置也能跑：数据库用 backend/dev.db（SQLite）
+cd backend
+uv sync
+uv run uvicorn app.main:app --reload --port 8000
+
+# 打成单文件 HTML：dist/AI应用开发笔记.html
+npm run build</pre>
+<ul>
+  <li>前端在 localhost 打开时自动连本机 8000 端口的后端，其他情况连线上（<code>src/lib/account.ts</code> 的 <code>apiBase()</code>）。</li>
+  <li>改了 <code>notes.md</code>、<code>ROADMAP.md</code> 刷新页面就能看到；改了 <code>globals.css</code> 要重启 dev。</li>
+</ul>
+</section>
+
+<section id="map">
+<h2>15. 和笔记的对应关系</h2>
+<p>这个后端用到的东西，笔记阶段三基本都讲过，可以对照着看：</p>
+<table>
+  <tr><th>这个项目里</th><th>笔记哪一节</th></tr>
+  <tr><td>FastAPI 接口、请求体、统一返回格式、错误处理</td><td>3.2～3.5</td></tr>
+  <tr><td>SQLAlchemy 建表、Session、依赖注入拿会话</td><td>3.7～3.9</td></tr>
+  <tr><td>JWT 登录、Argon2 密码哈希、<code>CurrentUser</code> 依赖</td><td>3.13</td></tr>
+  <tr><td>只看自己的数据（按 user_id 查）</td><td>3.14</td></tr>
+  <tr><td>CORS、部署到 Vercel、环境变量</td><td>3.16</td></tr>
+  <tr><td><code>INSERT … ON CONFLICT</code>（upsert）</td><td>3.6 SQL 基础</td></tr>
+  <tr><td>还没用、以后可以加：Alembic 迁移</td><td>3.15</td></tr>
+</table>
+<div class="note">区别：笔记里的 todo 项目为了讲清楚，每一步都拆开写；这个项目是真实在跑的，多了访客、管理员、增量同步和去重这些实际需要的东西。</div>
+</section>
+
+</div></main>
+</div>
+<script>
+// 滚动时高亮左侧目录里当前所在的章节
+(() => {
+  const links = [...document.querySelectorAll('#toc a')];
+  const sections = links.map(a => document.querySelector(a.getAttribute('href')));
+  const update = () => {
+    let current = 0;
+    sections.forEach((s, i) => { if (s.getBoundingClientRect().top <= 120) current = i; });
+    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) current = sections.length - 1;
+    links.forEach((a, i) => a.classList.toggle('active', i === current));
+  };
+  addEventListener('scroll', update, { passive: true });
+  update();
+})();
+</script>
+</body>
+</html>
