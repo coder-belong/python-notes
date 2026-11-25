@@ -79,8 +79,14 @@ def login(body: AuthIn, session: Db) -> dict:
 
 
 @app.get("/auth/me")
-def me(user: CurrentUser) -> dict:
-    return success({"username": user.username, "is_admin": is_admin(user)})
+def me(user: CurrentUser, session: Db) -> dict:
+    return success({
+        "username": user.username,
+        "is_admin": is_admin(user),
+        "study_seconds": ai.study_seconds(session, user),   # 线上累计学习秒数
+        "ai_unlocked": ai.ai_unlocked(session, user),       # 能不能用问 AI
+        "ai_unlock_seconds": ai.AI_UNLOCK_SECONDS,          # 解锁要学多久
+    })
 
 
 def upsert(session: Session, model, values: dict, add: dict, set_: dict | None = None) -> None:

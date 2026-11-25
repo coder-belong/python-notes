@@ -644,3 +644,40 @@
     animation: none;
   }
 }
+
+/* 没解锁时的入口：颜色淡一点；点了在上方弹出「还差多久」 */
+.ask-ai-fab.locked {
+  opacity: 0.55;
+  filter: grayscale(0.4);
+}
+
+.ask-ai-fab.locked:hover {
+  opacity: 0.8;
+}
+
+.ask-ai-lock {
+  position: fixed;
+  right: 24px;
+  bottom: 126px;
+  z-index: 12;
+  display: grid;
+  gap: 4px;
+  width: 240px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.ask-ai-lock span {
+  color: var(--accent);
+}
+
+.ask-ai-lock small {
+  color: var(--muted);
+  font-size: 12px;
+}

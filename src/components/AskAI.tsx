@@ -23,8 +23,19 @@ hljs.registerLanguage("sql", sql);
 const MAX_QUOTE = 3000;
 /** 这一节的正文最多发这么多字（后端也有同样的上限）。 */
 const MAX_SECTION = 60_000;
-/** 每个 token 是不是管理员：换节时组件会重建，记住结果就不用每节都问一次后端。 */
-const adminCache = new Map<string, boolean>();
+/** 能不能用问 AI：登录并且累计学习满 30 分钟（管理员不限），后端 /auth/me 算好返回。 */
+type Access = { unlocked: boolean; seconds: number; need: number };
+/** 已经解锁的 token 记下来：换节时组件会重建，不用每节都问一次后端。没解锁的不记，下次点入口时重新查。 */
+const unlockedTokens = new Set<string>();
+const UNLOCKED: Access = { unlocked: true, seconds: 0, need: 0 };
+
+function fetchAccess(token: string): Promise<Access> {
+  return apiGet<{ ai_unlocked?: boolean; study_seconds?: number; ai_unlock_seconds?: number }>("/auth/me", token).then((me) => {
+    const a = { unlocked: !!me.ai_unlocked, seconds: me.study_seconds ?? 0, need: me.ai_unlock_seconds ?? 1800 };
+    if (a.unlocked) unlockedTokens.add(token);
+    return a;
+  });
+}
 const QUICK = ["解释一下这段", "举个能运行的例子", "这里容易错在哪"];
 const QUICK_SECTION = ["这一节讲了什么", "这一节的重点是哪几个", "出 3 道题考考我"];
 
@@ -87,10 +98,12 @@ function withQuote(quote: string, question: string): string {
 
 /**
  * 问 AI：在正文里选中一段文字，旁边出一个「问 AI」按钮，点了在右侧打开对话面板，回答流式显示，可以追问。
- * 只有管理员能用（后端 /ai/chat 也会检查）。
+ * 登录并且累计学习满 30 分钟才能用（后端 /ai/chat 也会检查）；没满时右下角入口照样显示，点了提示还差多久。
  */
 export default function AskAI({ token, section }: { token: string; section: Section }) {
-  const [isAdmin, setIsAdmin] = useState(() => adminCache.get(token) ?? false);
+  const [access, setAccess] = useState<Access | null>(() => (unlockedTokens.has(token) ? UNLOCKED : null));
+  const [lockTip, setLockTip] = useState(false); // 没解锁时点入口：弹出「还差多久」
+  const isAdmin = !!access?.unlocked; // 下面沿用这个名字：能用问 AI
   const [btn, setBtn] = useState<{ x: number; y: number; text: string; range: Range } | null>(null);
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false); // 正在播放滑出动画，播完再真正关掉
@@ -151,13 +164,10 @@ export default function AskAI({ token, section }: { token: string; section: Sect
 
   useEffect(() => {
     let alive = true;
-    if (adminCache.has(token)) return;
-    apiGet<{ is_admin?: boolean }>("/auth/me", token)
-      .then((me) => {
-        adminCache.set(token, !!me.is_admin);
-        if (alive) setIsAdmin(!!me.is_admin);
-      })
-      .catch(() => alive && setIsAdmin(false));
+    if (unlockedTokens.has(token)) return;
+    fetchAccess(token)
+      .then((a) => alive && setAccess(a))
+      .catch(() => alive && setAccess(null));
     return () => {
       alive = false;
     };
@@ -357,7 +367,42 @@ export default function AskAI({ token, section }: { token: string; section: Sect
     inputRef.current?.focus();
   };
 
-  if (!isAdmin) return null;
+  // 没解锁：入口照样显示（知道有这个功能），点了重新查一次时长，够了就直接打开
+  const tryUnlock = () => {
+    if (lockTip) {
+      setLockTip(false);
+      return;
+    }
+    fetchAccess(token)
+      .then((a) => {
+        setAccess(a);
+        if (a.unlocked) openPanel();
+        else setLockTip(true);
+      })
+      .catch(() => setLockTip(true));
+  };
+
+  if (!access) return null;
+
+  if (!access.unlocked) {
+    const left = Math.max(1, Math.ceil((access.need - access.seconds) / 60));
+    return (
+      <>
+        {lockTip && (
+          <div className="ask-ai-lock" role="status">
+            <b>累计学习满 {access.need / 60} 分钟解锁问 AI</b>
+            <span>
+              已学 {Math.floor(access.seconds / 60)} 分钟，还差 {left} 分钟
+            </span>
+            <small>学习时长每分钟同步一次，刚学的可能要等一会儿才算上。</small>
+          </div>
+        )}
+        <button type="button" className="ask-ai-fab locked" onClick={tryUnlock} title="问 AI：累计学习满 30 分钟解锁" aria-label="问 AI（未解锁）">
+          <Sparkle />
+        </button>
+      </>
+    );
+  }
 
   const last = msgs.length - 1;
 
