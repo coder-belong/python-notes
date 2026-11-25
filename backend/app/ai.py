@@ -19,9 +19,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .config import AI_MODEL, DEEPSEEK_API_KEY
-from .db import Db
-from .errors import fail
-from .models import StudyDay, User
+from .db import Db, SessionLocal
+from .errors import fail, success
+from .models import AiChat, StudyDay, User
 from .security import CurrentUser, is_admin
 
 AI_UNLOCK_SECONDS = 30 * 60  # 累计学习满 30 分钟解锁问 AI
@@ -76,9 +76,44 @@ class ChatMessage(BaseModel):
 
 
 class AiChatIn(BaseModel):
+    chat_id: int | None = None  # 接着哪次对话问；新对话不传，后端建一条，用 chat 事件把 id 发回去
+    section_id: str = Field(default="", max_length=64)
     section_title: str = Field(max_length=200)
     section_text: str = Field(max_length=60_000)  # 这一节的纯文字，最长的一节也在这个范围内
+    quote: str | None = Field(default=None, max_length=3000)  # 选中的那段正文：拼进第一个问题，单独存一份方便历史里显示
     messages: Annotated[list[ChatMessage], Field(min_length=1, max_length=40)]  # 最后一条是这次的问题
+
+
+def with_quote(quote: str, question: str) -> str:
+    return f'我在这一节里选中了下面这段：\n"""\n{quote}\n"""\n\n{question}'
+
+
+def open_chat(user: User, body: AiChatIn) -> int:
+    """接着问就用原来那条（只能是自己的）；新对话建一条，标题是第一个问题。返回对话 id。"""
+    with SessionLocal() as session:
+        chat = session.get(AiChat, body.chat_id) if body.chat_id else None
+        if chat is None or chat.user_id != user.id:
+            chat = AiChat(
+                user_id=user.id,
+                section_id=body.section_id,
+                section_title=body.section_title,
+                title=body.messages[0].content[:200],
+                quote=body.quote,
+                messages=[],
+            )
+            session.add(chat)
+        session.commit()
+        return chat.id
+
+
+def save_chat(chat_id: int, messages: list[dict]) -> None:
+    """回答完（或中途停了、出错了）把整段对话存回去。流式响应开始后，请求自带的数据库会话已经关了，这里自己开一个。"""
+    with SessionLocal() as session:
+        chat = session.get(AiChat, chat_id)
+        if chat is not None:
+            chat.messages = messages
+            chat.updated_at = func.now()
+            session.commit()
 
 
 def sse(event: str, data: dict) -> str:
@@ -87,16 +122,24 @@ def sse(event: str, data: dict) -> str:
 
 
 @router.post("/chat")
-async def ai_chat(body: AiChatIn, request: Request, _user: AiUser) -> StreamingResponse:
+async def ai_chat(body: AiChatIn, request: Request, user: AiUser) -> StreamingResponse:
     if client is None:
         raise fail(503, "后端没有配置 DEEPSEEK_API_KEY")
     if body.messages[-1].role != "user":
         raise fail(422, "最后一条消息必须是问题")
 
     system = SYSTEM.format(title=body.section_title, text=body.section_text)
-    messages = [{"role": "system", "content": system}, *(m.model_dump() for m in body.messages)]
+    history = [m.model_dump() for m in body.messages]  # 原样存进历史的（不带选中内容）
+    to_model = [dict(m) for m in history]
+    if body.quote:
+        to_model[0]["content"] = with_quote(body.quote, to_model[0]["content"])  # 发给模型的：第一个问题带上选中的内容
+    messages = [{"role": "system", "content": system}, *to_model]
+    chat_id = open_chat(user, body)
 
     async def events():
+        answer = ""
+        finished = False
+        yield sse("chat", {"id": chat_id})  # 先告诉前端这次对话的 id，下次追问带上它
         try:
             stream = await client.chat.completions.create(
                 model=AI_MODEL,
@@ -110,12 +153,17 @@ async def ai_chat(body: AiChatIn, request: Request, _user: AiUser) -> StreamingR
             async for chunk in stream:
                 if await request.is_disconnected():  # 前端点了停止或关了页面：不再往下读，也就不再计费
                     await stream.close()
-                    return
+                    break
                 if chunk.usage:
                     usage = chunk.usage
                 text = chunk.choices[0].delta.content if chunk.choices else None
                 if text:
+                    answer += text
                     yield sse("delta", {"text": text})
+            else:
+                finished = True
+            if not finished:
+                return
             yield sse(
                 "done",
                 {
@@ -130,6 +178,10 @@ async def ai_chat(body: AiChatIn, request: Request, _user: AiUser) -> StreamingR
         except Exception:
             logger.exception("问 AI 出错")
             yield sse("error", {"msg": "服务出错了，请稍后再试"})
+        finally:
+            # 不管是答完、中途停止还是出错，都把这次的问题和已经生成的部分存进历史
+            reply = [{"role": "assistant", "content": answer, **({} if finished else {"stopped": True})}] if answer else []
+            save_chat(chat_id, history + reply)
 
     # X-Accel-Buffering：让中间的代理别攒着，收到一段就转发一段
     return StreamingResponse(
@@ -137,3 +189,42 @@ async def ai_chat(body: AiChatIn, request: Request, _user: AiUser) -> StreamingR
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ---------- 历史对话：只能看、删自己的 ----------
+@router.get("/chats")
+def list_chats(user: CurrentUser, session: Db) -> dict:
+    """最近 100 次对话，最新的在前；只返回列表要显示的字段，不带消息内容。"""
+    rows = session.scalars(
+        select(AiChat).where(AiChat.user_id == user.id).order_by(AiChat.updated_at.desc()).limit(100)
+    ).all()
+    return success([
+        {
+            "id": c.id,
+            "title": c.title,
+            "section_id": c.section_id,
+            "section_title": c.section_title,
+            "count": sum(1 for m in c.messages if m["role"] == "user"),  # 问了几次
+            "updated_at": c.updated_at.isoformat() + ("" if c.updated_at.tzinfo else "+00:00"),
+        }
+        for c in rows
+    ])
+
+
+def own_chat(session: Session, user: User, chat_id: int) -> AiChat:
+    chat = session.get(AiChat, chat_id)
+    if chat is None or chat.user_id != user.id:  # 别人的对话也说「不存在」，不透露 id 有没有被用过
+        raise fail(404, "这条对话不存在")
+    return chat
+
+
+@router.get("/chats/{chat_id}")
+def get_chat(chat_id: int, user: CurrentUser, session: Db) -> dict:
+    c = own_chat(session, user, chat_id)
+    return success({"id": c.id, "section_id": c.section_id, "section_title": c.section_title, "quote": c.quote, "messages": c.messages})
+
+
+@router.delete("/chats/{chat_id}")
+def delete_chat(chat_id: int, user: CurrentUser, session: Db) -> dict:
+    session.delete(own_chat(session, user, chat_id))
+    return success()

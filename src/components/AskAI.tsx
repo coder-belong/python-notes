@@ -92,8 +92,19 @@ function flashRange(range: Range): void {
   window.setTimeout(() => CSS.highlights.delete("ask-ai-jump"), 2200);
 }
 
-function withQuote(quote: string, question: string): string {
-  return `我在这一节里选中了下面这段：\n"""\n${quote}\n"""\n\n${question}`;
+/** 历史列表里的一条对话（不带消息内容，点开再取）。 */
+type ChatSummary = { id: number; title: string; section_id: string; section_title: string; count: number; updated_at: string };
+/** 在别的节点开了一条历史对话：先跳到那一节，组件重建后从这里取出来接着打开。 */
+let pendingChat: number | null = null;
+
+/** 列表里的时间：今天只写时分，今年写月-日，更早的带年份。 */
+function chatTime(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const hm = d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  if (d.toDateString() === now.toDateString()) return `今天 ${hm}`;
+  const md = `${d.getMonth() + 1}-${d.getDate()}`;
+  return d.getFullYear() === now.getFullYear() ? `${md} ${hm}` : `${d.getFullYear()}-${md}`;
 }
 
 /**
@@ -108,6 +119,11 @@ export default function AskAI({ token, section }: { token: string; section: Sect
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false); // 正在播放滑出动画，播完再真正关掉
   const [quote, setQuote] = useState("");
+  const [chatId, setChatId] = useState<number | null>(null); // 这次对话在后端的 id：第一次回答时后端发回来，追问时带上
+  const [view, setView] = useState<"chat" | "history">("chat");
+  const [chats, setChats] = useState<ChatSummary[] | null>(null);
+  const [onlySection, setOnlySection] = useState(false);
+  const [historyErr, setHistoryErr] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -240,6 +256,8 @@ export default function AskAI({ token, section }: { token: string; section: Sect
     abortRef.current?.abort();
     setQuote(picked.text);
     quoteRangeRef.current = picked.range;
+    setChatId(null);
+    setView("chat");
     setMsgs([]);
     setInput("");
     setOpen(true);
@@ -302,11 +320,8 @@ export default function AskAI({ token, section }: { token: string; section: Sect
       setBusy(true);
       stickRef.current = true;
 
-      // 发给后端的历史：第一个问题带上选中的内容
-      const payload = history.map((m, i) => ({
-        role: m.role,
-        content: i === 0 && quote ? withQuote(quote, m.content) : m.content,
-      }));
+      // 发给后端的历史：原样发，选中的内容单独放在 quote 里，后端拼进第一个问题，同时存进历史
+      const payload = history.map((m) => ({ role: m.role, content: m.content }));
       const update = (patch: Partial<Msg>) =>
         setMsgs((list) => [...list.slice(0, -1), { ...list[list.length - 1], ...patch }]);
 
@@ -317,7 +332,14 @@ export default function AskAI({ token, section }: { token: string; section: Sect
         const res = await fetch(`${apiBase()}/ai/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ section_title: section.title, section_text: text, messages: payload }),
+          body: JSON.stringify({
+            chat_id: chatId,
+            section_id: section.id,
+            section_title: section.title,
+            section_text: text,
+            quote: quote || null,
+            messages: payload,
+          }),
           signal: controller.signal,
         });
         if (!res.ok || !res.body) {
@@ -339,7 +361,9 @@ export default function AskAI({ token, section }: { token: string; section: Sect
             const data = part.match(/^data: (.*)$/m)?.[1];
             if (!event || !data) continue;
             const payload = JSON.parse(data);
-            if (event === "delta") {
+            if (event === "chat") {
+              setChatId(payload.id); // 后端已经存下这次对话：追问时带上 id，接着存在同一条里
+            } else if (event === "delta") {
               answer += payload.text;
               update({ content: answer });
             } else if (event === "done") {
@@ -357,14 +381,87 @@ export default function AskAI({ token, section }: { token: string; section: Sect
         setBusy(false);
       }
     },
-    [busy, msgs, quote, section.title, text, token],
+    [busy, chatId, msgs, quote, section.id, section.title, text, token],
   );
 
   const newChat = () => {
     abortRef.current?.abort();
+    setChatId(null); // 旧的那条已经存在后端了，在「历史」里能找到
+    setView("chat");
     setMsgs([]);
     setInput("");
     inputRef.current?.focus();
+  };
+
+  // ---------- 历史对话 ----------
+  const loadChats = () => {
+    setHistoryErr("");
+    apiGet<ChatSummary[]>("/ai/chats", token)
+      .then(setChats)
+      .catch((e: Error) => setHistoryErr(e.message));
+  };
+
+  const toggleHistory = () => {
+    if (view === "history") {
+      setView("chat");
+      return;
+    }
+    setView("history");
+    loadChats();
+  };
+
+  // 打开一条历史对话：取回消息、选中的内容，接着追问就存回同一条
+  const loadChat = useCallback(
+    (id: number, show = false) => {
+      apiGet<{ id: number; quote: string | null; messages: Msg[] }>(`/ai/chats/${id}`, token)
+        .then((c) => {
+          if (show) {
+            setOpen(true); // 从别的节点跳过来的：面板在这里打开
+            setClosing(false);
+          }
+          abortRef.current?.abort();
+          setChatId(c.id);
+          setQuote(c.quote ?? "");
+          quoteRangeRef.current = null; // 历史里的选中内容不一定还在当前页面上，不能「回到原文」
+          setMsgs(c.messages.map((m) => ({ role: m.role, content: m.content, stopped: m.stopped })));
+          setInput("");
+          setView("chat");
+          stickRef.current = true;
+        })
+        .catch((e: Error) => setHistoryErr(e.message));
+    },
+    [token],
+  );
+
+  // 从别的节点开的历史对话：跳到这一节后组件重建，在这里接着打开
+  useEffect(() => {
+    if (!isAdmin || pendingChat === null) return;
+    const id = pendingChat;
+    pendingChat = null;
+    loadChat(id, true);
+  }, [isAdmin, loadChat]);
+
+  const openChat = (c: ChatSummary) => {
+    if (c.section_id && c.section_id !== section.id) {
+      // 别的节问的：回答要结合那一节的正文，先跳过去，到了那一节再打开
+      pendingChat = c.id;
+      location.hash = c.section_id;
+      return;
+    }
+    loadChat(c.id);
+  };
+
+  const removeChat = async (c: ChatSummary) => {
+    const res = await fetch(`${apiBase()}/ai/chats/${c.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+    if (!res?.ok) {
+      setHistoryErr("删除失败，稍后再试");
+      return;
+    }
+    setChats((list) => list?.filter((x) => x.id !== c.id) ?? null);
+    if (c.id === chatId) {
+      setChatId(null);
+      setMsgs([]);
+    }
   };
 
   // 没解锁：入口照样显示（知道有这个功能），点了重新查一次时长，够了就直接打开
@@ -450,8 +547,19 @@ export default function AskAI({ token, section }: { token: string; section: Sect
               <b>问 AI</b>
               <span>{section.title}</span>
             </div>
-            {msgs.length > 0 && (
-              <button type="button" className="ask-ai-new" onClick={newChat} title="清空这次对话，重新开始；选中的内容保留">
+            <button
+              type="button"
+              className={`ask-ai-new ${view === "history" ? "on" : ""}`}
+              onClick={toggleHistory}
+              title="以前问过的对话"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2" />
+              </svg>
+              历史
+            </button>
+            {(msgs.length > 0 || view === "history") && (
+              <button type="button" className="ask-ai-new" onClick={newChat} title="开始一次新对话；当前对话已经自动存进「历史」">
                 {/* 写成文字按钮：之前只放一个铅笔图标，看着像「编辑」，其实是清空重来 */}
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                   <path d="M12 5v14M5 12h14" />
@@ -466,8 +574,45 @@ export default function AskAI({ token, section }: { token: string; section: Sect
             </button>
           </header>
 
+          {view === "history" && (
+            <div className="ask-ai-history">
+              <label className="ask-ai-only">
+                <input type="checkbox" checked={onlySection} onChange={(e) => setOnlySection(e.target.checked)} />
+                只看这一节
+              </label>
+              {historyErr && <p className="ask-ai-err">{historyErr}</p>}
+              {!chats && !historyErr && <p className="ask-ai-meta">加载中…</p>}
+              {chats &&
+                (() => {
+                  const list = onlySection ? chats.filter((c) => c.section_id === section.id) : chats;
+                  if (!list.length) return <p className="ask-ai-meta">{onlySection ? "这一节还没问过。" : "还没有问过问题。"}</p>;
+                  return (
+                    <ul>
+                      {list.map((c) => (
+                        <li key={c.id} className={c.id === chatId ? "on" : ""}>
+                          <button type="button" className="ask-ai-chat" onClick={() => openChat(c)}>
+                            <b>{c.title}</b>
+                            <span>
+                              {c.section_id === section.id ? "本节" : c.section_title} · {chatTime(c.updated_at)}
+                              {c.count > 1 && ` · 问了 ${c.count} 次`}
+                            </span>
+                          </button>
+                          <button type="button" className="ask-ai-del" onClick={() => void removeChat(c)} aria-label="删除这条对话" title="删除">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+                            </svg>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                })()}
+            </div>
+          )}
+
           <div
             className="ask-ai-list"
+            hidden={view === "history"}
             ref={listRef}
             onScroll={(e) => {
               const el = e.currentTarget;
@@ -545,6 +690,7 @@ export default function AskAI({ token, section }: { token: string; section: Sect
 
           <form
             className="ask-ai-form"
+            hidden={view === "history"}
             onSubmit={(e) => {
               e.preventDefault();
               send(input);

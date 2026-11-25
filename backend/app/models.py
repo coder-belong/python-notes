@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, func
+from sqlalchemy import JSON, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -86,3 +86,19 @@ class GuestDay(Base):
     guest_id: Mapped[str] = mapped_column(ForeignKey("guests.id"), primary_key=True)
     day: Mapped[str] = mapped_column(String(10), primary_key=True)
     seconds: Mapped[int] = mapped_column(default=0)
+
+
+class AiChat(Base):
+    """问 AI 的一次对话：整段消息存成 JSON，每回答完一次就整体覆盖一次。"""
+
+    __tablename__ = "ai_chats"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    section_id: Mapped[str] = mapped_column(String(64))  # 在哪一节问的
+    section_title: Mapped[str] = mapped_column(String(200))
+    title: Mapped[str] = mapped_column(String(200))  # 列表里显示的：第一个问题
+    quote: Mapped[str | None] = mapped_column(Text, default=None)  # 选中的那段正文（没选就是 None）
+    messages: Mapped[list] = mapped_column(JSON, default=list)  # [{role, content, stopped?}]
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now())

@@ -706,3 +706,110 @@
   background: var(--code-bg);
   color: var(--text);
 }
+
+.ask-ai-new.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ask-ai-list[hidden],
+.ask-ai-form[hidden] {
+  display: none;
+}
+
+/* 历史对话列表 */
+.ask-ai-history {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 16px 16px;
+}
+
+.ask-ai-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.ask-ai-history ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ask-ai-history li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.ask-ai-history li:hover,
+.ask-ai-history li.on {
+  background: var(--code-bg);
+}
+
+.ask-ai-chat {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  padding: 9px 10px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ask-ai-chat b {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ask-ai-chat span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ask-ai-del {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.ask-ai-history li:hover .ask-ai-del,
+.ask-ai-del:focus-visible {
+  opacity: 1;
+}
+
+.ask-ai-del:hover {
+  color: #d14343;
+  background: color-mix(in srgb, #d14343 10%, transparent);
+}
+
+@media (hover: none) {
+  .ask-ai-del {
+    opacity: 1; /* 手机上没有悬停，删除按钮一直显示 */
+  }
+}
