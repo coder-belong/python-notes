@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { applyPrefs, DEFAULT_PREFS, FONT_SIZES, loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
 
 import "./MoreMenu.css";
+import { blurActive } from "@/lib/blur";
 
 const SIZE_LABEL: Record<number, string> = {
   14: "小",
@@ -44,7 +45,11 @@ export default function MoreMenu({ hasNew, onOpenChangelog, collapsed, onToggleS
     const onDown = (e: MouseEvent) => {
       if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      blurActive();
+      setOpen(false);
+    };
     document.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
     return () => {

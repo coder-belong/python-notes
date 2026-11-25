@@ -12,6 +12,7 @@ import { dayKey, type StudyData } from "@/lib/study-store";
 import type { Group } from "./NotesApp";
 
 import "./ProgressDrawer.css";
+import { blurActive } from "@/lib/blur";
 
 type Props = {
   groups: Group[];
@@ -36,7 +37,11 @@ export default function ProgressDrawer({ groups, data, onClose }: Props) {
 
   // Esc 关闭
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      blurActive(); // 不然打开弹窗的那个按钮会留下一圈焦点框
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);

@@ -1,0 +1,73 @@
+/*
+ * 学习统计弹窗：高度固定，整体不滚动。
+ * 标题、卡片、热力图、底部说明高度不变；下面「最近 7 天」「每节用时」两块占满剩下的高度，
+ * 每节用时的列表超出时在自己的框里滚动。
+ * 屏幕实在太矮（两块被挤到 200px 以下）时，弹窗本身才出现滚动条兜底。
+ */
+
+.modal.study-modal {
+  display: flex;
+  flex-direction: column;
+  height: min(860px, calc(100vh - 32px));
+}
+
+.study-modal > .modal-head,
+.study-modal > .stat-cards,
+.study-modal > .stats-box,
+.study-modal > .stats-foot {
+  flex: none;
+}
+
+.study-modal > .stats-cols {
+  flex: 1;
+  min-height: 200px; /* flex 子元素默认不会比内容矮，写了才能被压缩 */
+  margin-top: 12px;
+}
+
+.study-modal .stats-cols .stats-box {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 0;
+}
+
+.study-modal .stats-cols h4 {
+  flex: none;
+}
+
+/* 最近 7 天：柱状图跟着框的高度拉伸 */
+.study-modal .week {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+/* 每节用时：列表在框里滚动 */
+.study-modal .sec-list {
+  flex: 1;
+  min-height: 0;
+  margin-right: -8px; /* 滚动条往右挪一点，不贴着时长 */
+  padding-right: 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain; /* 滚到头时不带着后面的页面一起滚 */
+}
+
+.study-modal .sec-list li:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 720px) {
+  /* 手机上两块上下排，放不下：恢复成整个弹窗滚动 */
+  .modal.study-modal {
+    display: block;
+    height: auto;
+  }
+
+  .study-modal .sec-list {
+    max-height: 320px;
+  }
+
+  .study-modal .week {
+    height: 150px;
+  }
+}

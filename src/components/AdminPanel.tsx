@@ -5,6 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 import { apiGet } from "@/lib/account";
 import { dayKey, formatDuration } from "@/lib/study-store";
 
+import "./AdminPanel.css";
+import { blurActive } from "@/lib/blur";
+
 type UserRow = {
   username: string;
   created_at: string | null;
@@ -13,6 +16,7 @@ type UserRow = {
   week_seconds: number;
   study_days: number;
   last_day: string | null;
+  last_at: string | null; // 最近一次同步的时间（UTC），学习时每分钟同步一次
   pomodoros: number;
   done_sections: number;
 };
@@ -23,6 +27,7 @@ type GuestRow = {
   total_seconds: number;
   today_seconds: number;
   last_day: string | null;
+  last_at: string | null; // 最近一次上报的时间（UTC）
   became: string | null; // 后来注册 / 登录成了哪个用户
 };
 
@@ -55,10 +60,24 @@ function dayText(day: string | null, today: string): string {
   return day.slice(5);
 }
 
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** 精确到分钟的完整时间：2026-11-13 10:21（按管理员本地时区）。 */
 function dateText(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 最近学习的时间：今天 14:32 / 昨天 09:10 / 11-12 20:05；没有精确时间时退回只显示日期。 */
+function lastText(iso: string | null, day: string | null, today: string): string {
+  if (!iso) return dayText(day, today);
+  const d = new Date(iso);
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const rel = dayText(dayKey(d), today);
+  if (rel === "今天" || rel === "昨天") return `${rel} ${time}`;
+  const sameYear = d.getFullYear() === Number(today.slice(0, 4));
+  return `${sameYear ? "" : `${d.getFullYear()}-`}${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`;
 }
 
 /** 管理员看所有用户的学习情况。只有管理员账号能打开，后端也会再检查一次。 */
@@ -68,6 +87,7 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<SortKey>("total_seconds");
+  const [tab, setTab] = useState<"users" | "guests">("users"); // 下面的表格看注册用户还是访客
   const today = dayKey();
 
   const load = useCallback(async () => {
@@ -95,7 +115,11 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
   }, [load]);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      blurActive(); // 不然打开弹窗的那个按钮会留下一圈焦点框
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -103,14 +127,15 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
   // 都按从大到小排；最近学习按日期字符串比较，还没学过的排最后
   const rows = [...(users ?? [])].sort((a, b) => {
     const diff =
-      sort === "last_day" ? (b.last_day ?? "").localeCompare(a.last_day ?? "") : b[sort] - a[sort];
+      sort === "last_day"
+        ? (b.last_at ?? b.last_day ?? "").localeCompare(a.last_at ?? a.last_day ?? "")
+        : b[sort] - a[sort];
     return diff || b.total_seconds - a.total_seconds;
   });
   const list = users ?? [];
   const activeToday = list.filter((u) => u.today_seconds >= 60).length;
   const activeWeek = list.filter((u) => u.week_seconds >= 60).length;
   const allSeconds = list.reduce((a, u) => a + u.total_seconds, 0);
-  const weekMax = Math.max(60, ...list.map((u) => u.week_seconds));
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -157,7 +182,35 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
           </div>
         </div>
 
-        <section className="stats-box admin-box">
+        {/* 两张表用标签切换：弹窗高度固定，只有表格区域自己滚动 */}
+        <div className="admin-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "users"}
+            className={tab === "users" ? "active" : ""}
+            onClick={() => setTab("users")}
+          >
+            注册用户<span>{list.length}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "guests"}
+            className={tab === "guests" ? "active" : ""}
+            onClick={() => setTab("guests")}
+          >
+            访客（没登录）<span>{guests?.total_guests ?? 0}</span>
+          </button>
+          {tab === "guests" && guests && (
+            <span className="admin-tabs-note">
+              今天 {guests.today_guests} 人 · 后来注册 {guests.converted} 人 · 累计 {formatDuration(guests.total_seconds)}
+            </span>
+          )}
+        </div>
+
+        {tab === "users" && (
+        <section className="admin-box">
           {error ? (
             <p className="account-error" role="alert">
               {error}
@@ -201,18 +254,11 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
                       <td className={`num ${u.today_seconds >= 60 ? "strong" : "dim"}`}>
                         {u.today_seconds ? formatDuration(u.today_seconds) : "—"}
                       </td>
-                      <td className="num">
-                        <span className="admin-week">
-                          <span className="admin-bar">
-                            <i style={{ width: `${(u.week_seconds / weekMax) * 100}%` }} />
-                          </span>
-                          {u.week_seconds ? formatDuration(u.week_seconds) : "—"}
-                        </span>
-                      </td>
+                      <td className="num">{u.week_seconds ? formatDuration(u.week_seconds) : "—"}</td>
                       <td className="num">{u.total_seconds ? formatDuration(u.total_seconds) : "—"}</td>
                       <td className="num">{u.study_days} 天</td>
                       <td className="num">{u.done_sections} 节</td>
-                      <td className={`num ${u.last_day === today ? "strong" : "dim"}`}>{dayText(u.last_day, today)}</td>
+                      <td className={`num ${u.last_day === today ? "strong" : "dim"}`}>{lastText(u.last_at, u.last_day, today)}</td>
                       <td className="num dim">{dateText(u.created_at)}</td>
                     </tr>
                   ))}
@@ -221,18 +267,13 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
             </div>
           )}
         </section>
+        )}
 
-
-        {guests && (
-          <section className="stats-box admin-box admin-guests">
-            <div className="admin-guests-head">
-              <h4>访客（没登录）</h4>
-              <span>
-                共 {guests.total_guests} 人 · 今天 {guests.today_guests} 人 · 后来注册 {guests.converted} 人 · 累计{" "}
-                {formatDuration(guests.total_seconds)}
-              </span>
-            </div>
-            {guests.guests.length === 0 ? (
+        {tab === "guests" && (
+          <section className="admin-box">
+            {!guests ? (
+              <p className="hint">{error || "加载中…"}</p>
+            ) : guests.guests.length === 0 ? (
               <p className="hint">还没有访客。</p>
             ) : (
               <div className="admin-table-wrap">
@@ -257,7 +298,7 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
                           {g.today_seconds ? formatDuration(g.today_seconds) : "—"}
                         </td>
                         <td className="num">{g.total_seconds ? formatDuration(g.total_seconds) : "—"}</td>
-                        <td className={`num ${g.last_day === today ? "strong" : "dim"}`}>{dayText(g.last_day, today)}</td>
+                        <td className={`num ${g.last_day === today ? "strong" : "dim"}`}>{lastText(g.last_at, g.last_day, today)}</td>
                         <td className="num dim">{dateText(g.created_at)}</td>
                         <td className={g.became ? "" : "dim"}>{g.became ?? "—"}</td>
                       </tr>

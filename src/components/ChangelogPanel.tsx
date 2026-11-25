@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 import type { ChangelogDay } from "@/lib/notes";
 import { dayKey } from "@/lib/study-store";
+import { blurActive } from "@/lib/blur";
 
 /** 每种更新类型一个颜色。 */
 const TAG_CLASS: Record<string, string> = {
@@ -27,7 +28,11 @@ function dateParts(date: string): { day: string; rel: string } {
 /** 更新日志弹窗：左边日期，右边一句一条；类型用小圆点颜色区分。内容来自 content/changelog.md。 */
 export default function ChangelogPanel({ days, onClose }: { days: ChangelogDay[]; onClose: () => void }) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      blurActive(); // 不然打开弹窗的那个按钮会留下一圈焦点框
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);

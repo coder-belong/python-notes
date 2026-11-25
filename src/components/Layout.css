@@ -11,3 +11,19 @@ aside {
 html {
   scrollbar-gutter: stable;
 }
+
+/* 侧栏阶段标题前的展开箭头：标题和下面的进度条算一个整体，箭头占两行、在整体的中间 */
+.nav-part .chev {
+  grid-row: 1 / 3;
+}
+
+.chev {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+
+.chev.open {
+  transform: rotate(90deg);
+}

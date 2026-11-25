@@ -1,0 +1,227 @@
+/*
+ * 管理员弹窗：所有用户的学习情况。
+ * 弹窗高度固定，标题、统计卡片、标签、底部说明都不动，只有中间的表格区域自己滚动。
+ * 全局 globals.css 里有 .modal / .stat-card / .admin-table 的老样式，这里都带上 .admin-modal 前缀覆盖。
+ */
+
+.modal.admin-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1000px, 100%);
+  height: min(760px, calc(100vh - 32px));
+  overflow: hidden; /* 弹窗本身不滚动 */
+  padding: 20px 24px 16px;
+}
+
+.admin-modal .modal-head {
+  flex: none;
+  margin-bottom: 16px;
+}
+
+.admin-modal .modal-head h3 {
+  font-size: 17px;
+}
+
+/* ---------- 统计卡片：去掉蓝色渐变，统一成白卡片，数字是重点 ---------- */
+.admin-modal .stat-cards {
+  flex: none;
+  gap: 12px;
+}
+
+.admin-modal .stat-card,
+.admin-modal .stat-card.accent {
+  gap: 2px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.admin-modal .stat-card .stat-label,
+.admin-modal .stat-card.accent .stat-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.admin-modal .stat-card b {
+  margin: 2px 0;
+  font-size: 24px;
+  font-weight: 650;
+}
+
+.admin-modal .stat-card .stat-sub,
+.admin-modal .stat-card.accent .stat-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* 「今天在学」前面加一个绿点，和侧栏「今天 x 分」的绿点一致 */
+.admin-modal .stat-card.accent .stat-label::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--done);
+  vertical-align: 1px;
+}
+
+/* ---------- 标签：注册用户 / 访客（下划线式，一看就是切换，不像按钮） ---------- */
+.admin-tabs {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 24px;
+  margin: 18px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -1px; /* 选中时的下划线压在整条灰线上 */
+  padding: 8px 2px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.admin-tabs button:hover {
+  color: var(--text);
+}
+
+.admin-tabs button.active {
+  border-bottom-color: var(--text);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.admin-tabs button span {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--code-bg);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-tabs-note {
+  align-self: center;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 表格区域：占满剩下的高度，超出就在里面滚动 ---------- */
+.admin-modal .admin-box {
+  flex: 1;
+  min-height: 0; /* flex 子元素默认不会比内容矮，不写这句就撑破弹窗、滚动不起来 */
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.admin-modal .admin-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain; /* 滚到头时不带着后面的页面一起滚 */
+}
+
+.admin-modal .admin-table {
+  font-size: 13.5px;
+}
+
+/* 表头固定在表格区域顶部 */
+.admin-modal .admin-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-top: 11px;
+  padding-bottom: 11px;
+  background: var(--panel);
+  box-shadow: inset 0 -1px 0 var(--line); /* sticky 时 border 会跟着滚走，用阴影画底线 */
+  border-bottom: none;
+}
+
+.admin-modal .admin-table th,
+.admin-modal .admin-table td {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.admin-modal .admin-table td {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.admin-modal .admin-table tbody tr:last-child td {
+  border-bottom: 1px solid var(--line); /* 行少时最后一行也有底线，下面的留白不突兀 */
+}
+
+.admin-modal .admin-table tbody tr:hover {
+  background: var(--bg);
+}
+
+/* 「我」这一行：去掉左边的蓝条，用浅底色 */
+.admin-modal .admin-table tr.me td:first-child {
+  box-shadow: none;
+}
+
+.admin-modal .admin-table tr.me {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.admin-modal .admin-user .avatar {
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+}
+
+.admin-modal .admin-user em {
+  background: var(--code-bg);
+  color: var(--muted);
+}
+
+.admin-modal .admin-box > .hint,
+.admin-modal .admin-box > .account-error {
+  margin: 16px;
+}
+
+.admin-modal .stats-foot {
+  flex: none;
+  margin-top: 12px;
+}
+
+@media (max-width: 720px) {
+  .modal.admin-modal {
+    height: calc(100vh - 32px);
+    padding: 16px;
+  }
+
+  .admin-tabs-note {
+    display: none;
+  }
+}
+

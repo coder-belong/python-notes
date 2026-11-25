@@ -7,6 +7,7 @@ import { formatDuration, STUDIED_DAY_SECONDS } from "@/lib/study-store";
 import type { useStudy } from "@/lib/use-study";
 
 import PushRemote, { isLocalSite } from "./PushRemote";
+import { blurActive } from "@/lib/blur";
 
 type Study = ReturnType<typeof useStudy>;
 
@@ -152,7 +153,11 @@ export default function AccountPanel({
 
   useEffect(() => {
     if (gate) return; // 挡住页面时 Esc 关不掉
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      blurActive(); // 不然打开弹窗的那个按钮会留下一圈焦点框
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, gate]);

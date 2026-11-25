@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import Heatmap from "./Heatmap";
+
+import "./StudyPanel.css";
 
 import type { Section } from "@/lib/notes";
 import {
@@ -15,6 +17,7 @@ import {
   STUDIED_DAY_SECONDS,
 } from "@/lib/study-store";
 import type { useStudy } from "@/lib/use-study";
+import { blurActive } from "@/lib/blur";
 
 type Study = ReturnType<typeof useStudy>;
 
@@ -45,12 +48,10 @@ type Props = {
 };
 
 /** 默认只列用时最多的几节，其余的点「显示全部」。 */
-const TOP_SECTIONS = 6;
 
 /** 点开入口后的弹窗：顶部四个数字，中间热力图，下面左边最近 7 天、右边每节用时。 */
 export default function StudyPanel({ study, sections, onClose }: Props) {
   const { data, sessionSeconds, status } = study;
-  const [showAll, setShowAll] = useState(false);
   const todayKey = dayKey();
   const today = data.days[todayKey] ?? 0;
   const totalSeconds = Object.values(data.days).reduce((a, b) => a + b, 0);
@@ -58,18 +59,22 @@ export default function StudyPanel({ study, sections, onClose }: Props) {
   const week = lastDays(7);
   const weekSeconds = week.reduce((a, d) => a + (data.days[d] ?? 0), 0);
   const weekMax = Math.max(60, ...week.map((d) => data.days[d] ?? 0));
-  const doneCount = sections.filter((s) => data.done[s.id]).length;
+  const lessons = sections.filter((s) => !s.guide);   // 导读页不算节数
+  const doneCount = lessons.filter((s) => data.done[s.id]).length;
   const bySection = sections
     .map((s) => ({ ...s, seconds: data.sections[s.id] ?? 0 }))
     .filter((s) => s.seconds > 0)
     .sort((a, b) => b.seconds - a.seconds);
   const sectionMax = Math.max(1, ...bySection.map((s) => s.seconds));
-  const shown = showAll ? bySection : bySection.slice(0, TOP_SECTIONS);
   const pomodoros = data.pomodoros[todayKey] ?? 0;
 
   // Esc 关闭
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      blurActive(); // 不然打开弹窗的那个按钮会留下一圈焦点框
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -80,7 +85,7 @@ export default function StudyPanel({ study, sections, onClose }: Props) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal stats-modal" role="dialog" aria-label="学习统计" onClick={(e) => e.stopPropagation()}>
+      <div className="modal stats-modal study-modal" role="dialog" aria-label="学习统计" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>学习统计</h3>
           <span className={`study-now ${status}`}>
@@ -113,10 +118,10 @@ export default function StudyPanel({ study, sections, onClose }: Props) {
             <span className="stat-label">已学完</span>
             <b>
               {doneCount}
-              <small> / {sections.length} 节</small>
+              <small> / {lessons.length} 节</small>
             </b>
             <span className="stat-progress">
-              <i style={{ width: `${(doneCount / sections.length) * 100}%` }} />
+              <i style={{ width: `${(doneCount / lessons.length) * 100}%` }} />
             </span>
           </div>
         </div>
@@ -157,7 +162,8 @@ export default function StudyPanel({ study, sections, onClose }: Props) {
               <p className="hint">还没有记录：在页面上阅读、滚动时，会记到当前读到的那一节上。</p>
             ) : (
               <ul className="sec-list">
-                {shown.map((s) => (
+                {/* 全部列出来，列表区域自己滚动，弹窗不滚 */}
+                {bySection.map((s) => (
                   <li key={s.id}>
                     <a href={`#${s.id}`} onClick={onClose} title={s.title}>
                       {s.num && <span className="sec-num">{s.num}</span>}
@@ -170,11 +176,6 @@ export default function StudyPanel({ study, sections, onClose }: Props) {
                   </li>
                 ))}
               </ul>
-            )}
-            {bySection.length > TOP_SECTIONS && (
-              <button type="button" className="link-btn" onClick={() => setShowAll((v) => !v)}>
-                {showAll ? "收起" : `显示全部 ${bySection.length} 节`}
-              </button>
             )}
           </section>
         </div>

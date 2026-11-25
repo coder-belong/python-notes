@@ -213,10 +213,17 @@ def admin_users(
         .group_by(SectionStat.user_id)
         .subquery()
     )
+    # 最近一次同步的时间：学习时每分钟同步一次，所以它就是「最近在学」的时间，能精确到分钟
+    last_sync = (
+        select(SyncBatch.user_id, func.max(SyncBatch.created_at).label("last_at"))
+        .group_by(SyncBatch.user_id)
+        .subquery()
+    )
     rows = session.execute(
-        select(User.username, User.created_at, days, done.c.done)
+        select(User.username, User.created_at, days, done.c.done, last_sync.c.last_at)
         .outerjoin(days, days.c.user_id == User.id)  # outerjoin：注册了还没学过的用户也要列出来
         .outerjoin(done, done.c.user_id == User.id)
+        .outerjoin(last_sync, last_sync.c.user_id == User.id)
     ).all()
 
     users = [
@@ -228,6 +235,7 @@ def admin_users(
             "week_seconds": r.week or 0,
             "study_days": r.days or 0,
             "last_day": r.last_day,
+            "last_at": as_utc(r.last_at),
             "pomodoros": r.pomodoros or 0,
             "done_sections": r.done or 0,
         }
@@ -256,7 +264,7 @@ def admin_guests(
         .subquery()
     )
     rows = session.execute(
-        select(Guest.id, Guest.created_at, User.username.label("became"), days)
+        select(Guest.id, Guest.created_at, Guest.last_seen, User.username.label("became"), days)
         .outerjoin(days, days.c.guest_id == Guest.id)
         .outerjoin(User, User.id == Guest.user_id)
         .order_by(Guest.last_seen.desc())
@@ -280,6 +288,7 @@ def admin_guests(
             "total_seconds": r.total or 0,
             "today_seconds": r.today or 0,
             "last_day": r.last_day,
+            "last_at": as_utc(r.last_seen),  # 最近一次上报的时间，精确到秒
             "became": r.became,
         }
         for r in rows
