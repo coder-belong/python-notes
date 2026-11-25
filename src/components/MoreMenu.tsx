@@ -7,13 +7,6 @@ import { applyPrefs, DEFAULT_PREFS, FONT_SIZES, loadPrefs, savePrefs, type Prefs
 import "./MoreMenu.css";
 import { blurActive } from "@/lib/blur";
 
-const SIZE_LABEL: Record<number, string> = {
-  14: "小",
-  16: "标准",
-  18: "大",
-  20: "特大",
-};
-
 type Props = {
   /** 更新日志里有没看过的新内容：按钮和菜单项上显示小红点。 */
   hasNew: boolean;
@@ -105,7 +98,15 @@ export default function MoreMenu({ hasNew, onOpenChangelog, collapsed, onToggleS
               >
                 A−
               </button>
-              <span>{SIZE_LABEL[prefs.fontSize]}</span>
+              <span>
+                {prefs.fontSize === DEFAULT_PREFS.fontSize ? (
+                  <>
+                    标准 <em className="font-px">{prefs.fontSize}px</em>
+                  </>
+                ) : (
+                  `${prefs.fontSize}px`
+                )}
+              </span>
               <button
                 type="button"
                 disabled={i >= FONT_SIZES.length - 1}

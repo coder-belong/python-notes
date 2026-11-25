@@ -4,7 +4,7 @@ export type Theme = "system" | "light" | "dark";
 export type Prefs = { theme: Theme; fontSize: number };
 
 export const PREFS_KEY = "python-notes:prefs";
-export const FONT_SIZES = [14, 16, 18, 20] as const;
+export const FONT_SIZES = [14, 15, 16, 17, 18, 19, 20] as const;   // A− / A+ 每次 1px
 export const DEFAULT_PREFS: Prefs = { theme: "system", fontSize: 16 };
 
 export function loadPrefs(): Prefs {

@@ -3,3 +3,17 @@ a.menu-item {
   color: inherit;
   text-decoration: none;
 }
+
+/* 正文字号：名字后面带上具体字号，比如「标准 16px」 */
+.menu-row .font-step {
+  width: 156px;
+}
+
+.font-step span {
+  white-space: nowrap;
+}
+
+.font-step .font-px {
+  font-style: normal;
+  color: var(--muted);
+}

@@ -1,0 +1,18 @@
+/* 阶段导读页最后的「验收」：和首页学习路线里的验收一样，淡绿底色 */
+.content .guide-check {
+  margin: 8px 0 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border-left: 3px solid var(--done);
+  background: color-mix(in srgb, var(--done) 8%, transparent);
+}
+
+.content .guide-check p {
+  margin: 0;
+}
+
+.content .guide-check .guide-check-hint {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: calc(1em - 1px); /* 比正文小 1px；正文字号可以在侧栏调，跟着变 */
+}

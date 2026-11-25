@@ -1,0 +1,13 @@
+/*
+ * 弹窗、抽屉打开时锁住后面的页面：在弹窗里滚到头、滚轮落在弹窗标题或遮罩上，都不会带着页面一起滚。
+ * html 上已经有 scrollbar-gutter: stable（Layout.css），锁住时滚动条位置还留着，页面宽度不跳。
+ */
+html:has(.modal-backdrop, .drawer-backdrop, .ask-ai-mask) {
+  overflow: hidden;
+}
+
+/* 弹窗里面能滚的区域：滚到头就停在这里，不往外传 */
+.modal,
+.drawer-body {
+  overscroll-behavior: contain;
+}

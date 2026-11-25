@@ -115,7 +115,8 @@ export function loadNotes(): Notes {
         // 验收标准只写在 ROADMAP.md 里一份：按「阶段X」对上，附在导读最后
         const key = (current.part ?? "").split("：")[0];
         const check = roadmap.find((st) => st.title.split("：")[0] === key)?.check;
-        if (check) body += `<h3 id="验收">验收</h3>\n<p>${check}</p>\n<p class="hint">学完这个阶段，回来对照这一条自测：做得到再进下一阶段。</p>\n`;
+        if (check)
+          body += `<h3 id="验收">验收</h3>\n<div class="guide-check"><p>${check}</p><p class="guide-check-hint">学完这个阶段，回来对照这一条自测：做得到再进下一阶段。</p></div>\n`;
       }
       const { html, toc } = collectToc(body);
       sections.push({
