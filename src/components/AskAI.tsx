@@ -70,6 +70,8 @@ function sectionText(html: string): string {
 /** 第一个问题前面带上选中的内容；追问就只发问题本身。 */
 const WIDTH_KEY = "python-notes:ask-ai-width"; // 拖出来的面板宽度，下次打开还是这个宽度
 const MIN_WIDTH = 400;
+const SIDE_KEY = "python-notes:ask-ai-side"; // 左侧对话列表收起了没有
+const SIDE_MIN_PANEL = 640; // 面板至少这么宽才放得下左侧列表；窄的时候「历史」改成切换整个视图
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 const SHORTCUT = IS_MAC ? "⌘J" : "Ctrl+J";
 
@@ -94,8 +96,30 @@ function flashRange(range: Range): void {
 
 /** 历史列表里的一条对话（不带消息内容，点开再取）。 */
 type ChatSummary = { id: number; title: string; section_id: string; section_title: string; count: number; updated_at: string };
-/** 在别的节点开了一条历史对话：先跳到那一节，组件重建后从这里取出来接着打开。 */
-let pendingChat: number | null = null;
+/** 一条历史对话的完整内容。 */
+type ChatDetail = { id: number; quote: string | null; messages: Msg[] };
+/**
+ * 在别的节点开了一条历史对话：先把内容取回来放在这里，再跳到那一节。
+ * 组件跟着节重建时直接用它初始化，面板一出来就是打开的、带着消息，中间不会空一下。
+ */
+let pendingChat: ChatDetail | null = null;
+/** 列表缓存一份：换节时组件会重建，先显示上次的列表，不闪「加载中」。 */
+let cachedChats: ChatSummary[] | null = null;
+
+/** 按最后更新时间分组：今天 / 昨天 / 近 7 天 / 更早。 */
+function groupChats(list: ChatSummary[]): { label: string; items: ChatSummary[] }[] {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const day = 86_400_000;
+  const groups = [
+    { label: "今天", from: start.getTime(), items: [] as ChatSummary[] },
+    { label: "昨天", from: start.getTime() - day, items: [] as ChatSummary[] },
+    { label: "近 7 天", from: start.getTime() - 6 * day, items: [] as ChatSummary[] },
+    { label: "更早", from: -Infinity, items: [] as ChatSummary[] },
+  ];
+  for (const c of list) groups.find((g) => new Date(c.updated_at).getTime() >= g.from)!.items.push(c);
+  return groups.filter((g) => g.items.length);
+}
 
 /** 列表里的时间：今天只写时分，今年写月-日，更早的带年份。 */
 function chatTime(iso: string): string {
@@ -115,16 +139,25 @@ export default function AskAI({ token, section }: { token: string; section: Sect
   const [access, setAccess] = useState<Access | null>(() => (unlockedTokens.has(token) ? UNLOCKED : null));
   const [lockTip, setLockTip] = useState(false); // 没解锁时点入口：弹出「还差多久」
   const isAdmin = !!access?.unlocked; // 下面沿用这个名字：能用问 AI
-  const [btn, setBtn] = useState<{ x: number; y: number; text: string; range: Range } | null>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => pendingChat !== null);
   const [closing, setClosing] = useState(false); // 正在播放滑出动画，播完再真正关掉
-  const [quote, setQuote] = useState("");
-  const [chatId, setChatId] = useState<number | null>(null); // 这次对话在后端的 id：第一次回答时后端发回来，追问时带上
+  const [quote, setQuote] = useState(() => pendingChat?.quote ?? "");
+  const [chatId, setChatId] = useState<number | null>(() => pendingChat?.id ?? null); // 这次对话在后端的 id：第一次回答时后端发回来，追问时带上
   const [view, setView] = useState<"chat" | "history">("chat");
-  const [chats, setChats] = useState<ChatSummary[] | null>(null);
-  const [onlySection, setOnlySection] = useState(false);
+  const [chats, setChats] = useState<ChatSummary[] | null>(() => cachedChats);
+  // 从别的节点点了一条历史对话、跳过来重新打开面板时，不再播放一遍滑入动画
+  const [instant, setInstant] = useState(() => pendingChat !== null);
   const [historyErr, setHistoryErr] = useState("");
-  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [sideOpen, setSideOpen] = useState(() => {
+    try {
+      return localStorage.getItem(SIDE_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const panelRef = useRef<HTMLElement | null>(null);
+  const [panelW, setPanelW] = useState(0);
+  const [msgs, setMsgs] = useState<Msg[]>(() => pendingChat?.messages ?? []);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -189,34 +222,6 @@ export default function AskAI({ token, section }: { token: string; section: Sect
     };
   }, [token]);
 
-  // 选中文字：正文里选中了一段，就在选区右下角放一个「问 AI」按钮
-  useEffect(() => {
-    if (!isAdmin) return;
-    let timer = 0;
-    const check = () => {
-      const picked = pickSelection();
-      if (!picked) {
-        setBtn(null);
-        return;
-      }
-      const rect = picked.range.getBoundingClientRect();
-      const x = Math.min(Math.max(rect.right - 40, 8), window.innerWidth - 90);
-      const y = rect.bottom + 44 > window.innerHeight ? rect.top - 38 : rect.bottom + 8;
-      setBtn({ x, y, ...picked });
-    };
-    const onChange = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(check, 250); // 拖着选的过程中不出按钮，停下来再出
-    };
-    const hide = () => setBtn(null); // 按钮是固定定位的，页面一滚就对不上选区了，先藏起来
-    document.addEventListener("selectionchange", onChange);
-    window.addEventListener("scroll", hide, { passive: true });
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener("selectionchange", onChange);
-      window.removeEventListener("scroll", hide);
-    };
-  }, [isAdmin]);
 
   // 换了一节时组件会整个重建（外面用 section.id 做 key），对话自然清空；这里把还在进行的请求停掉
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -234,6 +239,7 @@ export default function AskAI({ token, section }: { token: string; section: Sect
       () => {
         setOpen(false);
         setClosing(false);
+        setInstant(false); // 下次正常打开时照常有滑入动画
       },
       reduce ? 0 : 220, // 和 CSS 里滑出动画的时长一样
     );
@@ -263,7 +269,6 @@ export default function AskAI({ token, section }: { token: string; section: Sect
     setOpen(true);
     setClosing(false);
     stickRef.current = true;
-    setBtn(null);
     window.getSelection()?.removeAllRanges();
     setTimeout(() => inputRef.current?.focus(), 50);
   };
@@ -276,16 +281,16 @@ export default function AskAI({ token, section }: { token: string; section: Sect
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
-  // 快捷键 ⌘J / Ctrl+J：面板开着就关；正文里选了文字就带上它开始问；都没有就打开面板
+  // 快捷键 ⌘J / Ctrl+J：正文里选了文字就带上它开始问；没选的话，面板开着就关、关着就开
   const shortcutRef = useRef<() => void>(() => {});
   useEffect(() => {
     shortcutRef.current = () => {
-      if (open && !closing) {
-        close();
+      const picked = pickSelection();
+      if (picked) {
+        startWithSelection(picked); // 选了文字：不管面板开没开，都用这段开始新对话
         return;
       }
-      const picked = pickSelection();
-      if (picked) startWithSelection(picked);
+      if (open && !closing) close();
       else openPanel();
     };
   });
@@ -307,6 +312,54 @@ export default function AskAI({ token, section }: { token: string; section: Sect
     if (!range?.startContainer.isConnected) return;
     close();
     window.setTimeout(() => flashRange(range), 240); // 等面板滑出去再滚
+  };
+
+  // ---------- 历史对话列表（左侧 / 历史视图共用） ----------
+  const loadChats = useCallback(() => {
+    apiGet<ChatSummary[]>("/ai/chats", token)
+      .then((list) => {
+        cachedChats = list;
+        setChats(list);
+        setHistoryErr("");
+      })
+      .catch((e: Error) => setHistoryErr(e.message));
+  }, [token]);
+
+  // 面板多宽：拖宽 / 窗口变化都会变，宽的时候左边放对话列表
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!open || !el) return;
+    const ro = new ResizeObserver(([entry]) => setPanelW(entry.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open]);
+  const wide = panelW >= SIDE_MIN_PANEL;
+  const showSide = open && wide && sideOpen;
+
+  // 左侧列表一出来就取一次
+  useEffect(() => {
+    if (showSide) loadChats();
+  }, [showSide, loadChats]);
+
+  const toggleHistory = () => {
+    if (wide) {
+      // 宽：收起 / 展开左侧列表，记住选择
+      const next = !sideOpen;
+      setSideOpen(next);
+      try {
+        localStorage.setItem(SIDE_KEY, next ? "1" : "0");
+      } catch {
+        // 存不了就只在这次生效
+      }
+      return;
+    }
+    // 窄：整个面板在「对话」和「历史列表」之间切换
+    if (view === "history") {
+      setView("chat");
+      return;
+    }
+    setView("history");
+    loadChats();
   };
 
   const send = useCallback(
@@ -379,9 +432,10 @@ export default function AskAI({ token, section }: { token: string; section: Sect
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
         setBusy(false);
+        loadChats(); // 刚问完的这条排到历史最前面
       }
     },
-    [busy, chatId, msgs, quote, section.id, section.title, text, token],
+    [busy, chatId, loadChats, msgs, quote, section.id, section.title, text, token],
   );
 
   const newChat = () => {
@@ -394,31 +448,12 @@ export default function AskAI({ token, section }: { token: string; section: Sect
   };
 
   // ---------- 历史对话 ----------
-  const loadChats = () => {
-    setHistoryErr("");
-    apiGet<ChatSummary[]>("/ai/chats", token)
-      .then(setChats)
-      .catch((e: Error) => setHistoryErr(e.message));
-  };
-
-  const toggleHistory = () => {
-    if (view === "history") {
-      setView("chat");
-      return;
-    }
-    setView("history");
-    loadChats();
-  };
 
   // 打开一条历史对话：取回消息、选中的内容，接着追问就存回同一条
   const loadChat = useCallback(
-    (id: number, show = false) => {
-      apiGet<{ id: number; quote: string | null; messages: Msg[] }>(`/ai/chats/${id}`, token)
+    (id: number) => {
+      apiGet<ChatDetail>(`/ai/chats/${id}`, token)
         .then((c) => {
-          if (show) {
-            setOpen(true); // 从别的节点跳过来的：面板在这里打开
-            setClosing(false);
-          }
           abortRef.current?.abort();
           setChatId(c.id);
           setQuote(c.quote ?? "");
@@ -433,19 +468,20 @@ export default function AskAI({ token, section }: { token: string; section: Sect
     [token],
   );
 
-  // 从别的节点开的历史对话：跳到这一节后组件重建，在这里接着打开
+  // 跳过来时已经用 pendingChat 初始化好了，用完清掉，免得下次换节又打开
   useEffect(() => {
-    if (!isAdmin || pendingChat === null) return;
-    const id = pendingChat;
     pendingChat = null;
-    loadChat(id, true);
-  }, [isAdmin, loadChat]);
+  }, []);
 
   const openChat = (c: ChatSummary) => {
     if (c.section_id && c.section_id !== section.id) {
-      // 别的节问的：回答要结合那一节的正文，先跳过去，到了那一节再打开
-      pendingChat = c.id;
-      location.hash = c.section_id;
+      // 别的节问的：回答要结合那一节的正文。先把对话取回来，再跳过去，新的面板直接带着内容出现
+      apiGet<ChatDetail>(`/ai/chats/${c.id}`, token)
+        .then((d) => {
+          pendingChat = { ...d, messages: d.messages.map((m) => ({ role: m.role, content: m.content, stopped: m.stopped })) };
+          location.hash = c.section_id;
+        })
+        .catch((e: Error) => setHistoryErr(e.message));
       return;
     }
     loadChat(c.id);
@@ -457,7 +493,11 @@ export default function AskAI({ token, section }: { token: string; section: Sect
       setHistoryErr("删除失败，稍后再试");
       return;
     }
-    setChats((list) => list?.filter((x) => x.id !== c.id) ?? null);
+    setChats((list) => {
+      const next = list?.filter((x) => x.id !== c.id) ?? null;
+      cachedChats = next;
+      return next;
+    });
     if (c.id === chatId) {
       setChatId(null);
       setMsgs([]);
@@ -503,33 +543,63 @@ export default function AskAI({ token, section }: { token: string; section: Sect
 
   const last = msgs.length - 1;
 
+  // 历史对话列表：宽的时候放在左侧，窄的时候点「历史」占满面板
+  const chatList = (
+    <div className="ask-ai-history">
+      {historyErr && <p className="ask-ai-err">{historyErr}</p>}
+      {!chats && !historyErr && <p className="ask-ai-empty-hint">加载中…</p>}
+      {chats && !chats.length && <p className="ask-ai-empty-hint">问过的问题会自动存在这里。</p>}
+      {chats &&
+        groupChats(chats).map((g) => (
+          <div key={g.label} className="ask-ai-group">
+            <p className="ask-ai-group-label">{g.label}</p>
+            <ul>
+              {g.items.map((c) => (
+                <li key={c.id} className={c.id === chatId ? "on" : ""}>
+                  <button type="button" className="ask-ai-chat" onClick={() => openChat(c)} title={`${c.title}\n${c.section_title} · ${chatTime(c.updated_at)}`}>
+                    <b>{c.title}</b>
+                    <span>{c.section_id === section.id ? "本节" : c.section_title}</span>
+                  </button>
+                  <button type="button" className="ask-ai-del" onClick={() => void removeChat(c)} aria-label="删除这条对话" title="删除">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+                    </svg>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+    </div>
+  );
+
   return (
     <>
-      {btn && (
-        <button
-          type="button"
-          className="ask-ai-btn"
-          style={{ left: btn.x, top: btn.y }}
-          onMouseDown={(e) => e.preventDefault()} // 不让点击把选区取消掉
-          onClick={() => btn && startWithSelection(btn)}
-          title={open ? "用新选中的内容开始新对话" : undefined}
-        >
-          <Sparkle />
-          {open ? "问这段" : "问 AI"}
-        </button>
-      )}
 
       {!open && (
-        <button type="button" className="ask-ai-fab" onClick={openPanel} title={`问 AI（${SHORTCUT}）：问这一节的问题；先选中正文再按 ${SHORTCUT}，会带上选中的内容`} aria-label="问 AI">
+        <button
+          type="button"
+          className="ask-ai-fab"
+          onMouseDown={(e) => e.preventDefault()} // 点按钮时不把正文里选中的文字取消掉
+          onClick={() => {
+            // 划词时不再自动弹按钮（太打扰）：选中一段后点这里或按快捷键，就带上选中的内容
+            const picked = pickSelection();
+            if (picked) startWithSelection(picked);
+            else openPanel();
+          }}
+          title={`问 AI（${SHORTCUT}）：问这一节的问题；先选中正文再点这里或按 ${SHORTCUT}，会针对选中的内容回答`}
+          aria-label="问 AI"
+        >
           <Sparkle />
         </button>
       )}
 
-      {open && <div className={`ask-ai-mask ${closing ? "closing" : ""}`} onClick={close} aria-hidden="true" />}
+      {open && <div className={`ask-ai-mask ${closing ? "closing" : ""} ${instant ? "instant" : ""}`} onClick={close} aria-hidden="true" />}
 
       {open && (
         <section
-          className={`ask-ai ${closing ? "closing" : ""}`}
+          ref={panelRef}
+          className={`ask-ai ${closing ? "closing" : ""} ${instant ? "instant" : ""}`}
           style={width ? { width: `min(${width}px, 100vw)` } : undefined}
           aria-label="问 AI"
         >
@@ -549,16 +619,16 @@ export default function AskAI({ token, section }: { token: string; section: Sect
             </div>
             <button
               type="button"
-              className={`ask-ai-new ${view === "history" ? "on" : ""}`}
+              className={`ask-ai-new ${(wide ? showSide : view === "history") ? "on" : ""}`}
               onClick={toggleHistory}
-              title="以前问过的对话"
+              title={wide ? "收起 / 展开左边的历史对话" : "以前问过的对话"}
             >
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2" />
               </svg>
               历史
             </button>
-            {(msgs.length > 0 || view === "history") && (
+            {!showSide && (msgs.length > 0 || (!wide && view === "history")) && (
               <button type="button" className="ask-ai-new" onClick={newChat} title="开始一次新对话；当前对话已经自动存进「历史」">
                 {/* 写成文字按钮：之前只放一个铅笔图标，看着像「编辑」，其实是清空重来 */}
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -574,45 +644,25 @@ export default function AskAI({ token, section }: { token: string; section: Sect
             </button>
           </header>
 
-          {view === "history" && (
-            <div className="ask-ai-history">
-              <label className="ask-ai-only">
-                <input type="checkbox" checked={onlySection} onChange={(e) => setOnlySection(e.target.checked)} />
-                只看这一节
-              </label>
-              {historyErr && <p className="ask-ai-err">{historyErr}</p>}
-              {!chats && !historyErr && <p className="ask-ai-meta">加载中…</p>}
-              {chats &&
-                (() => {
-                  const list = onlySection ? chats.filter((c) => c.section_id === section.id) : chats;
-                  if (!list.length) return <p className="ask-ai-meta">{onlySection ? "这一节还没问过。" : "还没有问过问题。"}</p>;
-                  return (
-                    <ul>
-                      {list.map((c) => (
-                        <li key={c.id} className={c.id === chatId ? "on" : ""}>
-                          <button type="button" className="ask-ai-chat" onClick={() => openChat(c)}>
-                            <b>{c.title}</b>
-                            <span>
-                              {c.section_id === section.id ? "本节" : c.section_title} · {chatTime(c.updated_at)}
-                              {c.count > 1 && ` · 问了 ${c.count} 次`}
-                            </span>
-                          </button>
-                          <button type="button" className="ask-ai-del" onClick={() => void removeChat(c)} aria-label="删除这条对话" title="删除">
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-                            </svg>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  );
-                })()}
-            </div>
-          )}
+          <div className="ask-ai-row">
+            {showSide && (
+              <nav className="ask-ai-side" aria-label="历史对话">
+                <button type="button" className="ask-ai-side-new" onClick={newChat}>
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  新对话
+                </button>
+                {chatList}
+              </nav>
+            )}
+            <div className="ask-ai-col">
+              {!wide && view === "history" && chatList}
+
 
           <div
             className="ask-ai-list"
-            hidden={view === "history"}
+            hidden={!wide && view === "history"}
             ref={listRef}
             onScroll={(e) => {
               const el = e.currentTarget;
@@ -638,7 +688,7 @@ export default function AskAI({ token, section }: { token: string; section: Sect
               <div className="ask-ai-empty">
                 {!quote && (
                   <p className="ask-ai-tip">
-                    直接问这一节的问题；也可以先在正文里选中一段，点旁边的「问 AI」，回答会针对那一段。
+                    直接问这一节的问题；也可以先在正文里选中一段，再点右下角的按钮或按 {SHORTCUT}，回答会针对那一段。
                   </p>
                 )}
                 <p>可以这样问：</p>
@@ -690,7 +740,7 @@ export default function AskAI({ token, section }: { token: string; section: Sect
 
           <form
             className="ask-ai-form"
-            hidden={view === "history"}
+            hidden={!wide && view === "history"}
             onSubmit={(e) => {
               e.preventDefault();
               send(input);
@@ -731,6 +781,8 @@ export default function AskAI({ token, section }: { token: string; section: Sect
             </div>
             <p className="ask-ai-hint">Enter 发送 · Shift + Enter 换行 · {SHORTCUT} 或 Esc 关闭</p>
           </form>
+            </div>
+          </div>
         </section>
       )}
     </>

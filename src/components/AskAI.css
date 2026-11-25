@@ -1,43 +1,11 @@
-/* 问 AI：选中正文后出现的按钮 + 右侧对话面板（只有管理员能看到） */
+/* 问 AI：右下角入口 + 右侧对话面板（登录并学满 30 分钟才能用） */
 
 .ask-ai,
-.ask-ai-btn,
 .ask-ai-fab {
   --ai-a: #6d5dfc; /* 面板的主色：渐变的两端 */
   --ai-b: #2f8cff;
   --ai-grad: linear-gradient(135deg, var(--ai-a), var(--ai-b));
   --ai-ease: cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* 选中文字后出现的按钮 */
-.ask-ai-btn {
-  position: fixed;
-  z-index: 30;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 13px 6px 11px;
-  border: none;
-  border-radius: 999px;
-  background: var(--ai-grad);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  box-shadow:
-    0 6px 18px color-mix(in srgb, var(--ai-a) 40%, transparent),
-    0 1px 2px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-  animation: ask-ai-pop 0.22s var(--ai-ease);
-  transition:
-    transform 0.15s,
-    box-shadow 0.15s;
-}
-
-.ask-ai-btn:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 8px 22px color-mix(in srgb, var(--ai-a) 50%, transparent),
-    0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 /* 右侧面板 */
@@ -635,7 +603,6 @@
   .ask-ai-mask.closing,
   .ask-ai,
   .ask-ai.closing,
-  .ask-ai-btn,
   .ask-ai-fab,
   .ask-ai-q,
   .ask-ai-a,
@@ -717,48 +684,88 @@
   display: none;
 }
 
-/* 历史对话列表 */
+/* 面板下半部分：左边历史对话（宽的时候才有），右边对话和输入框 */
+.ask-ai-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.ask-ai-col {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ask-ai-side {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: 236px;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--code-bg) 45%, var(--panel));
+}
+
+/* 跨节打开历史对话时面板重新挂载：不再播一遍滑入动画 */
+.ask-ai.instant,
+.ask-ai-mask.instant {
+  animation: none;
+}
+
+/* ---------- 历史对话列表（左栏 / 窄面板的历史视图共用） ---------- */
 .ask-ai-history {
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 12px 16px 16px;
+  padding: 4px 10px 16px;
+  scrollbar-width: thin;
 }
 
-.ask-ai-only {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  font-size: 13px;
+.ask-ai-col > .ask-ai-history {
+  padding: 12px 16px 16px; /* 窄面板：列表占满整个面板 */
+}
+
+.ask-ai-group + .ask-ai-group {
+  margin-top: 10px;
+}
+
+.ask-ai-group-label {
+  margin: 0;
+  padding: 8px 10px 4px;
   color: var(--muted);
-  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 500;
 }
 
 .ask-ai-history ul {
+  display: grid;
+  gap: 1px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .ask-ai-history li {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  position: relative;
   border-radius: 8px;
+  transition: background 0.12s;
 }
 
-.ask-ai-history li:hover,
+.ask-ai-history li:hover {
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
 .ask-ai-history li.on {
-  background: var(--code-bg);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
 }
 
 .ask-ai-chat {
   display: grid;
-  flex: 1;
-  min-width: 0;
-  gap: 2px;
-  padding: 9px 10px;
+  width: 100%;
+  gap: 1px;
+  padding: 7px 34px 7px 10px; /* 右边留出删除按钮的位置 */
   border: none;
   background: none;
   color: var(--text);
@@ -767,35 +774,46 @@
   cursor: pointer;
 }
 
-.ask-ai-chat b {
+.ask-ai-chat b,
+.ask-ai-chat span {
   overflow: hidden;
-  font-size: 14px;
-  font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.ask-ai-chat b {
+  font-size: 13.5px;
+  font-weight: 450;
+  line-height: 20px;
+}
+
+.ask-ai-history li.on .ask-ai-chat b {
+  color: var(--accent);
+  font-weight: 500;
 }
 
 .ask-ai-chat span {
-  overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  font-size: 11.5px;
+  line-height: 16px;
 }
 
 .ask-ai-del {
+  position: absolute;
+  top: 50%;
+  right: 6px;
   display: grid;
-  flex: none;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  margin-right: 6px;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: 6px;
   background: none;
   color: var(--muted);
   cursor: pointer;
   opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 0.12s;
 }
 
 .ask-ai-history li:hover .ask-ai-del,
@@ -812,4 +830,37 @@
   .ask-ai-del {
     opacity: 1; /* 手机上没有悬停，删除按钮一直显示 */
   }
+}
+
+.ask-ai-empty-hint {
+  margin: 0;
+  padding: 16px 10px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+/* 左栏顶部的「新对话」 */
+.ask-ai-side-new {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 10px 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.ask-ai-side-new:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
 }

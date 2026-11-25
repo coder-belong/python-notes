@@ -25,6 +25,7 @@ import Home from "./Home";
 import ProgressDrawer from "./ProgressDrawer";
 import MoreMenu from "./MoreMenu";
 import SectionLayout from "./SectionToc";
+import SectionRefCard from "./SectionRefCard";
 import SideResizer from "./SideResizer";
 import { mountStreamDemos } from "./StreamDemo";
 import ThemeToggle from "./ThemeToggle";
@@ -531,7 +532,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                     </label>
                   </span>}
                 </h2>
-                <div dangerouslySetInnerHTML={{ __html: section.html }} />
+                <div className="sec-html" dangerouslySetInnerHTML={{ __html: section.html }} />
 
                 <div className="finish">
                   <button type="button" className="finish-btn" onClick={doneThenNext}>
@@ -619,6 +620,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
           }}
         />
       )}
+      {section && <SectionRefCard sections={sections} done={study.data.done} />}
       {study.account && section && !study.guestBlocked && <AskAI key={section.id} token={study.account.token} section={section} />}
       {adminOpen && study.account && (
         <AdminPanel token={study.account.token} me={study.account.username} onClose={() => setAdminOpen(false)} />

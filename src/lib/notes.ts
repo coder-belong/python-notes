@@ -14,6 +14,7 @@ export type Section = {
   part: string | null;
   partIntroHtml: string | null; // 一个部分的第一节才有：「# 第X部分」标题下面那段导语
   guide: boolean; // 阶段导读页（标题以「导读」结尾）：不算进「已学几节」，页末自动附上路线图里这个阶段的验收标准
+  summary: string; // 这一节第一段话的前几十个字：正文里引用这一节时，小卡片上显示
   html: string;
   toc: TocItem[]; // 本节的小标题（###），右侧「本节目录」用
 };
@@ -103,6 +104,9 @@ export function loadNotes(): Notes {
   let partIntro: Token[] | null = null; // 刚进入一个新部分、还没遇到第一节时的内容
   const sections: Section[] = [];
   const roadmap = loadRoadmap(marked);
+  // 节号 → id：正文里写的「4.2 节」要变成能点的引用，先把所有节号对应的 id 找出来
+  const numToId = new Map<string, string>();
+  for (const m of source.matchAll(/^## (\d+\.\d+) .*\{#([A-Za-z0-9-]+)\}\s*$/gm)) numToId.set(m[1], m[2]);
   let current: { id: string; title: string; part: string | null; partIntro: Token[] | null; tokens: Token[] } | null =
     null;
 
@@ -118,7 +122,7 @@ export function loadNotes(): Notes {
         if (check)
           body += `<h3 id="验收">验收</h3>\n<div class="guide-check"><p>${check}</p><p class="guide-check-hint">学完这个阶段，回来对照这一条自测：做得到再进下一阶段。</p></div>\n`;
       }
-      const { html, toc } = collectToc(body);
+      const { html, toc } = collectToc(linkSectionRefs(body, numToId));
       sections.push({
         id: current.id,
         title: current.title,
@@ -127,6 +131,7 @@ export function loadNotes(): Notes {
         part: current.part,
         partIntroHtml: current.partIntro?.length ? render(current.partIntro) : null,
         guide,
+        summary: firstParagraph(html),
         html,
         toc,
       });
@@ -167,6 +172,49 @@ export function loadNotes(): Notes {
   flush();
 
   return { title, introHtml: render(intro), sections, roadmap, changelog: loadChangelog(marked) };
+}
+
+/** 「4.2 节」「3.13、3.18 节」「6.1～6.11 节」里的节号：后面一定跟着「节」才算，免得把版本号、小数也当成引用。 */
+const SECTION_REF = /(\d+\.\d+)((?:(?:、| 和 |～)\d+\.\d+)*)(\s*节)/g;
+/** 这些标签里面的文字不处理：代码、本来就是链接的、标题。 */
+const SKIP_TAGS = new Set(["pre", "code", "a", "h1", "h2", "h3", "h4", "h5", "h6"]);
+
+/**
+ * 正文里写的「（4.2 节）」变成能点的引用：<a class="sec-ref" href="#messages-tokens">4.2</a> 节。
+ * 前端再给它加悬停小卡片，不用每次都跳过去。只处理标签外面的文字，代码块、已有的链接、标题里的不动。
+ */
+function linkSectionRefs(html: string, numToId: Map<string, string>): string {
+  const link = (num: string) => {
+    const id = numToId.get(num);
+    return id ? `<a class="sec-ref" href="#${id}">${num}</a>` : num;
+  };
+  let depth = 0; // 现在在几层要跳过的标签里面
+  return html.replace(/(<[^>]+>)|([^<]+)/g, (_, tag: string | undefined, text: string | undefined) => {
+    if (tag) {
+      const m = tag.match(/^<(\/?)([a-zA-Z0-9]+)/);
+      if (m && SKIP_TAGS.has(m[2].toLowerCase()) && !tag.endsWith("/>")) depth += m[1] ? -1 : 1;
+      return tag;
+    }
+    if (depth > 0 || !text) return text ?? "";
+    return text.replace(SECTION_REF, (_m, first: string, rest: string, tail: string) =>
+      link(first) + rest.replace(/\d+\.\d+/g, link) + tail,
+    );
+  });
+}
+
+/** 一节的第一段话，去掉标签，最多 80 个字。 */
+function firstParagraph(html: string): string {
+  const m = html.match(/<p>([\s\S]*?)<\/p>/);
+  if (!m) return "";
+  const text = m[1]
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .trim();
+  return text.length > 80 ? `${text.slice(0, 80)}…` : text;
 }
 
 /**
