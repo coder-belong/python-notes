@@ -348,7 +348,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
 
   const doneThenNext = () => {
     if (!section) return;
-    if (!study.data.done[section.id]) study.toggleDone(section.id);
+    if (!section.guide && !study.data.done[section.id]) study.toggleDone(section.id);   // 导读页不记「学完」
     if (next) location.hash = next.id;
   };
 
@@ -421,20 +421,26 @@ export default function NotesApp({ notes }: { notes: Notes }) {
           {/* 首页收进「⋯」菜单（标题也能回首页），学习过程在首页打开；目录只留各阶段的节 */}
           <nav>
             {groups.map((g) => {
-              const done = g.items.filter((s) => study.data.done[s.id]).length;
+              const items = g.items.filter((s) => !s.guide);   // 导读页不算节数
+              const done = items.filter((s) => study.data.done[s.id]).length;
               const open = openParts.has(g.part);
               return (
                 <div key={g.part} className="nav-group">
                   <button type="button" className="nav-part" onClick={() => togglePart(g.part)} aria-expanded={open}>
-                    <span className={`chev ${open ? "open" : ""}`}>›</span>
+                    <span className={`chev ${open ? "open" : ""}`} aria-hidden="true">
+                      {/* 用 SVG 画箭头：文字「›」在字框里偏下，和标题对不齐 */}
+                      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M6 3.5 10.5 8 6 12.5" />
+                      </svg>
+                    </span>
                     <span className="nav-part-name" title={g.part}>
                       {g.part}
                     </span>
                     <span className="nav-part-count">
-                      {done}/{g.items.length}
+                      {done}/{items.length}
                     </span>
                     <span className="mini-bar">
-                      <i style={{ width: `${(done / g.items.length) * 100}%` }} />
+                      <i style={{ width: `${(done / items.length) * 100}%` }} />
                     </span>
                   </button>
                   {open &&
@@ -512,7 +518,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                 )}
                 <h2 id={section.id} className="page-title">
                   <span>{section.title}</span>
-                  <span className="sec-meta">
+                  {!section.guide && <span className="sec-meta">
                     <label className="done-toggle">
                       <input
                         type="checkbox"
@@ -521,13 +527,15 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                       />
                       学完了
                     </label>
-                  </span>
+                  </span>}
                 </h2>
                 <div dangerouslySetInnerHTML={{ __html: section.html }} />
 
                 <div className="finish">
                   <button type="button" className="finish-btn" onClick={doneThenNext}>
-                    {study.data.done[section.id]
+                    {section.guide
+                      ? "开始学 →"
+                      : study.data.done[section.id]
                       ? next
                         ? "下一节 →"
                         : "已全部学完 🎉"

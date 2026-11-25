@@ -7,6 +7,7 @@
 | `stage1-python-basics/` | 阶段一：Python 语言基础，每节一个子目录 |
 | `stage2-advanced/` | 阶段二：Python 进阶与工程化，每节一个子目录 |
 | `stage3-todo-api/` | 阶段三：3.16 节结束时的完整 todo 后端（FastAPI + Postgres + Alembic + JWT），带测试 |
+| `stage3-oauth-demo/` | 阶段三 3.21：认证中心 + 两个网站，演示 OAuth 2.0 授权码流程、OIDC、单点登录 |
 | `stage4-ai-demo/` | 阶段四：大模型应用基础（DeepSeek + openai SDK），4.1～4.11 |
 | `stage5-rag-demo/` | 阶段五：RAG 与知识库（关键词检索版，不需要向量模型），5.1～5.5 |
 | `stage6-agent-demo/` | 阶段六：Agent 开发（手写 Agent、LangChain、LangGraph、MCP、Skill），6.1～6.11 |

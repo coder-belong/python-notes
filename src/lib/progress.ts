@@ -41,10 +41,11 @@ export function progressEvents(groups: { part: string; items: Section[] }[], dat
       if (data.done[s.id] && data.finished[s.id])
         out.push({ day: data.finished[s.id], kind: "done", text: s.title, href: `#${s.id}` });
     }
-    // 只给有编号的「阶段」记阶段事件，「开始之前」这种不算
-    if (!g.items.some((s) => s.num)) continue;
-    const { startedOn, finishedOn } = stageDates(g.items, data);
-    const href = `#${(g.items.find((s) => !data.done[s.id]) ?? g.items[0]).id}`;
+    // 只给有编号的「阶段」记阶段事件，「开始之前」这种不算；导读页不算在阶段的节里
+    const lessons = g.items.filter((s) => !s.guide);
+    if (!lessons.some((s) => s.num)) continue;
+    const { startedOn, finishedOn } = stageDates(lessons, data);
+    const href = `#${(lessons.find((s) => !data.done[s.id]) ?? lessons[0]).id}`;
     if (startedOn) out.push({ day: startedOn, kind: "stage-start", text: g.part, href });
     if (finishedOn) out.push({ day: finishedOn, kind: "stage-done", text: g.part, href });
   }

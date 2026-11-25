@@ -27,6 +27,7 @@ uv pip install openai pydantic fastapi uvicorn
 | 4.9 效果评估 | `eval_demo.py` 12 条评测集，对比两种写法 | `python eval_demo.py` |
 | 4.10 换模型 | `models_demo.py` 配置化切换厂商和模型 | `python models_demo.py` |
 | 4.11 Prompt 注入 | `inject_demo.py` 注入演示、加标签防护、敏感信息打码 | `python inject_demo.py` |
+| 4.12 前端流式渲染 | `chat_web.py` 多轮流式接口；`web/index.html` 聊天页（Markdown 渲染、停止、重试、多会话） | `uvicorn chat_web:app --port 8430`，浏览器打开 http://localhost:8430 |
 
 4.6 要开两个终端：
 

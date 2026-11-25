@@ -7,7 +7,7 @@
 ```bash
 cd code/stage6-agent-demo
 uv venv --python 3.12 .venv && source .venv/bin/activate
-uv pip install openai pydantic fastapi uvicorn langchain-openai langgraph mcp
+uv pip install openai pydantic fastapi uvicorn langchain-openai langgraph langgraph-checkpoint-sqlite mcp jieba rank-bm25 pypdf
 ```
 
 ## 文件和小节
@@ -26,3 +26,11 @@ uv pip install openai pydantic fastapi uvicorn langchain-openai langgraph mcp
 | 6.9 Agent 评测 | `eval_agent.py` 三版 system 对比 | `python eval_agent.py` |
 | 6.10 多 Agent | `multi_agent.py` 文案 + 审核 | `python multi_agent.py` |
 | 6.11 Agent 前端 | `agent_api.py` SSE 推送每一步 | `uvicorn agent_api:app --port 8420` |
+| 6.12 先规划再执行 | `plan_agent.py` | `python plan_agent.py` |
+| 6.13 自我修正 | `reflect_agent.py`（用 `sandbox.py` 跑测试） | `python reflect_agent.py` |
+| 6.14 权限和沙箱 | `perm_demo.py` 按角色给工具；`sandbox.py` 子进程跑代码 | `python perm_demo.py` |
+| 6.15 Skill 体系 | `skill_system.py`，带版本的 Skill 在 `skill_lib/` | `python skill_system.py` |
+| 6.16 LangChain 进阶 | `lc_memory_rag.py` 记忆 + RAG 链（借用 `../stage5-rag-demo` 的检索） | `python lc_memory_rag.py` |
+| 6.17 LangGraph 完整版 | `lg_full.py`，状态存在 `checkpoints.db` | `python lg_full.py start`，再 `python lg_full.py resume` |
+| 6.18 多 Agent | `multi_graph.py` Planner / Executor / Writer / Reviewer | `python multi_graph.py` |
+| 6.19 故障分析 | `failure_demo.py` 报错含糊、工具结果太长 | `python failure_demo.py` |

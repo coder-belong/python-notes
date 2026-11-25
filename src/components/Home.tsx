@@ -20,7 +20,8 @@ type Props = {
 const PRIORITY_LABEL = { 3: "必学", 2: "会用", 1: "了解" } as const;
 
 export default function Home({ notes, groups, done, reading, studyDays, onOpenProgress }: Props) {
-  const { sections, roadmap } = notes;
+  const { roadmap } = notes;
+  const sections = notes.sections.filter((s) => !s.guide);   // 导读页不算节数
   const doneCount = sections.filter((s) => done[s.id]).length;
   const last = reading && sections.find((s) => s.id === reading.id);
   const firstTodo = sections.find((s) => !done[s.id]);
@@ -68,7 +69,8 @@ export default function Home({ notes, groups, done, reading, studyDays, onOpenPr
               // 笔记里对应的部分：按「阶段X」对上（路线标题带周数，笔记标题不带）
               const key = stage.title.split("：")[0];
               const group = groups.find((g) => g.part.split("：")[0] === key);
-              const learned = group ? group.items.filter((s) => done[s.id]).length : 0;
+              const lessons = group ? group.items.filter((s) => !s.guide) : [];
+              const learned = lessons.filter((s) => done[s.id]).length;
               return (
                 <details key={stage.title} className="stage" open={i < 3}>
                   <summary>
@@ -80,8 +82,8 @@ export default function Home({ notes, groups, done, reading, studyDays, onOpenPr
                       {group && (
                         <>
                           {" · "}
-                          <span className={learned === group.items.length ? "stage-learned all" : "stage-learned"}>
-                            已学 {learned}/{group.items.length} 节
+                          <span className={learned === lessons.length ? "stage-learned all" : "stage-learned"}>
+                            已学 {learned}/{lessons.length} 节
                           </span>
                         </>
                       )}

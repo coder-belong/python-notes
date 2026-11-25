@@ -9,10 +9,11 @@ import { Marked, type Token, type Tokens, type TokensList } from "marked";
 export type Section = {
   id: string;
   title: string; // 完整标题，带节号：「2.5 async / await」
-  num: string | null; // 节号「2.5」；「准备环境」这种不编号的是 null
+  num: string | null; // 节号「2.5」；「阶段一导读」这种不编号的是 null
   name: string; // 去掉节号的标题
   part: string | null;
   partIntroHtml: string | null; // 一个部分的第一节才有：「# 第X部分」标题下面那段导语
+  guide: boolean; // 阶段导读页（标题以「导读」结尾）：不算进「已学几节」，页末自动附上路线图里这个阶段的验收标准
   html: string;
   toc: TocItem[]; // 本节的小标题（###），右侧「本节目录」用
 };
@@ -101,13 +102,22 @@ export function loadNotes(): Notes {
   const intro: Token[] = [];
   let partIntro: Token[] | null = null; // 刚进入一个新部分、还没遇到第一节时的内容
   const sections: Section[] = [];
+  const roadmap = loadRoadmap(marked);
   let current: { id: string; title: string; part: string | null; partIntro: Token[] | null; tokens: Token[] } | null =
     null;
 
   const flush = () => {
     if (current) {
       const nm = current.title.match(SECTION_NUM);
-      const { html, toc } = collectToc(render(current.tokens));
+      const guide = current.title.endsWith("导读");
+      let body = render(current.tokens);
+      if (guide) {
+        // 验收标准只写在 ROADMAP.md 里一份：按「阶段X」对上，附在导读最后
+        const key = (current.part ?? "").split("：")[0];
+        const check = roadmap.find((st) => st.title.split("：")[0] === key)?.check;
+        if (check) body += `<h3 id="验收">验收</h3>\n<p>${check}</p>\n<p class="hint">学完这个阶段，回来对照这一条自测：做得到再进下一阶段。</p>\n`;
+      }
+      const { html, toc } = collectToc(body);
       sections.push({
         id: current.id,
         title: current.title,
@@ -115,6 +125,7 @@ export function loadNotes(): Notes {
         name: nm ? nm[2] : current.title,
         part: current.part,
         partIntroHtml: current.partIntro?.length ? render(current.partIntro) : null,
+        guide,
         html,
         toc,
       });
@@ -154,7 +165,7 @@ export function loadNotes(): Notes {
   }
   flush();
 
-  return { title, introHtml: render(intro), sections, roadmap: loadRoadmap(marked), changelog: loadChangelog(marked) };
+  return { title, introHtml: render(intro), sections, roadmap, changelog: loadChangelog(marked) };
 }
 
 /**

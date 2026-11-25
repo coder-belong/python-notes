@@ -19,4 +19,4 @@ uv pip install openai jieba rank-bm25 pypdf
 | 5.2 解析和切分 | `load_docs.py` 读 PDF 和 Markdown、清理、按小标题切段 | `python load_docs.py` |
 | 5.3 BM25 | `search.py` jieba 分词 + BM25 检索 | `python search.py` |
 | 5.4 完整问答 | `rag.py` 查询改写、检索、回答带出处 | `python rag.py` |
-| 5.5 检索评估 | `eval_search.py` 10 条评测集，原句和改写的召回率 | `python eval_search.py` |
+| 5.5 检索评估 | `eval_search.py` 10 条评测集，原句和改写的召回率；`chunk_eval.py` 几种切分方式的召回率对比（不调模型） | `python eval_search.py` |

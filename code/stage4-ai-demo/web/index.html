@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>流式聊天 demo</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<style>
+  body { margin: 0; font: 15px/1.7 system-ui, sans-serif; display: flex; height: 100vh; color: #222; }
+  aside { width: 200px; border-right: 1px solid #e5e5e5; padding: 12px; overflow: auto; background: #fafafa; }
+  aside button { width: 100%; margin-bottom: 6px; padding: 6px 8px; text-align: left; border: 1px solid #ddd; background: #fff; border-radius: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  aside button.on { border-color: #2f6fdf; color: #2f6fdf; }
+  main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #list { flex: 1; overflow: auto; padding: 16px 24px; }
+  .msg { margin: 0 0 16px; }
+  .msg.user { color: #2f6fdf; font-weight: 600; }
+  .msg pre { background: #f4f3f0; padding: 10px; border-radius: 6px; overflow: auto; }
+  .msg .err { color: #c0392b; }
+  form { display: flex; gap: 8px; padding: 12px 24px; border-top: 1px solid #e5e5e5; }
+  form input { flex: 1; padding: 8px; font: inherit; }
+  form button { padding: 8px 16px; font: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<aside>
+  <button id="new">＋ 新会话</button>
+  <div id="sessions"></div>
+</aside>
+<main>
+  <div id="list"></div>
+  <form id="form">
+    <input id="input" placeholder="问点 Python 的问题" autocomplete="off">
+    <button id="send">发送</button>
+  </form>
+</main>
+<script>
+// 模型输出里如果有 HTML（比如 <img onerror=...>），当文字显示，不当标签执行（4.11 节：模型输出不可信）
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+marked.use({ renderer: { html: (html) => esc(typeof html === "string" ? html : html.text) } });
+
+// ---------- 会话：存在 localStorage，刷新页面还在 ----------
+const KEY = "chat-demo:sessions";
+let sessions = JSON.parse(localStorage.getItem(KEY) || "[]");   // [{ id, title, messages: [{role, content}] }]
+let current = sessions[0]?.id ?? null;
+let controller = null;                                          // 正在进行的请求，用来停止
+const save = () => localStorage.setItem(KEY, JSON.stringify(sessions));
+const cur = () => sessions.find((s) => s.id === current);
+
+function newSession() {
+  const s = { id: crypto.randomUUID(), title: "新会话", messages: [] };
+  sessions.unshift(s);
+  current = s.id;
+  save();
+  render();
+}
+
+// ---------- 渲染 ----------
+function render() {
+  document.getElementById("sessions").innerHTML = "";
+  for (const s of sessions) {
+    const b = document.createElement("button");
+    b.textContent = s.title;
+    b.className = s.id === current ? "on" : "";
+    b.onclick = () => { if (!controller) { current = s.id; render(); } };   // 回答中不能切换，避免写错会话
+    document.getElementById("sessions").appendChild(b);
+  }
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for (const m of cur()?.messages ?? []) list.appendChild(bubble(m));
+  list.scrollTop = list.scrollHeight;
+}
+
+function bubble(m) {
+  const div = document.createElement("div");
+  div.className = "msg " + m.role;
+  if (m.role === "user") div.textContent = m.content;              // 用户输入当纯文字显示，不当 HTML
+  else div.innerHTML = marked.parse(m.content) + (m.error ? `<p class="err">${m.error} <button class="retry">重试</button></p>` : "");
+  div.querySelector(".retry")?.addEventListener("click", retry);
+  return div;
+}
+
+// ---------- 发送：流式接收，边收边渲染 ----------
+async function ask() {
+  const s = cur();
+  const answer = { role: "assistant", content: "" };
+  s.messages.push(answer);
+  render();
+  const el = document.getElementById("list").lastElementChild;
+  let pending = false;
+  const paint = () => {                       // 每来一个片段都重新解析整段 Markdown：半个代码块也能显示
+    if (pending) return;                      // 一帧只画一次：片段来得太快时不卡
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      el.innerHTML = marked.parse(answer.content);
+      const list = document.getElementById("list");
+      list.scrollTop = list.scrollHeight;
+    });
+  };
+
+  controller = new AbortController();
+  document.getElementById("send").textContent = "停止";
+  try {
+    const history = s.messages.slice(0, -1).filter((m) => !m.error).map(({ role, content }) => ({ role, content }));
+    const res = await fetch("/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: history }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`请求失败：${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop();
+      for (const block of events) {
+        const event = block.match(/^event: (.*)$/m)?.[1];
+        const data = JSON.parse(block.match(/^data: (.*)$/m)?.[1] ?? "{}");
+        if (event === "delta") { answer.content += data.text; paint(); }
+        if (event === "error") throw new Error(data.msg);
+      }
+    }
+  } catch (e) {
+    answer.error = e.name === "AbortError" ? "已停止" : `出错了：${e.message}`;
+  } finally {
+    controller = null;
+    document.getElementById("send").textContent = "发送";
+    if (s.title === "新会话") s.title = s.messages[0].content.slice(0, 12);   // 用第一句话当会话标题
+    save();
+    render();
+  }
+}
+
+function retry() {                              // 重试：去掉出错的那条回答，用同样的历史再问一次
+  const s = cur();
+  if (s.messages.at(-1)?.error) s.messages.pop();
+  ask();
+}
+
+document.getElementById("form").onsubmit = (e) => {
+  e.preventDefault();
+  if (controller) { controller.abort(); return; }   // 回答中：按钮是「停止」
+  const input = document.getElementById("input");
+  const text = input.value.trim();
+  if (!text) return;
+  if (!cur()) newSession();
+  cur().messages.push({ role: "user", content: text });
+  input.value = "";
+  ask();
+};
+document.getElementById("new").onclick = () => { if (!controller) newSession(); };
+render();
+</script>
+</body>
+</html>

@@ -37,5 +37,6 @@ uv pip install -p .venv/bin/python pydantic     # 只有 1.8 的 to_dict.py 用�
 | 1.12 文件和 JSON | `1.12-files-json/demo.py` | Path 建文件夹、写读 JSON、文件信息、glob（运行时会生成 `data/`） | `cd 1.12-files-json && ../.venv/bin/python demo.py` |
 | | `1.12-files-json/read_by_line.py` | 按行读文件，**先运行 demo.py** 生成 `data/user.json` | `cd 1.12-files-json && ../.venv/bin/python read_by_line.py` |
 | | `1.12-files-json/with_demo.py` | `with` 和等价的 try/finally 写法（会写出 `a.txt`，无输出） | `cd 1.12-files-json && ../.venv/bin/python with_demo.py` |
+| 1.13 正则表达式 | `1.13-regex/regex_demo.py` | search / findall / sub / fullmatch / split、分组、贪婪和非贪婪 | `cd 1.13-regex && ../.venv/bin/python regex_demo.py` |
 
 运行后生成的 `a.txt`、`data/` 都是示例产物，可以随时删掉。

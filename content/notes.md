@@ -4,7 +4,7 @@
 
 - **阶段一：Python 语言基础**：只讲常用的写法，不常用的先跳过。
 - **阶段二：Python 进阶与工程化**：类型注解、依赖管理、调试、异步、发 HTTP 请求、并发、上下文管理器。
-- **阶段三：FastAPI 后端开发**：用 FastAPI + SQLAlchemy 从零做一个 todo 接口项目。
+- **阶段三：FastAPI 后端开发**：用 FastAPI + SQLAlchemy 从零做一个 todo 接口项目，再补权限、上传、Redis、第三方登录和单点登录。
 - **阶段四：大模型应用基础**：调大模型、控制成本、结构化输出、函数调用、流式输出、Prompt 和评测、安全。
 - **阶段五：RAG 与知识库**：把文档解析、切分、检索后让模型基于你的资料回答，并给出出处；用评测集量检索效果。
 - **阶段六：Agent 开发**：先手写 Agent 循环，再用 LangChain、LangGraph；工具、记忆、人工确认、Trace、MCP、Skill、评测。
@@ -17,17 +17,20 @@
 
 # 阶段一：Python 语言基础
 
+## 阶段一导读 {#setup}
+
+### 这个阶段讲什么
+
 这个阶段学 Python 本身的语法，只讲写后端常用的写法，不常用的先跳过。
 
-**学完这个阶段，你将会：**
+### 学完你将会
 
-- 装好 Python 和 uv，建好虚拟环境（准备环境）
-- 用变量、判断、循环、列表、字典处理数据（1.1～1.4）
-- 写函数，看懂装饰器：FastAPI 的 `@app.get` 就是装饰器（1.5～1.6）
-- 用模块拆分代码，用类和 dataclass 组织数据（1.7～1.10）
-- 用 `try / except` 处理错误，读写文件和 JSON（1.11～1.12）
+- 装好 Python 和 uv，建好虚拟环境（本页下面）
+- 用变量、判断、循环、列表、字典处理数据（[1.1～1.4](#variables)）
+- 写函数，看懂装饰器：FastAPI 的 `@app.get` 就是装饰器（[1.5～1.6](#functions)）
+- 用模块拆分代码，用类和 dataclass 组织数据（[1.7～1.10](#modules)）
+- 用 `try / except` 处理错误，读写文件和 JSON，用正则从文字里找内容（[1.11～1.13](#exceptions)）
 
-## 准备环境 {#setup}
 
 ### 用 uv 建虚拟环境
 
@@ -1141,18 +1144,111 @@ finally:
     fp.close()
 ```
 
+
+## 1.13 正则表达式 {#regex}
+
+正则表达式是一种「描述文字长什么样」的写法，用来从一段文字里**找、取、换、校验**符合某种格式的内容：手机号、日期、金额、订单号……做后端和 AI 应用时用得很多：清洗文档（5.2 节）、从模型输出里取代码块（6.13 节）、给手机号打码（4.11 节）。
+
+### 常用符号
+
+| 写法 | 意思 | 例子 |
+|---|---|---|
+| `\d` | 一个数字 | `\d\d` 匹配 `42` |
+| `\w` | 一个字母、数字、下划线或汉字 | `\w+` 匹配 `A1024` |
+| `\s` | 一个空白（空格、换行、Tab） | |
+| `.` | 任意一个字符（换行除外） | |
+| `[abc]` / `[3-9]` | 括号里任选一个 / 3 到 9 中的一个 | `1[3-9]` 匹配 `13`、`19` |
+| `+` / `*` / `?` | 前一个出现 1 次以上 / 0 次以上 / 0 或 1 次 | `\d+` 匹配 `2026` |
+| `{11}` / `{2,4}` | 前一个正好 11 次 / 2 到 4 次 | `\d{11}` 匹配 11 位数字 |
+| `^` / `$` | 开头 / 结尾 | |
+| `( )` | 分组：把这部分单独取出来 | |
+
+写的时候字符串前面加 `r`：`r"\d+"`。不加的话 `\d` 里的反斜杠可能被 Python 当成转义字符。
+
+### 常用的几个函数
+
+```python
+# regex_demo.py
+import re
+
+text = "订单 A1024 金额 ¥1,299.50，联系人 13812345678；订单 B77 金额 ¥88，联系人 13900001111"
+
+# ① 找第一个：re.search，找不到返回 None
+m = re.search(r"\d{11}", text)          # \d 一个数字，{11} 连续 11 个
+print(m.group())                         # 13812345678
+
+# ② 找全部：re.findall，返回列表
+print(re.findall(r"1[3-9]\d{9}", text))  # ['13812345678', '13900001111']   [3-9]：3 到 9 中的一个
+
+# ③ 分组：( ) 括起来的部分单独取出来
+for order, amount in re.findall(r"订单 (\w+) 金额 ¥([\d,.]+)", text):   # \w 字母数字下划线，+ 一个或多个
+    print(order, float(amount.replace(",", "")))
+# A1024 1299.5
+# B77 88.0
+
+# ④ 替换：re.sub
+print(re.sub(r"(\d{3})\d{4}(\d{4})", r"\1****\2", text))   # \1 \2：第 1、2 个分组的内容
+# 订单 A1024 金额 ¥1,299.50，联系人 138****5678；订单 B77 金额 ¥88，联系人 139****1111
+
+# ⑤ 整串检查：re.fullmatch，整个字符串都要符合才算
+for s in ["2026-11-25", "2026-1-5", "2026-11-25 10:00"]:
+    print(s, bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", s)))
+# 2026-11-25 True
+# 2026-1-5 False
+# 2026-11-25 10:00 False
+
+# ⑥ 切分：re.split，按多种分隔符切
+print(re.split(r"[,，;；\s]+", "苹果, 香蕉，橙子;  西瓜"))   # [ ] 里任选一个，+ 连着好几个算一次
+# ['苹果', '香蕉', '橙子', '西瓜']
+
+# ⑦ 贪婪和非贪婪：.* 尽量多匹配，.*? 尽量少匹配
+html = "<b>加粗</b> 和 <b>又一个</b>"
+print(re.findall(r"<b>(.*)</b>", html))    # ['加粗</b> 和 <b>又一个']   一口气吃到最后一个 </b>
+print(re.findall(r"<b>(.*?)</b>", html))   # ['加粗', '又一个']
+
+# ⑧ 同一个规则用很多次：先 compile
+PHONE = re.compile(r"1[3-9]\d{9}")
+print(PHONE.findall("a13800000000b15912345678"))   # ['13800000000', '15912345678']
+```
+
+| 函数 | 做什么 | 返回 |
+|---|---|---|
+| `re.search` | 找第一个 | 匹配对象，`.group()` 取文字；找不到是 `None` |
+| `re.findall` | 找全部 | 列表；有分组时是分组内容的列表 |
+| `re.sub` | 替换 | 新字符串 |
+| `re.fullmatch` | 整个字符串都符合才算 | 匹配对象或 `None`，常用来校验格式 |
+| `re.split` | 按规则切分 | 列表 |
+| `re.compile` | 先编译好，重复用 | 正则对象，方法同上 |
+
+### 规则（记住就行）
+
+1. 字符串前加 `r`。
+2. 校验格式用 `fullmatch`，不用 `search`：`search` 只要有一部分符合就算。
+3. 取 `< >`、引号之间的内容用非贪婪 `.*?`。
+4. 复杂的正则先在 regex101.com 这类网站上试，或者让 AI 写好、自己用几个例子测一遍。
+5. 能用字符串方法（`split`、`replace`、`startswith`）解决的，就不用正则。
+
 ---
 
 # 阶段二：Python 进阶与工程化
 
+## 阶段二导读 {#stage2-guide}
+
+### 这个阶段讲什么
+
 这个阶段从「会写 Python」到「能写真实项目」，学的是每个项目都会用到的工程能力。
 
-**学完这个阶段，你将会：**
+### 学完你将会
 
-- 给函数标类型，用 uv 管理项目和依赖（2.1～2.2）
-- 打日志、读配置、处理时间，看懂报错、打断点调试（2.3～2.4）
-- 用 async 同时等好几个请求，用 httpx 调别人的接口，带超时和重试（2.5～2.6）
-- 知道进程、线程、协程分别用在哪，用 `with` 管理要关闭的资源（2.7～2.8）
+- 给函数标类型，用 uv 管理项目和依赖（[2.1～2.2](#type-hints)）
+- 打日志、读配置、处理时间，看懂报错、打断点调试（[2.3～2.4](#logging-env-time)）
+- 用 async 同时等好几个请求，用 httpx 调别人的接口，带超时和重试（[2.5～2.6](#async)）
+- 知道进程、线程、协程分别用在哪，用 `with` 管理要关闭的资源（[2.7～2.8](#concurrency)）
+- 用 Linux 命令看日志、查端口，用 Git 分支协作、解决冲突（[2.9](#linux-git)）
+
+### 准备环境
+
+练习代码在 `code/stage2-advanced`，每节一个目录。环境沿用阶段一建好的 Python 3.12 + uv，第 2.2 节会讲怎么用 uv 管理项目和依赖。
 
 ## 2.1 类型注解：给变量和函数标类型 {#type-hints}
 
@@ -1276,7 +1372,7 @@ print(double("ab"))     # abab   标的是 int，传字符串照样运行
 
 ## 2.2 项目和依赖：uv、pip、pyproject.toml {#tooling}
 
-「准备环境」一节用 `uv venv` 建了虚拟环境、用 `uv pip install` 装包，够做练习。正式项目还要解决两件事：**别人拿到代码，怎么装出一模一样的环境**；**代码风格怎么统一**。
+[阶段一导读](#setup)里用 `uv venv` 建了虚拟环境、用 `uv pip install` 装包，够做练习。正式项目还要解决两件事：**别人拿到代码，怎么装出一模一样的环境**；**代码风格怎么统一**。
 
 ### pip 和 uv
 
@@ -1387,7 +1483,7 @@ Found 3 errors.
 - `F841` 不会自动修：删掉 `y=1` 可能改变程序行为，ruff 让你自己决定。
 - 每条开头的 `F401`、`F841` 是规则编号，看不懂就拿编号去搜。
 
-「准备环境」一节已经在编辑器里配了「保存时自动格式化」，平时不用手动跑；提交代码前跑一次 `ruff check` 就行。
+[阶段一导读](#setup)里已经在编辑器里配了「保存时自动格式化」，平时不用手动跑；提交代码前跑一次 `ruff check` 就行。
 
 ## 2.3 日志、环境变量、时间 {#logging-env-time}
 
@@ -2016,20 +2112,145 @@ app = FastAPI(lifespan=lifespan)
 
 第 3.9 节依赖注入里带 `yield` 的 `get_session` 也是一样：`yield` 前开数据库会话，`yield` 后关闭，FastAPI 在每个请求前后替你执行。
 
+## 2.9 Linux 常用命令和 Git {#linux-git}
+
+服务最后都跑在 Linux 服务器上，部署、看日志、查问题都靠命令行；代码要用 Git 管理、和别人协作。这两样不用学很深，但下面这些要熟。macOS 的终端命令和 Linux 基本一样，可以直接在本机练。
+
+### 文件和日志
+
+```bash
+$ mkdir -p logs                     # 建文件夹，-p：上级不存在也一起建，已存在不报错
+$ ls -l logs                        # 列出文件，-l：显示大小、时间、权限
+-rw-r--r--@ 1 me  wheel  102 Nov 25 16:42 app.log
+$ grep -n ERROR logs/app.log        # 找包含 ERROR 的行，-n：带行号
+3:10:02 ERROR 数据库连接超时
+$ tail -n 2 logs/app.log            # 看最后 2 行；tail -f 文件：持续看新写入的日志，Ctrl+C 退出
+10:02 ERROR 数据库连接超时
+10:03 INFO 请求 /todos
+$ wc -l logs/app.log                # 数行数
+       4 logs/app.log
+$ du -sh logs                       # 看文件夹占多大
+4.0K	logs
+```
+
+| 命令 | 做什么 |
+|---|---|
+| `pwd` / `cd 目录` / `cd ..` | 当前在哪 / 进入目录 / 回上一级 |
+| `ls -la` | 列出文件，包括 `.` 开头的隐藏文件 |
+| `cat 文件` / `less 文件` | 看整个文件 / 分页看大文件（`q` 退出，`/关键词` 搜索） |
+| `cp` / `mv` / `rm -r` | 复制 / 移动或改名 / 删除（`rm` 删了没有回收站，小心） |
+| `grep -rn 关键词 目录` | 在整个目录里搜 |
+| `命令 \| grep xx` | `\|` 是管道：前一个命令的输出交给后一个，比如 `ps aux \| grep uvicorn` |
+| `chmod +x 脚本.sh` | 给脚本加上可执行权限 |
+| `df -h` / `free -h` | 磁盘还剩多少 / 内存还剩多少（`free` 只有 Linux 有） |
+
+### 进程和端口
+
+最常遇到的问题：「端口被占用」。启动服务报 `Address already in use`，就是有别的进程占着这个端口：
+
+```bash
+$ lsof -nP -i :8765                 # 谁占着 8765 端口
+COMMAND  PID   USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+Python  9167 me    5u  IPv6 0x...      0t0  TCP *:8765 (LISTEN)
+$ kill 9167                         # 按 PID 结束它；结束不了再用 kill -9 9167 强制结束
+$ lsof -nP -i :8765                 # 没有输出：端口已经空出来了
+```
+
+| 命令 | 做什么 |
+|---|---|
+| `ps aux \| grep 名字` | 找进程，第二列是 PID |
+| `kill PID` / `pkill -f 名字` | 按 PID / 按命令行里的名字结束进程 |
+| `nohup 命令 &` | 在后台运行，关掉终端也不停（正式部署用 systemd 或 Docker，阶段七） |
+| `curl -i http://localhost:8000/health` | 在服务器上直接测接口，`-i` 显示响应头 |
+| `ssh 用户@服务器` / `scp 文件 用户@服务器:路径` | 登录服务器 / 传文件 |
+| `export KEY=xxx` / `echo $KEY` | 设环境变量 / 看环境变量（2.3 节） |
+
+### Git：日常流程
+
+```bash
+git status --short                  # 看改了什么：?? 是新文件，M 是改过
+git diff                            # 看具体改了哪几行
+git add app.py                      # 把改动放进「暂存区」，准备提交
+git commit -m "新增 app.py"         # 提交：存一个版本
+git switch -c feat/login            # 新建分支并切过去：新功能在自己的分支上做
+git push -u origin feat/login       # 推到远程（GitHub），然后开 Pull Request 请别人审
+git switch main && git pull         # 切回主分支，拉最新代码
+```
+
+`git diff` 的输出：`-` 开头是删掉的行，`+` 开头是新加的行：
+
+```
+@@ -1 +1,2 @@
+ print("hello")
++print("login")
+```
+
+### Git：合并冲突
+
+两个分支改了同一行，合并时 Git 不知道听谁的，就会冲突。在 `main` 上把 `hello` 改成了 `hi`，`feat/login` 分支上在下面加了一行，合并：
+
+```bash
+$ git merge feat/login
+Auto-merging app.py
+CONFLICT (content): Merge conflict in app.py
+Automatic merge failed; fix conflicts and then commit the result.
+$ cat app.py
+<<<<<<< HEAD
+print("hi")
+=======
+print("hello")
+print("login")
+>>>>>>> feat/login
+```
+
+`<<<<<<< HEAD` 到 `=======` 之间是当前分支（main）的版本，`=======` 到 `>>>>>>>` 是要合进来的版本。**手动改成想要的样子**，删掉这三行标记，再提交：
+
+```bash
+$ printf 'print("hi")\nprint("login")\n' > app.py    # 两边都要：保留 hi，也保留 login
+$ git add app.py && git commit -m "合并 feat/login，解决冲突"
+$ git log --oneline --graph
+*   xxxxxxx 合并 feat/login，解决冲突
+|\
+| * xxxxxxx 加登录
+* | xxxxxxx 改问候语
+|/
+* xxxxxxx 新增 app.py
+* xxxxxxx init
+```
+
+`--graph` 画出了分支的样子：从「新增 app.py」分成两条线，最后合在一起。
+
+### 规则（记住就行）
+
+1. 新功能、修 bug 都开新分支做，不直接在 `main` 上改；做完开 Pull Request，审过再合。
+2. 提交前看一眼 `git status` 和 `git diff`，别把 `.env`、密钥、`.venv` 提交上去（写进 `.gitignore`）。
+3. 提交说明写清楚做了什么，一次提交只做一件事。
+4. 冲突了别慌：打开文件，改成正确的内容，删掉标记，`add` + `commit`。
+5. `rm`、`kill -9`、`git reset --hard`、`git push --force` 这类命令执行前想清楚，删了改了很难找回。
+
 ---
 
 # 阶段三：FastAPI 后端开发
 
+## 阶段三导读 {#stage3-guide}
+
+### 这个阶段讲什么
+
 这个阶段从零做一个 todo 后端：先在本地把接口跑通，再一步步升级成能上线、多人使用的后端。
 
-**学完这个阶段，你将会：**
+### 学完你将会
 
-- 用 FastAPI 写接口，统一返回格式和错误处理（3.1～3.5）
-- 手写 SQL，再用 SQLAlchemy 在接口里增删改查（3.6～3.10）
-- 给接口写自动化测试，按业务拆分文件（3.11～3.12）
-- 做注册登录，让每个人只能看到自己的数据（3.13～3.14）
-- 用 Alembic 管理表结构的变化，把后端部署上线（3.15～3.16）
-- 把业务逻辑拆成 service 层，加上管理员权限、文件上传和 Redis（3.17～3.20）
+- 用 FastAPI 写接口，统一返回格式和错误处理（[3.1～3.5](#project-setup)）
+- 手写 SQL，再用 SQLAlchemy 在接口里增删改查（[3.6～3.10](#sql-basics)）
+- 给接口写自动化测试，按业务拆分文件（[3.11～3.12](#pytest)）
+- 做注册登录，让每个人只能看到自己的数据（[3.13～3.14](#auth)）
+- 用 Alembic 管理表结构的变化，把后端部署上线（[3.15～3.16](#alembic)）
+- 把业务逻辑拆成 service 层，加上管理员权限、文件上传和 Redis（[3.17～3.20](#layers)）
+- 接入第三方登录和单点登录：OAuth 2.0、OIDC（[3.21](#oauth)）
+
+### 准备环境
+
+练习代码在 `code/stage3-todo-api`，是 3.16 节结束时的完整后端。从零搭项目的步骤在第 3.1 节；要先装好 PostgreSQL（3.6 节），3.20 节要装 Redis。
 
 ## 3.1 项目准备 {#project-setup}
 
@@ -5819,6 +6040,278 @@ def test_admin_users_cached(client: TestClient, auth: dict) -> None:
 
 > **上线**：Vercel 上没有 Redis，要用托管服务，比如 Upstash（有免费额度，按请求收费，很适合 Vercel）、阿里云 Redis。拿到地址后配到环境变量 `REDIS_URL`。
 
+## 3.21 第三方登录和单点登录：OAuth 2.0、OIDC、SSO {#oauth}
+
+3.13 节的登录是「用户名密码存在自己的数据库里」。很多场景不是这样：
+
+- **第三方登录**：「用微信登录」「用 GitHub 登录」，密码在微信那边，你的网站根本拿不到。
+- **单点登录（SSO）**：公司有十几个内部系统，员工在一个地方登录一次，其他系统都不用再输密码。
+
+这两件事背后是同一套协议：**OAuth 2.0** 和在它之上加了一层的 **OIDC**（OpenID Connect）。招聘要求里常写，面试常问「授权码流程是怎样的」。
+
+### 三个角色和一个流程
+
+| 角色 | 例子 | 在下面的代码里 |
+|---|---|---|
+| 认证中心（授权服务器） | 微信开放平台、公司统一登录、Okta、Keycloak | `provider.py`，端口 8501 |
+| 网站（客户端） | 你的网站，事先在认证中心登记，拿到 `client_id` 和 `client_secret` | `website.py`，笔记网站 8502、题库网站 8503 |
+| 用户（浏览器） | 点「用 xx 登录」的人 | `flow_demo.py` 用代码模拟浏览器 |
+
+**授权码流程**（最常用、最安全的一种）：
+
+```
+① 网站 → 把浏览器跳到认证中心 /authorize（带上 client_id、跳回地址、随机的 state）
+② 认证中心 → 用户输入密码（密码只给认证中心，网站看不到）
+③ 认证中心 → 把浏览器跳回网站的 /callback，带上一次性的「授权码」code 和原来的 state
+④ 网站后端 → 拿 code + client_secret 去认证中心 /token 换 token（服务器对服务器，浏览器看不到）
+⑤ 网站后端 → 校验 id_token，知道「这个用户是谁」
+⑥ 网站 → 建立自己的登录状态（session 或 3.13 节的 JWT）
+```
+
+为什么不在第 ③ 步直接把 token 给浏览器？跳转地址会留在浏览器历史、服务器日志里，不安全。所以只给一个**60 秒有效、只能用一次**的授权码，真正的 token 由网站后端带着密钥去换。
+
+### OAuth 2.0 和 OIDC 的区别
+
+- **OAuth 2.0** 解决「授权」：让网站能代表用户访问某些资源，比如「允许这个 App 读取你的 GitHub 仓库」。它发的是 `access_token`，只说明「有权限」，不说明「你是谁」。
+- **OIDC** 在 OAuth 2.0 上加了「认证」：多发一个 `id_token`，是一个 JWT，里面写着用户是谁（`sub`、`name`）、发给哪个网站（`aud`）、谁发的（`iss`）、什么时候过期（`exp`）。「用 xx 登录」实际用的都是 OIDC。
+
+### 认证中心
+
+```python
+# provider.py：认证中心（相当于「微信登录」「公司统一登录」那一方），端口 8501
+import secrets
+import time
+from urllib.parse import urlencode
+
+import jwt
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
+
+app = FastAPI()
+ISSUER = "http://localhost:8501"
+USERS = {"xiaolin": {"password": "demo-pass", "name": "小林"}}   # 演示用的测试账号
+CLIENTS = {   # 事先登记好的网站：client_id → 密钥、允许跳回的地址
+    "notes": {"secret": "notes-secret", "redirect_uri": "http://localhost:8502/callback"},
+    "quiz": {"secret": "quiz-secret", "redirect_uri": "http://localhost:8503/callback"},
+}
+SESSIONS: dict[str, str] = {}   # 认证中心自己的登录状态：cookie 值 → 用户名（这就是 SSO 的关键）
+CODES: dict[str, dict] = {}     # 授权码 → 发给谁、哪个用户、什么时候过期
+TOKENS: dict[str, str] = {}     # access_token → 用户名
+
+
+def check_client(client_id: str, redirect_uri: str) -> None:
+    c = CLIENTS.get(client_id)
+    if not c or c["redirect_uri"] != redirect_uri:   # 跳回地址必须和登记的完全一样：防止授权码被发到坏人的网站
+        raise HTTPException(400, "client_id 或 redirect_uri 不对")
+
+
+def issue_code(username: str, client_id: str, redirect_uri: str, state: str) -> RedirectResponse:
+    code = secrets.token_urlsafe(16)
+    CODES[code] = {"user": username, "client_id": client_id, "expires": time.time() + 60}   # 授权码 60 秒内有效、只能用一次
+    return RedirectResponse(f"{redirect_uri}?{urlencode({'code': code, 'state': state})}", status_code=302)
+
+
+@app.get("/authorize")
+def authorize(request: Request, client_id: str, redirect_uri: str, state: str, scope: str = "openid") -> Response:   # 可能返回表单，也可能直接跳转
+    check_client(client_id, redirect_uri)
+    user = SESSIONS.get(request.cookies.get("sso_session", ""))
+    if user:   # 已经在认证中心登录过：不用再输密码，直接发授权码（单点登录）
+        return issue_code(user, client_id, redirect_uri, state)
+    hidden = "".join(f'<input type="hidden" name="{k}" value="{v}">' for k, v in
+                     {"client_id": client_id, "redirect_uri": redirect_uri, "state": state}.items())
+    return HTMLResponse(f'<form method="post" action="/login">{hidden}<input name="username"><input name="password" type="password"><button>登录</button></form>')
+
+
+@app.post("/login")
+def login(username: str = Form(), password: str = Form(), client_id: str = Form(), redirect_uri: str = Form(), state: str = Form()) -> RedirectResponse:
+    check_client(client_id, redirect_uri)
+    if USERS.get(username, {}).get("password") != password:
+        raise HTTPException(401, "用户名或密码错误")
+    sid = secrets.token_urlsafe(16)
+    SESSIONS[sid] = username
+    resp = issue_code(username, client_id, redirect_uri, state)
+    resp.set_cookie("sso_session", sid, httponly=True)   # 记住「这个浏览器已经在认证中心登录了」
+    return resp
+
+
+@app.post("/token")
+def token(code: str = Form(), client_id: str = Form(), client_secret: str = Form(), redirect_uri: str = Form()) -> dict:
+    """网站的后端拿授权码来换 token。这一步是服务器对服务器，带着 client_secret，浏览器看不到。"""
+    check_client(client_id, redirect_uri)
+    if CLIENTS[client_id]["secret"] != client_secret:
+        raise HTTPException(401, "client_secret 不对")
+    info = CODES.pop(code, None)   # pop：用一次就删掉
+    if not info or info["client_id"] != client_id or info["expires"] < time.time():
+        raise HTTPException(400, "授权码无效、已用过或已过期")
+    access_token = secrets.token_urlsafe(24)
+    TOKENS[access_token] = info["user"]
+    now = int(time.time())
+    id_token = jwt.encode(   # OIDC 多出来的部分：一个写明「这个用户是谁」的 JWT
+        {"iss": ISSUER, "aud": client_id, "sub": info["user"], "name": USERS[info["user"]]["name"], "iat": now, "exp": now + 300},
+        client_secret, algorithm="HS256",   # 演示用 client_secret 签名；大平台一般用 RS256 私钥签名、公开公钥
+    )
+    return {"access_token": access_token, "token_type": "Bearer", "id_token": id_token, "expires_in": 3600}
+
+
+@app.get("/userinfo")
+def userinfo(request: Request) -> dict:   # 拿 access_token 查用户信息（OAuth 2.0 的「授权访问资源」）
+    user = TOKENS.get(request.headers.get("authorization", "").removeprefix("Bearer "))
+    if not user:
+        raise HTTPException(401, "token 无效")
+    return {"sub": user, "name": USERS[user]["name"]}
+```
+
+### 网站
+
+同一份代码跑两个网站，用环境变量区分是哪个：
+
+```python
+# website.py：接入认证中心的网站。同一份代码跑两个：笔记网站 8502、题库网站 8503（用环境变量区分）
+import os
+import secrets
+from urllib.parse import urlencode
+
+import httpx
+import jwt
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+
+CLIENT_ID = os.environ["CLIENT_ID"]                 # notes 或 quiz
+CLIENT_SECRET = os.environ["CLIENT_SECRET"]         # 只放在后端，绝不能给前端
+PORT = os.environ["PORT"]
+PROVIDER = "http://localhost:8501"
+REDIRECT_URI = f"http://localhost:{PORT}/callback"
+COOKIE = f"{CLIENT_ID}_session"                     # 同一个 localhost 不同端口的 cookie 是共享的，名字要分开
+
+app = FastAPI()
+SESSIONS: dict[str, str] = {}                       # 这个网站自己的登录状态
+
+
+@app.get("/")
+def home(request: Request) -> HTMLResponse:
+    name = SESSIONS.get(request.cookies.get(COOKIE, ""))
+    return HTMLResponse(f"{CLIENT_ID}：已登录，{name}" if name else f'{CLIENT_ID}：未登录 <a href="/login">用认证中心登录</a>')
+
+
+@app.get("/login")
+def login() -> RedirectResponse:
+    state = secrets.token_urlsafe(16)               # 随机数：回来时核对，防止别人伪造回调（CSRF）
+    query = urlencode({"client_id": CLIENT_ID, "redirect_uri": REDIRECT_URI, "state": state, "scope": "openid profile"})
+    resp = RedirectResponse(f"{PROVIDER}/authorize?{query}", status_code=302)   # ① 把浏览器带到认证中心
+    resp.set_cookie(f"{CLIENT_ID}_state", state, httponly=True)
+    return resp
+
+
+@app.get("/callback")
+def callback(request: Request, code: str, state: str) -> RedirectResponse:
+    if state != request.cookies.get(f"{CLIENT_ID}_state"):   # ③ 核对 state
+        raise HTTPException(400, "state 不对，可能是伪造的回调")
+    r = httpx.post(f"{PROVIDER}/token", data={              # ④ 后端拿授权码 + 密钥换 token
+        "code": code, "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET, "redirect_uri": REDIRECT_URI,
+    })
+    if r.status_code != 200:
+        raise HTTPException(400, f"换 token 失败：{r.json()['detail']}")
+    claims = jwt.decode(r.json()["id_token"], CLIENT_SECRET, algorithms=["HS256"],   # ⑤ 校验 id_token：签名、发给谁、谁发的、过期没有
+                        audience=CLIENT_ID, issuer=PROVIDER)
+    sid = secrets.token_urlsafe(16)
+    SESSIONS[sid] = claims["name"]                          # ⑥ 建立这个网站自己的登录状态（也可以签发 3.13 节那样的 JWT）
+    resp = RedirectResponse("/", status_code=302)
+    resp.set_cookie(COOKIE, sid, httponly=True)
+    return resp
+```
+
+文件不能叫 `site.py`：Python 自带一个叫 `site` 的模块，`uvicorn site:app` 会加载到那个，报「找不到 app」。
+
+### 走一遍：登录、单点登录、几种攻击
+
+```python
+# flow_demo.py：用代码当浏览器，一步一步走登录流程，打印每一跳
+import httpx
+
+browser = httpx.Client(follow_redirects=False)   # 不自动跳转：每一跳都看清楚；cookie 会自动保存
+
+
+def go(method: str, url: str, **kw) -> httpx.Response:
+    r = browser.request(method, url, **kw)
+    where = r.headers.get("location", "")
+    print(f"  {method} {url.split('?')[0]} → {r.status_code} {where.split('?')[0]}{'?' + where.split('?')[1][:40] + '…' if '?' in where else ''}")
+    return r
+
+
+print("1. 第一次登录笔记网站")
+r = go("GET", "http://localhost:8502/login")                 # 笔记网站把浏览器带到认证中心
+r = go("GET", r.headers["location"])                         # 认证中心：没登录过，返回登录表单
+form = dict(x.split('" value="') for x in r.text.split('name="')[1:4])   # 取出表单里的隐藏字段（演示用的简单解析）
+form = {k: v.split('"')[0] for k, v in form.items()}
+r = go("POST", "http://localhost:8501/login", data={**form, "username": "xiaolin", "password": "demo-pass"})
+callback_url = r.headers["location"]
+r = go("GET", callback_url)                                  # 带着授权码回到笔记网站，后端换 token
+print("  ", go("GET", "http://localhost:8502/").text)
+
+print("2. 再登录题库网站（单点登录）")
+r = go("GET", "http://localhost:8503/login")
+r = go("GET", r.headers["location"])                         # 认证中心：已经登录过，直接发授权码，不出表单
+r = go("GET", r.headers["location"])
+print("  ", go("GET", "http://localhost:8503/").text)
+
+print("3. 几种攻击")
+print("  重复使用授权码：", browser.get(callback_url).json())
+print("  伪造 state：", browser.get("http://localhost:8502/callback?code=x&state=fake").json())
+print("  换成坏人的跳回地址：", browser.get("http://localhost:8501/authorize?client_id=notes&redirect_uri=http://evil.test/cb&state=1").json())
+```
+
+开 4 个终端：
+
+```bash
+uvicorn provider:app --port 8501
+CLIENT_ID=notes CLIENT_SECRET=notes-secret PORT=8502 uvicorn website:app --port 8502
+CLIENT_ID=quiz CLIENT_SECRET=quiz-secret PORT=8503 uvicorn website:app --port 8503
+python flow_demo.py
+```
+
+```
+1. 第一次登录笔记网站
+  GET http://localhost:8502/login → 302 http://localhost:8501/authorize?client_id=notes&redirect_uri=http%3A%2F%…
+  GET http://localhost:8501/authorize → 200
+  POST http://localhost:8501/login → 302 http://localhost:8502/callback?code=ndiN9gS1YYl4ZP64rKZN1Q&state=5KVrf6…
+  GET http://localhost:8502/callback → 302 /
+  GET http://localhost:8502/ → 200
+   notes：已登录，小林
+2. 再登录题库网站（单点登录）
+  GET http://localhost:8503/login → 302 http://localhost:8501/authorize?client_id=quiz&redirect_uri=http%3A%2F%2…
+  GET http://localhost:8501/authorize → 302 http://localhost:8503/callback?code=uI7buXC6JwvIpGhgnWFEYA&state=1hV2Sp…
+  GET http://localhost:8503/callback → 302 /
+  GET http://localhost:8503/ → 200
+   quiz：已登录，小林
+3. 几种攻击
+  重复使用授权码： {'detail': '换 token 失败：授权码无效、已用过或已过期'}
+  伪造 state： {'detail': 'state 不对，可能是伪造的回调'}
+  换成坏人的跳回地址： {'detail': 'client_id 或 redirect_uri 不对'}
+```
+
+- **第 1 段**：完整的授权码流程。`/authorize` 返回 200 是登录表单，输入密码后跳回笔记网站，笔记网站后端换 token、校验 `id_token`，登录成功。
+- **第 2 段就是 SSO**：登录题库网站时，`/authorize` 直接返回 302 跳回去了，**没有出登录表单**：认证中心通过自己的 cookie `sso_session` 知道这个浏览器已经登录过。两个网站各有各的登录状态，但都信任同一个认证中心。
+- **第 3 段**：
+  - 授权码用一次就删，重复用不行。
+  - `state` 对不上不行：防止坏人把**他自己的**授权码塞给你，让你登录成他的账号（CSRF）。
+  - 跳回地址必须和登记的完全一致：否则坏人可以把授权码骗到自己的网站。
+
+还有一个细节：同一个 `localhost`、不同端口的 cookie 是**共享**的（cookie 只看域名、不看端口），所以三个服务的 cookie 名字故意起得不一样。
+
+### 真实项目怎么做
+
+- 不用自己写认证中心：用现成的 Keycloak（开源）、Okta、Auth0、Authing，或者企业微信、飞书、钉钉的登录。
+- 网站这边也有现成的库：Python 用 `Authlib`；前端单页应用要加 **PKCE**（用一个随机数代替 `client_secret`，因为前端藏不住密钥）。
+- 大平台的 `id_token` 用 RS256 签名：认证中心用私钥签，网站从 `/.well-known/openid-configuration` 找到公钥地址来验，不用共享密钥。
+
+### 规则（记住就行）
+
+1. `client_secret` 只放后端；用 code 换 token 一定在后端做。
+2. `state` 每次随机生成、回来时核对；跳回地址在认证中心登记，必须完全一致。
+3. 授权码短时间有效、只能用一次。
+4. 收到 `id_token` 要校验签名、`aud`（是不是发给我的）、`iss`（是不是我信任的认证中心）、`exp`（过期没有）。
+5. 登录成功后，网站照样建立自己的登录状态，后面的接口还是用 3.13 节的方式校验。
+
 ### 阶段三做完了什么
 
 从 3.1 的一个 hello 接口，到现在是一个能上线的多用户后端：
@@ -5839,6 +6332,7 @@ def test_admin_users_cached(client: TestClient, auth: dict) -> None:
 | 角色权限（RBAC） | 3.18 |
 | 文件上传 | 3.19 |
 | Redis：缓存、登录失败限制 | 3.20 |
+| 第三方登录和单点登录（OAuth 2.0、OIDC） | 3.21 |
 
 接下来的阶段四，就是在这样的后端里接入大模型。
 
@@ -5846,22 +6340,40 @@ def test_admin_users_cached(client: TestClient, auth: dict) -> None:
 
 # 阶段四：大模型应用基础
 
+## 阶段四导读 {#stage4-guide}
+
+### 这个阶段讲什么
+
 这个阶段在后端里接入大模型：先学会调模型、控制成本和出错，再让模型按格式输出、调用你写的函数，最后把回答一个字一个字推给前端。
 
-**学完这个阶段，你将会：**
-
-- 用 OpenAI SDK 调大模型，看懂消息结构、Token 和返回结果（4.1～4.2）
-- 算出每次调用花了多少钱，处理超时、重试和并发限制（4.3）
-- 让模型输出固定格式的 JSON，用 Pydantic 校验（4.4）
-- 让模型调用你写的函数：查数据、改数据（4.5）
-- 流式输出，用 SSE 把回答实时推给前端（4.6）
-- 知道模型怎么一个 token 一个 token 生成，写好 prompt、用 Few-shot 让输出更稳（4.7～4.8）
-- 用评测集判断改动是变好还是变坏，按任务选模型、方便切换（4.9～4.10）
-- 防 Prompt 注入，敏感信息不发给模型（4.11）
-
-> 待补：本地模型（Ollama）和多模态（看图、语音转文字）要另外装模型，暂时没写。
-
 示例用 **DeepSeek** 的模型。它兼容 OpenAI 的接口格式，代码用的是 `openai` 这个 SDK；换成通义千问、Kimi、智谱，甚至 OpenAI 本身，一般只改 `base_url`、key 和模型名。
+
+### 学完你将会
+
+- 用 OpenAI SDK 调大模型，看懂消息结构、Token 和返回结果（[4.1～4.2](#llm-call)）
+- 算出每次调用花了多少钱，处理超时、重试和并发限制（[4.3](#cost-retry)）
+- 让模型输出固定格式的 JSON，用 Pydantic 校验（[4.4](#structured-output)）
+- 让模型调用你写的函数：查数据、改数据（[4.5](#function-calling)）
+- 流式输出，用 SSE 把回答实时推给前端（[4.6](#streaming-sse)）
+- 知道模型怎么一个 token 一个 token 生成，写好 prompt、用 Few-shot 让输出更稳（[4.7～4.8](#next-token)）
+- 用评测集判断改动是变好还是变坏，按任务选模型、方便切换（[4.9～4.10](#eval)）
+- 防 Prompt 注入，敏感信息不发给模型（[4.11](#prompt-injection)）
+- 写一个前端聊天页：Markdown 边收边渲染、停止、重试、多会话（[4.12](#chat-frontend)）
+
+### 准备环境
+
+练习代码在 `code/stage4-ai-demo`。先在 DeepSeek 开放平台申请 API key，设成环境变量 `DEEPSEEK_API_KEY`（不要写进代码），然后：
+
+```bash
+echo ${#DEEPSEEK_API_KEY}        # 输出三十几的数字，说明 key 设好了
+cd code/stage4-ai-demo
+uv venv --python 3.12 .venv && source .venv/bin/activate
+uv pip install openai pydantic fastapi uvicorn
+```
+
+### 待补
+
+本地模型（Ollama）和多模态（看图、语音转文字）要另外装模型，暂时没写。
 
 ## 4.1 第一次调用大模型 {#llm-call}
 
@@ -6925,6 +7437,21 @@ SSE（Server-Sent Events）是一种基于 HTTP 的服务器推送技术，允�
 
 前端取消后，后端检测到断开，停止读取并关掉了和模型的连接，前面生成的 69 个字也保存下来了。
 
+### SSE 和 WebSocket 怎么选
+
+推送实时数据还有一个常见做法是 **WebSocket**。面试常问「流式输出为什么选 SSE」：
+
+| | SSE | WebSocket |
+|---|---|---|
+| 方向 | 单向：服务器 → 浏览器 | 双向：两边随时都能发 |
+| 协议 | 就是普通 HTTP 响应，一直不结束 | 先 HTTP 握手，再升级成单独的协议（`ws://`） |
+| 后端写法 | 返回一个生成器（上面就是） | 要维护连接、自己处理收发 |
+| 代理、负载均衡、鉴权 | 和普通接口一样，加个 `Authorization` 头就行 | 要额外配置升级和长连接；浏览器的 WebSocket 不能自定义请求头 |
+| 断线重连 | `EventSource` 自带；`fetch` 读的要自己写 | 自己写 |
+| 适合 | 模型输出、进度推送：一问一长答 | 聊天室、协同编辑、游戏：两边都在频繁发 |
+
+大模型的回答是「用户发一次，服务器推一长串」，正好是单向的，SSE 更简单。用户的下一句话再发一个新的 POST 请求就行。
+
 **规则（记住就行）**：
 
 1. 后端用 `StreamingResponse` + 生成器，`media_type="text/event-stream"`。
@@ -7321,21 +7848,299 @@ print(mask("我叫小林，电话 13812345678，邮箱 lin@example.com，帮我�
 3. 敏感数据发出去之前先打码；日志里也别原样记录完整的 prompt。
 4. API key 只放环境变量，不写进代码、不发给模型、不返回给前端。
 
+## 4.12 前端：流式渲染和会话管理 {#chat-frontend}
+
+4.6 节的前端只把文字 `process.stdout.write` 打出来。真实的聊天页面还要处理：
+
+- 回答是 Markdown（标题、列表、代码块），要**边收边渲染**。
+- 多轮对话：每次把这个会话的历史一起发给后端（4.2 节）。
+- 停止、出错后重试。
+- 多个会话：新建、切换，刷新页面还在。
+
+这一节写一个完整的小页面：后端多轮版接口 + 一个 HTML 文件，打开就能用。
+
+### 后端：接收整段历史
+
+```python
+# chat_web.py：多轮对话的流式接口 + 一个前端页面（4.12 节）
+import json
+import os
+from collections.abc import AsyncIterator
+from typing import Literal
+
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, StreamingResponse
+from openai import AsyncOpenAI
+from pydantic import BaseModel, Field
+
+app = FastAPI()
+client = AsyncOpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com")
+
+
+class Message(BaseModel):
+    role: Literal["user", "assistant"]   # 前端只能传这两种，不能自己塞 system（4.11 节）
+    content: str
+
+
+class ChatIn(BaseModel):
+    messages: list[Message] = Field(min_length=1, max_length=40)   # 前端把这个会话的历史全传上来（4.2 节：模型没有记忆）
+
+
+def sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@app.post("/chat/stream")
+async def chat_stream(body: ChatIn, request: Request) -> StreamingResponse:
+    async def events() -> AsyncIterator[str]:
+        system = {"role": "system", "content": "你是 Python 学习助手，用 Markdown 回答，代码放进代码块。"}
+        stream = await client.chat.completions.create(
+            model="deepseek-flash",
+            messages=[system, *[m.model_dump() for m in body.messages]],
+            stream=True,
+            extra_body={"thinking": {"type": "disabled"}},
+        )
+        try:
+            async for chunk in stream:
+                if await request.is_disconnected():
+                    break
+                text = chunk.choices[0].delta.content if chunk.choices else None
+                if text:
+                    yield sse("delta", {"text": text})
+            else:
+                yield sse("done", {})
+        except Exception as e:
+            yield sse("error", {"msg": str(e)})
+        finally:
+            await stream.close()
+
+    return StreamingResponse(events(), media_type="text/event-stream")
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse("web/index.html")   # 页面和接口同一个地址，不用处理跨域（3.16 节）
+```
+
+和 4.6 节的区别：请求体从一个 `question` 变成整段 `messages`。`role` 用 `Literal` 限制成 `user` / `assistant`：前端不能自己塞一条 `system` 进来改规则（4.11 节）。
+
+### 前端：一个 HTML 文件
+
+```html
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>流式聊天 demo</title>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<style>
+  body { margin: 0; font: 15px/1.7 system-ui, sans-serif; display: flex; height: 100vh; color: #222; }
+  aside { width: 200px; border-right: 1px solid #e5e5e5; padding: 12px; overflow: auto; background: #fafafa; }
+  aside button { width: 100%; margin-bottom: 6px; padding: 6px 8px; text-align: left; border: 1px solid #ddd; background: #fff; border-radius: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  aside button.on { border-color: #2f6fdf; color: #2f6fdf; }
+  main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #list { flex: 1; overflow: auto; padding: 16px 24px; }
+  .msg { margin: 0 0 16px; }
+  .msg.user { color: #2f6fdf; font-weight: 600; }
+  .msg pre { background: #f4f3f0; padding: 10px; border-radius: 6px; overflow: auto; }
+  .msg .err { color: #c0392b; }
+  form { display: flex; gap: 8px; padding: 12px 24px; border-top: 1px solid #e5e5e5; }
+  form input { flex: 1; padding: 8px; font: inherit; }
+  form button { padding: 8px 16px; font: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<aside>
+  <button id="new">＋ 新会话</button>
+  <div id="sessions"></div>
+</aside>
+<main>
+  <div id="list"></div>
+  <form id="form">
+    <input id="input" placeholder="问点 Python 的问题" autocomplete="off">
+    <button id="send">发送</button>
+  </form>
+</main>
+<script>
+// 模型输出里如果有 HTML（比如 <img onerror=...>），当文字显示，不当标签执行（4.11 节：模型输出不可信）
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+marked.use({ renderer: { html: (html) => esc(typeof html === "string" ? html : html.text) } });
+
+// ---------- 会话：存在 localStorage，刷新页面还在 ----------
+const KEY = "chat-demo:sessions";
+let sessions = JSON.parse(localStorage.getItem(KEY) || "[]");   // [{ id, title, messages: [{role, content}] }]
+let current = sessions[0]?.id ?? null;
+let controller = null;                                          // 正在进行的请求，用来停止
+const save = () => localStorage.setItem(KEY, JSON.stringify(sessions));
+const cur = () => sessions.find((s) => s.id === current);
+
+function newSession() {
+  const s = { id: crypto.randomUUID(), title: "新会话", messages: [] };
+  sessions.unshift(s);
+  current = s.id;
+  save();
+  render();
+}
+
+// ---------- 渲染 ----------
+function render() {
+  document.getElementById("sessions").innerHTML = "";
+  for (const s of sessions) {
+    const b = document.createElement("button");
+    b.textContent = s.title;
+    b.className = s.id === current ? "on" : "";
+    b.onclick = () => { if (!controller) { current = s.id; render(); } };   // 回答中不能切换，避免写错会话
+    document.getElementById("sessions").appendChild(b);
+  }
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  for (const m of cur()?.messages ?? []) list.appendChild(bubble(m));
+  list.scrollTop = list.scrollHeight;
+}
+
+function bubble(m) {
+  const div = document.createElement("div");
+  div.className = "msg " + m.role;
+  if (m.role === "user") div.textContent = m.content;              // 用户输入当纯文字显示，不当 HTML
+  else div.innerHTML = marked.parse(m.content) + (m.error ? `<p class="err">${m.error} <button class="retry">重试</button></p>` : "");
+  div.querySelector(".retry")?.addEventListener("click", retry);
+  return div;
+}
+
+// ---------- 发送：流式接收，边收边渲染 ----------
+async function ask() {
+  const s = cur();
+  const answer = { role: "assistant", content: "" };
+  s.messages.push(answer);
+  render();
+  const el = document.getElementById("list").lastElementChild;
+  let pending = false;
+  const paint = () => {                       // 每来一个片段都重新解析整段 Markdown：半个代码块也能显示
+    if (pending) return;                      // 一帧只画一次：片段来得太快时不卡
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      el.innerHTML = marked.parse(answer.content);
+      const list = document.getElementById("list");
+      list.scrollTop = list.scrollHeight;
+    });
+  };
+
+  controller = new AbortController();
+  document.getElementById("send").textContent = "停止";
+  try {
+    const history = s.messages.slice(0, -1).filter((m) => !m.error).map(({ role, content }) => ({ role, content }));
+    const res = await fetch("/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: history }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`请求失败：${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop();
+      for (const block of events) {
+        const event = block.match(/^event: (.*)$/m)?.[1];
+        const data = JSON.parse(block.match(/^data: (.*)$/m)?.[1] ?? "{}");
+        if (event === "delta") { answer.content += data.text; paint(); }
+        if (event === "error") throw new Error(data.msg);
+      }
+    }
+  } catch (e) {
+    answer.error = e.name === "AbortError" ? "已停止" : `出错了：${e.message}`;
+  } finally {
+    controller = null;
+    document.getElementById("send").textContent = "发送";
+    if (s.title === "新会话") s.title = s.messages[0].content.slice(0, 12);   // 用第一句话当会话标题
+    save();
+    render();
+  }
+}
+
+function retry() {                              // 重试：去掉出错的那条回答，用同样的历史再问一次
+  const s = cur();
+  if (s.messages.at(-1)?.error) s.messages.pop();
+  ask();
+}
+
+document.getElementById("form").onsubmit = (e) => {
+  e.preventDefault();
+  if (controller) { controller.abort(); return; }   // 回答中：按钮是「停止」
+  const input = document.getElementById("input");
+  const text = input.value.trim();
+  if (!text) return;
+  if (!cur()) newSession();
+  cur().messages.push({ role: "user", content: text });
+  input.value = "";
+  ask();
+};
+document.getElementById("new").onclick = () => { if (!controller) newSession(); };
+render();
+</script>
+</body>
+</html>
+```
+
+几处要点：
+
+- **边收边渲染 Markdown**：每来一个片段，把**目前为止的全部文字**重新 `marked.parse` 一遍。只解析新片段不行：一个代码块的开头 ```` ``` ```` 和结尾分在不同片段里，单独解析会乱。
+- **`requestAnimationFrame` 合并重画**：片段一秒能来几十个，每个都重画会卡；一帧（约 16 毫秒）最多画一次。
+- **HTML 要转义**：模型输出里如果有 `<img onerror=...>`，直接当 HTML 插进页面就会执行。`marked.use` 把 HTML 片段换成文字显示，用户输入用 `textContent` 显示。
+- **停止和重试**：停止就是 4.6 节的 `controller.abort()`；出错或停止的回答标上 `error`，下次发请求时从历史里去掉，重试就是去掉它再问一次。
+- **会话**：`sessions` 数组存在 `localStorage`，每个会话有自己的 `messages`。回答进行中不让切换会话，免得把回答写进别的会话。
+
+### 运行
+
+```bash
+uvicorn chat_web:app --port 8430     # 然后浏览器打开 http://localhost:8430
+```
+
+在浏览器里试了这几件事：
+
+| 操作 | 结果 |
+|---|---|
+| 问「用 Python 写一个读取 JSON 文件的例子」 | 代码块和列表边收边渲染出来；会话标题自动变成「用 Python 写一个」 |
+| 接着问「那写入呢？」 | 答的是 `json.dump` 写入文件：历史带上了，知道「那」指的是 JSON 文件 |
+| 新建会话，问一个长问题，1.5 秒后点「停止」 | 已经生成的部分留着，下面显示「已停止 重试」 |
+| 点「重试」 | 去掉停止的那条回答，重新生成 |
+| 切回第一个会话 | 两轮对话都还在；刷新页面也还在 |
+| `marked.parse("<img src=x onerror=alert(1)>")` | 输出 `&lt;img ...&gt;`，当文字显示，不会执行 |
+
+### 规则（记住就行）
+
+1. Markdown 每次用全文重新解析；用 `requestAnimationFrame` 控制重画频率。
+2. 模型输出和用户输入都不能直接当 HTML 插入页面。
+3. 每个会话保存自己的历史，发请求时带上；出错、停止的回答不进历史。
+4. 回答进行中禁止切换会话、禁止重复发送。
+5. 真实项目里会话存在后端数据库（按用户），`localStorage` 只适合 demo；历史太长时按 6.4 节裁剪或摘要。
+
 # 阶段五：RAG 与知识库
+
+## 阶段五导读 {#stage5-guide}
+
+### 这个阶段讲什么
 
 模型只知道训练时见过的东西，不知道你公司的规章、产品文档、昨天新出的公告。RAG（Retrieval-Augmented Generation，检索增强生成）的做法很直接：**先从你的文档里搜出相关的几段，放进 prompt，再让模型根据这几段回答**。
 
 这个阶段用一家虚构的「豆豆咖啡」的三份文档做例子：会员规则、门店信息（Markdown），退款规则（PDF）。
 
-**学完这个阶段，你将会：**
+### 学完你将会
 
-- 说清 RAG 解决什么问题、为什么不把全部文档都塞给模型（5.1）
-- 把 PDF、Markdown 解析成干净的文字，切成小段（5.2）
-- 用 BM25 做关键词检索（5.3）
-- 查询改写、回答带出处，拼成一个完整的知识库问答（5.4）
-- 用评测集量出检索的召回率，看到关键词检索的上限（5.5）
+- 说清 RAG 解决什么问题、为什么不把全部文档都塞给模型（[5.1](#rag)）
+- 把 PDF、Markdown 解析成干净的文字，切成小段（[5.2](#doc-parse)）
+- 用 BM25 做关键词检索（[5.3](#bm25)）
+- 查询改写、回答带出处，拼成一个完整的知识库问答（[5.4](#rag-answer)）
+- 用评测集量出检索的召回率，看到关键词检索的上限；召回不准怎么排查、切多长（[5.5](#rag-eval)）
 
-> 待补：Embedding 向量化、向量检索、混合检索（RRF / Rerank）、HyDE、pgvector、Ragas 评估要用到向量模型，暂时没写。5.5 节最后会看到为什么需要它们。
+### 准备环境
 
 练习代码在 `code/stage5-rag-demo`，`llm.py` 和阶段四的一样：
 
@@ -7344,6 +8149,10 @@ cd code/stage5-rag-demo
 uv venv --python 3.12 .venv && source .venv/bin/activate
 uv pip install openai jieba rank-bm25 pypdf
 ```
+
+### 待补
+
+Embedding 向量化、向量检索、混合检索（RRF / Rerank）、HyDE、pgvector、Ragas 评估要用到向量模型，暂时没写。5.5 节最后会看到为什么需要它们。
 
 ## 5.1 RAG 是什么 {#rag}
 
@@ -7755,6 +8564,97 @@ recall(True)
 
 这就是**向量检索**要解决的问题：用向量模型（Embedding）把每段文字变成一串数字，意思相近的文字，数字也相近，「学习」和「自习」、「上网」和「Wi-Fi」就能对上。实际项目里一般**关键词 + 向量一起用**（混合检索），各取所长：关键词对型号、编号、专有名词准，向量对同义、口语准。这部分等有了向量模型再补。
 
+### 召回不准从哪几个环节查
+
+面试常问「RAG 召回不准，从哪几个环节排查」。按数据流的顺序查，前面的环节错了，后面怎么调都没用：
+
+| 环节 | 查什么 | 本阶段遇到的例子 |
+|---|---|---|
+| 解析 | 打印解析出来的文字，看有没有乱码、怪字符、表格错乱 | PDF 里的「⾖」不是「豆」（5.2 节） |
+| 切分 | 正确答案是不是被切成了两半；一段里是不是混了好几件事 | 下面的切分对比 |
+| 分词 / 向量化 | 问题和文档的切词能不能对上 | 「营业时间」整个切成一个词，搜「营业」对不上（5.3 节） |
+| 查询 | 用户的说法和文档的说法是不是不一样 | 「狗狗」对「宠物」，「上网」对「Wi-Fi」（5.4、5.5 节） |
+| 检索参数 | k 取几；分数阈值是不是太高 | |
+| 评测集 | 用例写得对不对；标准答案是不是真的在文档里 | 6.9 节「三个城市」那条用例本身就写得不清楚 |
+
+### 切多长：用评测集比
+
+切多长没有标准答案，要用自己的文档和评测集比。下面比较几种切法：
+
+```python
+# chunk_eval.py：切分方式不同，召回率差多少（不调模型，只比检索）
+from pathlib import Path
+
+from load_docs import Chunk, read_text, split
+from search import Searcher
+
+# 问题 + 正确答案里一定有的一句话（用它判断搜到的段对不对）
+CASES = [
+    ("积分多久过期？", "12 个月"),
+    ("外卖晚了能退款吗", "30 分钟"),
+    ("可以带宠物吗", "牵绳"),
+    ("营业时间", "7:30"),
+    ("饮品不好喝能退吗", "重做"),
+    ("储值卡余额能退吗", "转赠"),
+    ("店里能自习吗", "插座"),
+    ("金卡会员怎么升级", "1000 元"),
+    ("会员要收费吗", "不收费"),
+    ("有 Wi-Fi 吗", "Wi-Fi"),
+]
+
+docs = {p.name: read_text(p) for p in sorted(Path("docs").iterdir())}
+
+
+def by_heading() -> list[Chunk]:                     # 5.2 节的切法：按小标题
+    return [c for name, text in docs.items() for c in split(name, text)]
+
+
+def whole_file() -> list[Chunk]:                     # 不切：一个文件一段
+    return [Chunk(name, "", text.replace("\n", "")) for name, text in docs.items()]
+
+
+def fixed(size: int, overlap: int = 0) -> list[Chunk]:   # 不管标题，按固定字数切；overlap：相邻两段重叠几个字
+    out = []
+    for name, text in docs.items():
+        body = text.replace("\n", "")
+        for i in range(0, len(body), size - overlap):
+            out.append(Chunk(name, "", body[i : i + size]))
+    return out
+
+
+def evaluate(chunks: list[Chunk]) -> tuple[int, int]:
+    """返回（召回了几条, 平均每个问题放进 prompt 多少字）。"""
+    s = Searcher(chunks)
+    hit, chars = 0, 0
+    for q, ans in CASES:
+        found = [c for _, c in s.search(q, k=2)]
+        hit += any(ans in c.title + c.text for c in found)
+        chars += sum(len(c.text) for c in found)
+    return hit, chars // len(CASES)
+
+
+for name, chunks in [("按小标题", by_heading()), ("整个文件", whole_file()),
+                     ("固定 20 字", fixed(20)), ("固定 20 字重叠 8 字", fixed(20, 8)), ("固定 60 字", fixed(60))]:
+    hit, chars = evaluate(chunks)
+    print(f"{name:<12} {len(chunks):>3} 段   召回 {hit}/{len(CASES)}   每次放进 prompt {chars:>3} 字")
+```
+
+```
+按小标题           9 段   召回 10/10   每次放进 prompt  57 字
+整个文件           3 段   召回 10/10   每次放进 prompt 206 字
+固定 20 字       24 段   召回 7/10   每次放进 prompt  35 字
+固定 20 字重叠 8 字  39 段   召回 9/10   每次放进 prompt  39 字
+固定 60 字        9 段   召回 10/10   每次放进 prompt  86 字
+```
+
+（这里的问题故意用了文档里的词，只比切分，不受 5.5 节同义词问题的影响。）
+
+- **按小标题**：召回全对，放进 prompt 的字最少。文档本身有清楚的结构时，按结构切最好。
+- **整个文件**：召回也全对，但这是假象：一共才 3 个文件，取前 2 个等于把大半资料都塞进去了，每次 206 字。文档一多，这种切法既贵又不准。所以**召回率要和「放进去多少字」一起看**。
+- **固定 20 字**：太短，「积分有效期 12 个月」这种句子被切成两半，召回掉到 7/10。
+- **加 8 字重叠**：被切断的句子在相邻一段里还是完整的，召回回到 9/10，代价是段数变多。
+- **固定 60 字**：召回全对，但一段里常混着两个小标题的内容，放进 prompt 的字比按小标题多。
+
 ### 规则（记住就行）
 
 1. 先评检索，再评回答：没搜到对的段，后面怎么调 prompt 都没用。
@@ -7763,26 +8663,35 @@ recall(True)
 
 # 阶段六：Agent 开发
 
+## 阶段六导读 {#stage6-guide}
+
+### 这个阶段讲什么
+
 4.5 节的 Function Calling 是「模型说要调哪个函数，你的代码去调」，调一次就结束。**Agent** 是把它放进循环：模型自己决定下一步做什么，调完工具看结果，再决定下一步，直到任务完成。
 
 这个阶段用一个「个人助手」做例子，它有三个工具：查天气（假数据）、算数、发邮件（假的，只打印）。任务是「查北京和上海明天的气温，算温差，发邮件告诉小王」，要好几步才能做完。
 
-**学完这个阶段，你将会：**
+### 学完你将会
 
-- 手写一个 Agent 循环，看懂「思考 → 行动 → 观察」（6.1）
-- 让它更可靠：参数校验、工具出错、失败次数上限、危险操作人工确认（6.2）
-- 记录每一步的 Trace 和花费（6.3）
-- 管理上下文和记忆：裁剪、摘要、长期记忆（6.4）
-- 用 LangChain、LangGraph 实现同样的东西（6.5～6.6）
-- 用 MCP 接别人写的工具，用 Skill 按需加载说明（6.7～6.8）
-- 用评测集比较两版 Agent，做多 Agent 分工，把执行过程流式推给前端（6.9～6.11）
+- 手写一个 Agent 循环，看懂「思考 → 行动 → 观察」（[6.1](#agent-loop)）
+- 让它更可靠：参数校验、工具出错、失败次数上限、危险操作人工确认（[6.2](#agent-runtime)）
+- 记录每一步的 Trace 和花费（[6.3](#agent-trace)）
+- 管理上下文和记忆：裁剪、摘要、长期记忆（[6.4](#agent-memory)）
+- 用 LangChain、LangGraph 实现同样的东西（[6.5～6.6](#langchain)）
+- 用 MCP 接别人写的工具，用 Skill 按需加载说明（[6.7～6.8](#mcp)）
+- 用评测集比较两版 Agent，做多 Agent 分工，把执行过程流式推给前端（[6.9～6.11](#agent-eval)）
+- 先规划再执行、用运行结果自我修正；工具权限和代码沙箱（[6.12～6.14](#plan-execute)）
+- Skill 的版本、检索、编排；LangChain 记忆和 RAG 链；LangGraph 完整版：重试、断点恢复、Trace、流式（[6.15～6.17](#skill-system)）
+- 多 Agent 按问题打回给对的角色；从 Trace 分析故障；用 AI 编程工具交付、Coze / Dify 怎么选（[6.18～6.20](#multi-agent-graph)）
+
+### 准备环境
 
 练习代码在 `code/stage6-agent-demo`：
 
 ```bash
 cd code/stage6-agent-demo
 uv venv --python 3.12 .venv && source .venv/bin/activate
-uv pip install openai pydantic fastapi uvicorn langchain-openai langgraph mcp
+uv pip install openai pydantic fastapi uvicorn langchain-openai langgraph langgraph-checkpoint-sqlite mcp jieba rank-bm25 pypdf
 ```
 
 ## 6.1 Agent 是什么：最小的循环 {#agent-loop}
@@ -7892,6 +8801,18 @@ if __name__ == "__main__":
 代码里没有写「先查天气再算再发邮件」，**顺序是模型每一步看着历史自己决定的**。这就是 Agent 和普通程序的区别，也是常说的 **ReAct**（Reason + Act）：思考 → 行动 → 观察结果 → 再思考……
 
 和 4.5 节的代码比，只多了一个 `for step in range(...)` 循环。Agent 的核心就这么多，后面几节都是在这个循环上补东西。
+
+### Agent 由哪几部分组成
+
+面试常问「Agent 由哪些部分组成」。拿这个例子对照：
+
+| 组成 | 在这个例子里 | 后面哪节展开 |
+|---|---|---|
+| 模型 + 提示词 | `deepseek-flash` + system 里的角色和规则 | 4.8 节 |
+| 工具 | `get_weather`、`calculate`、`send_email` | 6.2、6.7 节（MCP） |
+| 规划 | 模型每一步自己决定下一步（ReAct） | 6.12 节（先规划再执行） |
+| 记忆 | `messages` 列表就是短期记忆 | 6.4 节 |
+| 执行循环和管控 | `for step in range(MAX_STEPS)`、最大步数 | 6.2、6.14 节 |
 
 ## 6.2 让 Agent 更可靠：校验、出错、人工确认 {#agent-runtime}
 
@@ -8551,6 +9472,20 @@ MCP 服务返回： { "city": "广州", "天气": "多云", "最高": 24, "最�
 
 MCP 服务有两种连法：本机的用 **stdio**（客户端启动子进程，上面就是）；远程的用 **HTTP**（服务部署在服务器上，给个网址就能连）。
 
+### MCP 和 Function Calling 的区别
+
+面试常问这一题。它们不是二选一，是**两层**：
+
+| | Function Calling（4.5 节） | MCP |
+|---|---|---|
+| 解决什么 | 模型怎么表达「我要调哪个函数、参数是什么」 | 工具从哪来、在哪执行、怎么被发现 |
+| 谁和谁之间 | 你的代码 ↔ 模型 API | 你的 Agent（客户端）↔ 工具服务（服务端） |
+| 工具定义在哪 | 写死在你的代码里（`TOOLS` 列表） | 在 MCP 服务里，客户端运行时用 `list_tools` 问来 |
+| 换一批工具 | 改代码 | 连另一个 MCP 服务，客户端不改 |
+| 标准 | 各家模型接口的格式（OpenAI 格式最通用） | 统一的开放协议，各家 Agent 都支持 |
+
+上面的 `mcp_client.py` 正好两层都用到：从 MCP 服务拿到工具描述（MCP），转成 `tools` 交给模型（Function Calling），模型说要调，再通过 MCP 发给服务执行。
+
 ### 规则（记住就行）
 
 1. 自己的 Agent 要接现成的能力（GitHub、浏览器、数据库），先找有没有现成的 MCP 服务。
@@ -8992,3 +9927,1068 @@ data: {"tool": "send_email", "args": {"to": "小王", "content": "小王你好�
 2. 事件里带上工具名和参数，让用户看到 Agent 在做什么，出错了也知道是哪一步。
 3. 取消：前端 `abort()`，后端检测到断开就停止循环（4.6 节）。
 4. 断线恢复：任务状态和已完成的步骤存在后端（6.3 节的记录），前端重连后先把已完成的步骤补发，再接着推新的。
+
+## 6.12 规划：先拆步骤再执行 {#plan-execute}
+
+6.1 节的 Agent 是「走一步看一步」：每次只决定下一步做什么。任务一长，它容易忘了全局，或者在某一步上绕圈子。另一种做法是 **Plan-and-Execute**：先让模型把整个任务拆成几步写下来，再一步一步执行。
+
+### 例子：先出计划，每步交给单个 Agent
+
+```python
+# plan_agent.py：先规划再执行（Plan-and-Execute）
+import json
+
+from pydantic import BaseModel
+
+from agent import run_agent
+from llm import MODEL, NO_THINKING, client
+
+
+class Plan(BaseModel):
+    steps: list[str]   # 每一步是一句能独立完成的小任务
+
+
+PLANNER = """你是规划助手。把用户的任务拆成 2～5 个按顺序执行的小步骤，每步一句话，能独立完成。
+可用的能力：查北京 / 上海 / 广州明天的天气、做数学计算、发邮件。
+只输出 json：{"steps": ["第一步", "第二步"]}"""
+
+
+def make_plan(task: str) -> Plan:
+    resp = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "system", "content": PLANNER}, {"role": "user", "content": task}],
+        response_format={"type": "json_object"},   # 4.4 节的 JSON 模式
+        extra_body=NO_THINKING,
+    )
+    return Plan.model_validate_json(resp.choices[0].message.content)
+
+
+def plan_and_execute(task: str) -> str:
+    plan = make_plan(task)
+    print("计划：")
+    for i, s in enumerate(plan.steps, 1):
+        print(f"  {i}. {s}")
+
+    done: list[str] = []   # 已完成步骤的结果，后面的步骤要用
+    for i, step in enumerate(plan.steps, 1):
+        context = "\n".join(done) or "无"
+        # 每一步交给 6.2 节的 run_agent 去做：它只看到这一小步 + 前面的结果，不用管整个任务
+        result, _ = run_agent(f"已完成的步骤结果：\n{context}\n\n现在只做这一步：{step}",
+                              confirm=lambda *_: True, log=lambda _: None)
+        print(f"  ✓ 第 {i} 步：{result[:60]!r}")
+        done.append(f"第 {i} 步（{step}）：{result}")
+
+    # 最后汇总成给用户的回答
+    resp = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": f"任务：{task}\n各步骤结果：\n" + "\n".join(done) + "\n\n用两三句话告诉用户结果。"}],
+        extra_body=NO_THINKING,
+    )
+    return resp.choices[0].message.content
+
+
+if __name__ == "__main__":
+    print(plan_and_execute("比较北京、上海、广州明天的最高气温，算出最热和最冷的城市差几度，发邮件告诉小王哪个城市最暖和。"))
+```
+
+```
+计划：
+  1. 查询北京明天的天气
+  2. 查询上海明天的天气
+  3. 查询广州明天的天气
+  4. 比较三个城市的最高气温并计算最热与最冷的温差
+  5. 发邮件告诉小王哪个城市最暖和
+  ✓ 第 1 步：'北京明天天气：晴，最高 6°C，最低 -4°C。'
+  ✓ 第 2 步：'上海明天天气：小雨，最高 13°C，最低 8°C。'
+  ✓ 第 3 步：'广州明天天气：多云，最高 24°C，最低 17°C。'
+  ✓ 第 4 步：'比较三个城市的最高气温：\n\n- 北京：6°C\n- 上海：13°C\n- 广州：24°C\n\n最热的是广州（24°C），最冷的'
+    【已发送邮件】给 小王：'小王，你好：\n\n明天三个城市中，最暖和的是广州，最高气温 2'…
+  ✓ 第 5 步：'邮件已发送给小王。\n\n内容要点：明天最暖和的城市是**广州**，最高气温 24°C（最低 17°C，多云）；作为对比，北'
+明天最暖和的城市是广州，最高气温 24°C（最低 17°C，多云）。北京最高 6°C、上海最高 13°C，广州比最冷的北京高 18°C，已发邮件告诉小王。
+```
+
+### 两种方式怎么选
+
+| | 走一步看一步（ReAct，6.1 节） | 先规划再执行（Plan-and-Execute） |
+|---|---|---|
+| 适合 | 步骤少、下一步要看上一步结果才知道 | 步骤多、能事先拆清楚的任务 |
+| 好处 | 灵活，随时调整 | 有全局计划，用户能先看计划再放行；每步上下文短 |
+| 代价 | 任务长了容易跑偏 | 调用次数多：这里 5 步 + 1 次规划 + 1 次汇总；计划错了要重新规划 |
+
+上面的输出也能看出代价：北京、上海、广州三步其实可以一次并行查完（6.1 节第 1 步就是一次查两个），拆成三步多花了两轮调用。实际项目常把两种结合：先规划，每一步内部用 ReAct；某一步失败了，回到规划重新拆（6.18 节的多 Agent 就是这么做的）。
+
+### 规则（记住就行）
+
+1. 计划用 JSON 模式 + Pydantic 输出（4.4 节），程序能逐条读。
+2. 规划的 prompt 里写清楚「有哪些能力」，否则会拆出做不到的步骤。
+3. 每一步只把需要的前面结果交给执行者，上下文短、更准。
+4. 计划可以先给用户看，用户点了确认再执行（人工确认的另一种形式）。
+
+## 6.13 自我修正：拿到反馈再改 {#reflection}
+
+模型第一次做的不一定对。**自我修正**（反思，Reflection）：做完以后拿到一个反馈，交回给模型，让它自己找问题、自己改。关键是**反馈从哪来、说得够不够具体**。
+
+最可靠的反馈是**真实运行的结果**。下面让模型写一个函数，在沙箱（6.14 节）里跑测试，没通过就把报错交回去改。测试里有两条任务说明里没写的情况（`1.2k`、`約 ¥980`），看模型能不能根据报错补上。
+
+### 第一版：报错只有一句 AssertionError
+
+```python
+TESTS = """
+assert parse_price('¥1,299.50') == 1299.5
+assert parse_price('12元') == 12.0
+assert parse_price('$ 8') == 8.0
+assert parse_price('免费') == 0.0
+assert parse_price('3.5万') == 35000.0
+assert parse_price('1.2k') == 1200.0
+assert parse_price('約 ¥980') == 980.0
+print('全部通过')
+"""
+```
+
+```
+第 1 轮：失败  AssertionError
+第 2 轮：失败  AssertionError
+第 3 轮：失败  AssertionError
+```
+
+跑了两次都是 3 轮全失败。`assert` 失败只说 `AssertionError`，不说是哪一条、实际得到了什么，模型只能瞎猜着改。
+
+### 第二版：报错说清楚哪条错了、差在哪
+
+```python
+# reflect_agent.py：自我修正：写代码 → 跑测试 → 把报错交回给模型 → 改，最多 3 轮
+import re
+
+from llm import MODEL, NO_THINKING, client
+from sandbox import run_code
+
+TASK = """写一个 Python 函数 parse_price(text: str) -> float，把各种写法的价格转成数字：
+'¥1,299.50' → 1299.5，'12元' → 12.0，'$ 8' → 8.0，'免费' → 0.0，'3.5万' → 35000.0"""
+
+TESTS = """
+cases = [('¥1,299.50', 1299.5), ('12元', 12.0), ('$ 8', 8.0), ('免费', 0.0),
+         ('3.5万', 35000.0), ('1.2k', 1200.0), ('約 ¥980', 980.0)]
+wrong = []
+for text, want in cases:
+    try:
+        got = parse_price(text)
+    except Exception as e:
+        got = f'{type(e).__name__}: {e}'
+    if got != want:
+        wrong.append(f'parse_price({text!r}) 应该是 {want}，实际是 {got!r}')
+if wrong:
+    raise SystemExit('\\n'.join(wrong))   # 说清楚哪条错了、差在哪，模型才知道怎么改
+print('全部通过')
+"""   # 最后两条是任务里没写的情况：看模型能不能根据报错补上
+
+
+def extract_code(text: str) -> str:
+    m = re.search(r"```(?:python)?\n(.*?)```", text, re.S)   # 取出 ```python 代码块里的内容
+    return m.group(1) if m else text
+
+
+messages = [
+    {"role": "system", "content": "你是 Python 程序员，只输出一个 ```python 代码块，不要解释。"},
+    {"role": "user", "content": TASK},
+]
+for round in range(1, 4):
+    reply = client.chat.completions.create(model=MODEL, messages=messages, extra_body=NO_THINKING).choices[0].message.content
+    code = extract_code(reply)
+    ok, output = run_code(code + TESTS)           # 在沙箱里跑：模型写的代码 + 测试
+    print(f"第 {round} 轮：{'通过' if ok else '失败'}  {output.splitlines()[-1]}")
+    if ok:
+        break
+    # 反思：把代码和报错原样交回去，让模型自己找原因、改
+    messages += [
+        {"role": "assistant", "content": reply},
+        {"role": "user", "content": f"测试没通过，输出：\n{output}\n\n先想清楚是哪种输入没处理好，再给出完整的新代码。"},
+    ]
+```
+
+```
+第 1 轮：失败  parse_price('1.2k') 应该是 1200.0，实际是 1.2
+第 2 轮：通过  全部通过
+```
+
+跑了两次，都是第 2 轮就通过了。代码一样、模型一样，只是**反馈具体了**。
+
+`TESTS` 里的 `'\\n'.join(...)` 写了两个反斜杠：`TESTS` 本身是一个字符串，里面的 `\\n` 会变成 `\n` 两个字符，交给沙箱运行时才是换行。
+
+### 反馈从哪来
+
+| 反馈来源 | 例子 | 可靠程度 |
+|---|---|---|
+| 真实运行 | 跑测试、执行 SQL、调接口看返回 | 最可靠 |
+| 代码检查 | 字数、格式、必填字段、JSON 校验 | 可靠（6.10 节的字数检查） |
+| 另一个模型审核 | Reviewer 按标准挑毛病（6.10、6.18 节） | 一般，它自己也会看错 |
+| 模型自己检查自己 | 「检查一下你的回答」 | 最弱，经常说「没问题」 |
+
+### 规则（记住就行）
+
+1. 能用真实运行或代码检查给反馈的，别只让模型「自己检查一下」。
+2. 反馈要具体：哪条错了、期望什么、实际是什么。
+3. 限制轮数，改不好就停下交给人。
+4. 修正时把原来的输出和反馈都放进历史，模型才知道在改什么。
+
+## 6.14 管控：工具权限和沙箱 {#agent-guard}
+
+Agent 能调工具，就能做坏事：发错邮件、删数据、执行危险代码。6.2 节加了「危险操作人工确认」，这一节再加两道：**按用户角色限制能用的工具**，**模型写的代码放进沙箱跑**。
+
+### 工具按权限分级
+
+```python
+# perm_demo.py：工具按权限分级：不同角色的用户，Agent 能用的工具不一样
+import json
+
+from llm import MODEL, NO_THINKING, client
+from tools import FUNCTIONS, TOOLS
+
+LEVEL = {"get_weather": "read", "calculate": "read", "send_email": "write"}   # 每个工具的权限级别
+ROLE_CAN = {"guest": {"read"}, "member": {"read", "write"}}                  # 每个角色能用哪些级别
+
+
+def tools_for(role: str) -> list[dict]:
+    """第一道：只把这个角色能用的工具告诉模型。模型看不到的工具，就不会去调。"""
+    return [t for t in TOOLS if LEVEL[t["function"]["name"]] in ROLE_CAN[role]]
+
+
+def call_tool(role: str, name: str, args: dict) -> str:
+    """第二道：执行前再查一次。模型可能编出一个没给它的工具名，不能只靠第一道。"""
+    if LEVEL.get(name) not in ROLE_CAN[role]:
+        return f"没有权限：{role} 不能使用 {name}"
+    return json.dumps(FUNCTIONS[name](**args), ensure_ascii=False)
+
+
+def run(role: str, task: str) -> None:
+    tools = tools_for(role)
+    print(f"[{role}] 可用工具：{[t['function']['name'] for t in tools]}")
+    messages = [{"role": "system", "content": "你是个人助手，用工具完成任务。"}, {"role": "user", "content": task}]
+    for _ in range(5):
+        msg = client.chat.completions.create(model=MODEL, messages=messages, tools=tools, extra_body=NO_THINKING).choices[0].message
+        if not msg.tool_calls:
+            print("   ", msg.content.replace("\n", " ")[:80])
+            return
+        messages.append(msg)
+        for call in msg.tool_calls:
+            result = call_tool(role, call.function.name, json.loads(call.function.arguments))
+            print(f"    调用 {call.function.name} → {result[:40]}")
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+
+
+TASK = "查一下明天上海天气，发邮件告诉小王。"
+run("guest", TASK)
+run("member", TASK)
+print(call_tool("guest", "send_email", {"to": "小王", "content": "hi"}))   # 就算模型硬要调，第二道也拦住
+```
+
+```
+[guest] 可用工具：['get_weather', 'calculate']
+    调用 get_weather → {"city": "上海", "天气": "小雨", "最高": 13, "最低
+    明天上海的天气我查到了：  - 天气：小雨 - 气温：8°C ~ 13°C  不过，发邮件这件事我做不到——我没有发送邮件（或联系他人）的工具，只有查天气和做计
+[member] 可用工具：['get_weather', 'calculate', 'send_email']
+    调用 get_weather → {"city": "上海", "天气": "小雨", "最高": 13, "最低
+    【已发送邮件】给 小王：'小王你好：\n\n明天上海的天气情况如下：\n\n天气：小雨\n气温：'…
+    调用 send_email → "发送成功"
+    已经帮你查好了，并发邮件通知了小王。  **明天上海天气：** 小雨，气温 8℃ ~ 13℃  邮件内容提示他带伞、注意保暖。
+没有权限：guest 不能使用 send_email
+```
+
+- 两道检查：给模型的工具列表按角色过滤；执行前再按角色查一次。和 3.18 节的 RBAC 一样，**权限检查在服务端做，不靠模型自觉**。
+- 权限要按**当前登录的用户**算，不能按模型说的「我是管理员」算（4.11 节的注入）。
+
+### 沙箱：模型写的代码单独跑
+
+6.13 节要运行模型写的代码。直接 `exec` 在自己的进程里很危险：代码可以读环境变量里的 API key、删文件、死循环卡住服务。最简单的隔离是**开一个子进程**：
+
+```python
+# sandbox.py：在单独的进程里运行模型写的代码：限时间、换目录、出错不影响主程序
+import subprocess
+import sys
+import tempfile
+
+
+def run_code(code: str, timeout: float = 5) -> tuple[bool, str]:
+    """运行一段 Python 代码，返回（成功没有, 输出或报错）。"""
+    with tempfile.TemporaryDirectory() as tmp:           # 临时目录：代码在这里跑，跑完整个删掉
+        try:
+            r = subprocess.run(
+                [sys.executable, "-I", "-c", code],      # -I：不读环境变量和当前目录的模块，减少被代码利用的东西
+                cwd=tmp, capture_output=True, text=True, timeout=timeout,
+                env={},                                  # 不把本机的环境变量（里面有 API key）传给它
+            )
+        except subprocess.TimeoutExpired:
+            return False, f"超时：运行超过 {timeout} 秒，已强制结束"
+        out = (r.stdout + r.stderr).strip()
+        return r.returncode == 0, out[-1500:]           # 只取最后 1500 个字：报错信息在最后，太长会撑爆上下文
+
+
+if __name__ == "__main__":
+    print(run_code("print(1 + 1)"))
+    print(run_code("import os; print(os.environ.get('DEEPSEEK_API_KEY'))"))   # 拿不到 key
+    print(run_code("while True: pass", timeout=1))                         # 死循环：1 秒后被杀掉
+    print(run_code("1 / 0")[1].splitlines()[-1])                           # 报错：只看最后一行
+```
+
+```
+(True, '2')
+(True, 'None')                                   拿不到 API key
+(False, '超时：运行超过 1 秒，已强制结束')
+ZeroDivisionError: division by zero
+```
+
+这只是最基本的隔离：子进程照样能联网、能读本机的其他文件。生产环境要用更强的隔离：
+
+| 做法 | 隔离程度 |
+|---|---|
+| 子进程 + 超时 + 清空环境变量（上面） | 防死循环、防拿 key；挡不住读文件、联网 |
+| Docker 容器：只读文件系统、断网、限 CPU 和内存 | 常用，阶段七讲 Docker |
+| 云端沙箱服务（E2B 这类）、gVisor、Firecracker | 隔离最强，代码在别的机器上跑 |
+
+### 管控要管哪些（记住就行）
+
+| 管什么 | 做法 |
+|---|---|
+| 能用哪些工具 | 按角色分级，服务端检查 |
+| 危险操作 | 人工确认（6.2、6.6 节） |
+| 执行代码 | 沙箱：限时、限资源、隔离文件和网络 |
+| 花多少钱 | 最大步数、最多失败次数、单任务 token 上限（6.2、6.3 节） |
+| 记忆 | 按用户隔离；短期 / 长期分层；用户能删除（6.4 节） |
+| 留痕 | 每一步的 Trace 存下来，出了事能查（6.3 节） |
+
+这一套合起来，有时也叫 Agent 的 **Harness**（执行外壳）：模型负责「想」，Harness 负责「管」。
+
+## 6.15 Skill 体系：版本、检索、编排 {#skill-system}
+
+6.8 节只有两个 Skill，目录全放进 system 就行。Skill 多了以后，要解决三件事：
+
+- **版本**：改了一个 Skill 的写法，想先试新版、出问题能退回旧版。
+- **检索**：几十个 Skill 全放进 system 太长，先挑出和任务相关的几个。
+- **编排**：一个任务要用到好几个 Skill，比如「写周报，再用邮件发给经理」。
+
+### 带版本的 Skill 目录
+
+```
+skill_lib/
+  weekly-report/1.0/SKILL.md
+  weekly-report/1.1/SKILL.md      新版：下周计划要写日期，问题要写需要谁帮忙
+  email/1.0/SKILL.md
+  leave-note/1.0/SKILL.md
+  meeting-notes/1.0/SKILL.md
+  bug-report/1.0/SKILL.md
+  daily-standup/1.0/SKILL.md
+```
+
+每个 SKILL.md 开头多了 `version` 和 `tags`：
+
+```markdown
+---
+name: email
+version: 1.0
+description: 写工作邮件、发邮件给领导或同事
+tags: 邮件 发给 抄送 经理 领导
+---
+第一行写「主题：xxx」。正文开头「X 经理好：」，结尾「祝好\n小林」。
+正文先一句话说明目的，再贴具体内容。
+```
+
+### 注册、检索、编排
+
+```python
+# skill_system.py：Skill 多了以后：注册（带版本）、检索、编排（一个任务用几个 Skill）
+import json
+from pathlib import Path
+
+from llm import MODEL, NO_THINKING, client
+
+
+# ---------- 注册：扫描 skill_lib/名字/版本/SKILL.md ----------
+def parse(path: Path) -> dict:
+    _, head, body = path.read_text(encoding="utf-8").split("---", 2)
+    meta = dict(line.split(": ", 1) for line in head.strip().splitlines())
+    return {**meta, "body": body.strip()}
+
+
+REGISTRY: dict[str, dict[str, dict]] = {}   # {名字: {版本: skill}}
+for f in Path("skill_lib").glob("*/*/SKILL.md"):
+    s = parse(f)
+    REGISTRY.setdefault(s["name"], {})[s["version"]] = s
+
+
+def get(name: str, pinned: dict[str, str]) -> dict:
+    """取一个 Skill：锁了版本就用锁定的，否则用最新的。"""
+    versions = REGISTRY[name]
+    v = pinned.get(name) or max(versions, key=lambda x: tuple(map(int, x.split("."))))   # "1.10" 比 "1.9" 新，要按数字比
+    return versions[v]
+
+
+# ---------- 检索：Skill 太多时，只把相关的几个放进 system ----------
+def bigrams(text: str) -> set[str]:
+    return {text[i : i + 2] for i in range(len(text) - 1)}   # 相邻两个字一组：「周报」「报整」……
+
+
+def search(task: str, k: int = 3) -> list[str]:
+    scores = {}
+    for name in REGISTRY:
+        s = get(name, {})
+        scores[name] = len(bigrams(task) & bigrams(s["description"] + " " + s["tags"]))   # 共同的两字组越多越相关
+    return [n for n, sc in sorted(scores.items(), key=lambda x: -x[1])[:k] if sc > 0]
+
+
+# ---------- 编排：模型按需加载，一个任务可以用好几个 ----------
+def run(task: str, pinned: dict[str, str] | None = None) -> str:
+    pinned = pinned or {}
+    names = search(task)
+    print("检索到：", names)
+    catalog = "\n".join(f"- {n}：{get(n, pinned)['description']}" for n in names)
+    system = f"你是办公助手。下面这些事有写法说明，用到哪个先调用 load_skill 读哪个，可以读多个：\n{catalog}"
+    tool = {"type": "function", "function": {
+        "name": "load_skill", "description": "读取某个 Skill 的完整说明",
+        "parameters": {"type": "object", "properties": {"name": {"type": "string", "enum": names}}, "required": ["name"]},
+    }}
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": task}]
+    while True:
+        msg = client.chat.completions.create(model=MODEL, messages=messages, tools=[tool], extra_body=NO_THINKING).choices[0].message
+        if not msg.tool_calls:
+            return msg.content
+        messages.append(msg)
+        for call in msg.tool_calls:
+            s = get(json.loads(call.function.arguments)["name"], pinned)
+            print(f"  加载 {s['name']}@{s['version']}")
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": s["body"]})
+
+
+if __name__ == "__main__":
+    print("已注册：", {n: sorted(v) for n, v in REGISTRY.items()})
+    TASK = "把这周的周报整理一下，用邮件发给王经理：上线了登录页，修了 3 个 bug；接口文档没写完，需要后端配合；下周做支付页。"
+    print(run(TASK, pinned={"weekly-report": "1.0"}), "\n")
+    print(run(TASK))   # 不锁版本：用最新的 1.1
+```
+
+`max(versions, key=lambda x: tuple(map(int, x.split("."))))`：把 `"1.10"` 变成 `(1, 10)` 再比大小。直接比字符串的话，`"1.9"` 会大于 `"1.10"`。
+
+```
+已注册： {'weekly-report': ['1.0', '1.1'], 'daily-standup': ['1.0'], 'leave-note': ['1.0'], 'bug-report': ['1.0'], 'email': ['1.0'], 'meeting-notes': ['1.0']}
+检索到： ['bug-report', 'email', 'weekly-report']
+  加载 weekly-report@1.0
+  加载 email@1.0
+主题：本周工作周报（1/13-1/17）
+
+王经理好：
+
+现将本周工作情况汇报如下：
+
+【本周完成】
+上线登录页
+修复 3 个 bug
+
+【遇到的问题】
+接口文档尚未写完，需后端配合提供接口信息
+
+【下周计划】
+开发支付页
+
+祝好
+小林
+...
+
+检索到： ['bug-report', 'email', 'weekly-report']
+  加载 weekly-report@1.1
+  加载 email@1.0
+...
+【下周计划】
+开发支付页（12-03）
+...
+```
+
+- **编排**：一个任务，模型先后加载了 `weekly-report` 和 `email` 两个 Skill，把周报套进邮件格式。
+- **版本**：锁 1.0 时下周计划没有日期；用最新的 1.1，按新规则补了日期。改 Skill 和改代码一样，先用 6.9 节的评测集比较新旧版本，没问题再切过去。
+- **检索的问题**：「修了 3 个 bug」让 `bug-report` 也被检索出来了。这次模型没加载它，另一次运行它加载了却没用上，白花了 token。这里用的是最简单的「两字组重叠」打分；真实项目一般用向量检索（阶段五待补），或者先让模型从目录里挑。
+- 模型还自己编了一个日期范围「1/13-1/17」：system 里没给今天的日期，它就瞎填。需要日期的 Skill，要把今天的日期放进 prompt。
+
+### 规则（记住就行）
+
+1. Skill 带版本号，Agent 配置里写明用哪个版本，升级前用评测集对比。
+2. Skill 多了不要全塞进 system：先检索出几个，再让模型按需加载。
+3. 描述和标签要写清楚「什么时候用」，检索和模型挑选都靠它。
+4. Skill 也可以带脚本（比如生成表格的 Python 文件），加载说明后由 Agent 调用；脚本照样放沙箱里跑。
+
+## 6.16 LangChain 进阶：对话记忆和 RAG 链 {#langchain-more}
+
+6.5 节只用了 LangChain 最基本的调用。这一节补两个常用的：**多轮对话记忆**、**用链把阶段五的 RAG 串起来**。
+
+### 对话记忆
+
+老教程里常见的写法是 `RunnableWithMessageHistory` + `InMemoryChatMessageHistory`。现在的版本运行会提示已经废弃（`LangChainDeprecationWarning: RunnableWithMessageHistory is deprecated. Use LangGraph's built-in persistence instead.`），推荐改用 LangGraph 的 Checkpoint：每个会话一个 `thread_id`，历史自动存、自动带上。
+
+### 用链搭 RAG
+
+```python
+# lc_memory_rag.py：LangChain 进阶：对话记忆 + 用链搭 RAG
+import sys
+
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.graph import START, MessagesState, StateGraph
+
+from lc_llm import llm
+
+sys.path.insert(0, "../stage5-rag-demo")    # 借用阶段五写好的文档切分和 BM25 检索
+from load_docs import load_chunks           # noqa: E402
+from search import Searcher                 # noqa: E402
+
+# ---------- ① 对话记忆：现在推荐用 LangGraph 的 Checkpoint，按 thread_id 各存各的 ----------
+def reply(state: MessagesState) -> dict:
+    system = ("system", "你是生活助手，回答一句话。")
+    return {"messages": [llm.invoke([system, *state["messages"]])]}   # state 里是这个会话的全部历史
+
+
+graph = StateGraph(MessagesState)
+graph.add_node("reply", reply)
+graph.add_edge(START, "reply")
+chat = graph.compile(checkpointer=InMemorySaver())   # 每轮结束自动把消息存起来；真实项目换成存数据库的
+
+for tid, q in [("a", "我叫小林"), ("a", "我叫什么？"), ("b", "我叫什么？")]:
+    config = {"configurable": {"thread_id": tid}}     # 同一个 thread_id 就是同一个会话
+    result = chat.invoke({"messages": [("user", q)]}, config)
+    print(f"会话 {tid}：{q} → {result['messages'][-1].content}")
+print("会话 a 存了几条：", len(chat.get_state({"configurable": {"thread_id": "a"}}).values["messages"]))
+
+# ---------- ② RAG 链：检索 → 拼资料 → 回答 ----------
+searcher = Searcher(load_chunks("../stage5-rag-demo/docs"))
+
+
+def retrieve(question: str) -> str:
+    hits = searcher.search(question, k=2)
+    return "\n".join(f"[{c.source} · {c.title}] {c.text}" for _, c in hits) or "（没有找到相关资料）"
+
+
+rag_prompt = ChatPromptTemplate.from_messages([
+    ("system", "你是豆豆咖啡的客服，只根据 <docs> 回答，一句话，末尾用括号标出处。\n<docs>\n{docs}\n</docs>"),
+    ("user", "{question}"),
+])
+rag_chain = (
+    {"docs": RunnableLambda(retrieve), "question": RunnablePassthrough()}   # 同一个问题分两路：一路去检索，一路原样传下去
+    | rag_prompt
+    | llm
+    | StrOutputParser()
+)
+print(rag_chain.invoke("积分多久过期？"))
+for piece in rag_chain.stream("外卖晚了能退款吗"):   # 整条链也能流式：最后一步的模型一边生成一边吐
+    print(piece, end="|", flush=True)
+print()
+```
+
+```
+会话 a：我叫小林 → 你好，小林！很高兴认识你，有什么我可以帮你的吗？
+会话 a：我叫什么？ → 你叫小林。
+会话 b：我叫什么？ → 你还没有告诉我你的名字哦，可以告诉我吗？
+会话 a 存了几条： 4
+积分有效期 12 个月，过期自动清零。（会员.md · 积分）
+|外卖|超过|预计|送达|时间| |30| |分钟|，|可以|申请|全额|退款|。（|退款|.pdf| ·| |外卖|退款|）|||
+```
+
+- 记忆：会话 a 记得名字，会话 b 不知道：两个 `thread_id` 各存各的。和 4.2 节手动维护 `history` 列表比，这里不用自己 `append`。
+- RAG 链：`{"docs": ..., "question": ...}` 这个字典也是一步：同一个输入同时交给两个分支，结果合成一个字典交给下一步的模板。
+- `.stream()`：整条链都能流式，`|` 分开的是模型一边生成一边吐出来的片段。
+- `sys.path.insert(0, ...)`：让 Python 也去 `stage5-rag-demo` 目录找模块，借用阶段五写好的检索代码。`# noqa: E402` 告诉代码检查工具「import 不在文件开头是故意的」。
+
+### 规则（记住就行）
+
+1. LangChain 版本变化快，老教程的写法可能已经废弃：看到 DeprecationWarning 就按提示换新写法。
+2. 多轮记忆用 LangGraph 的 Checkpoint + `thread_id`；生产环境换成存数据库的 Checkpointer。
+3. 链里的每一步都是 Runnable：自己写的函数用 `RunnableLambda` 包一下就能串进去。
+
+## 6.17 LangGraph 完整版：重试、断点恢复、Trace、流式 {#langgraph-full}
+
+6.6 节的 LangGraph 版只是把循环搬了过去。这一节按「能上线」的标准补齐：
+
+- 工具失败能重试，调模型失败能自动重试。
+- **断点恢复**：进程退出了、服务器重启了，任务能从停下的地方接着跑。
+- 每一步的 Trace 和花费。
+- 流式输出：每一步跑完就推出来。
+
+### 代码
+
+```python
+# lg_full.py：LangGraph 完整版：3 个工具 + 失败重试 + 断点恢复 + Trace 和每步成本 + 流式输出
+import sqlite3
+import sys
+
+from langchain_core.tools import tool
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.graph import START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.types import Command, RetryPolicy
+
+from lc_llm import llm
+from lg_agent import calculate, send_email   # 6.6 节写好的两个工具（send_email 里有 interrupt 等确认）
+import tools as t
+
+PRICE = {"hit": 0.006, "miss": 0.3, "output": 1.2}   # 美元 / 百万 token，和 4.3 节一样
+failed: set[str] = set()
+
+
+@tool
+def get_weather(city: str) -> dict:
+    """查某个城市明天的天气，返回天气、最高和最低气温（摄氏度）"""
+    if city not in failed:          # 模拟不稳定的天气接口：每个城市第一次查都超时
+        failed.add(city)
+        raise TimeoutError(f"天气接口超时（{city}），请重试")
+    return t.get_weather(city)
+
+
+TOOLS = [get_weather, calculate, send_email]
+model = llm.bind_tools(TOOLS)
+
+
+def agent(state: MessagesState) -> dict:
+    system = ("system", "你是个人助手，可以调用工具完成任务。工具报错可以重试一次。需要数字计算时用 calculate。")
+    return {"messages": [model.invoke([system, *state["messages"]])]}
+
+
+graph = StateGraph(MessagesState)
+graph.add_node("agent", agent, retry_policy=RetryPolicy(max_attempts=3))   # 调模型这一步抛异常（网络、限流）自动重试 3 次
+graph.add_node("tools", ToolNode(TOOLS, handle_tool_errors=True))   # 工具抛异常不崩：把报错变成一条 tool 消息交给模型
+graph.add_edge(START, "agent")
+graph.add_conditional_edges("agent", tools_condition)
+graph.add_edge("tools", "agent")
+
+conn = sqlite3.connect("checkpoints.db", check_same_thread=False)   # Checkpoint 存进 SQLite 文件：进程退出了也还在
+app = graph.compile(checkpointer=SqliteSaver(conn))
+config = {"configurable": {"thread_id": "task-42"}, "recursion_limit": 20}
+
+
+def cost(msg) -> float:
+    u = msg.response_metadata["token_usage"]
+    return (u["prompt_cache_hit_tokens"] * PRICE["hit"] + u["prompt_cache_miss_tokens"] * PRICE["miss"]
+            + u["completion_tokens"] * PRICE["output"]) / 1_000_000
+
+
+def run(inp) -> None:
+    total = 0.0
+    # stream_mode="updates"：每个节点一跑完就吐出它这一步的结果，前端可以边跑边显示（Trace 也从这里记）
+    for update in app.stream(inp, config, stream_mode="updates"):
+        for node, data in update.items():
+            if node == "__interrupt__":
+                print(f"  ⏸ 暂停等确认：{data[0].value}")
+                continue
+            for m in data["messages"]:
+                if node == "agent":
+                    total += cost(m)
+                    calls = [f"{c['name']}({c['args']})"[:40] for c in m.tool_calls]
+                    print(f"  [agent] {m.usage_metadata['total_tokens']} token ${cost(m):.6f}  "
+                          + (f"要调：{calls}" if calls else f"回答：{m.content[:40]!r}"))
+                else:
+                    print(f"  [tools] {m.name} → {m.content[:50].replace(chr(10), ' ')}")
+    print(f"  本次合计 ${total:.6f}")
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] == ["start"]:
+        run({"messages": [("user", "明天北京和上海的最高气温差几度？发邮件告诉小王。")]})
+    elif sys.argv[1:] == ["resume"]:   # 另开一个进程：从 SQLite 里读出 task-42 停在哪，接着跑
+        print("  停在：", app.get_state(config).next)
+        run(Command(resume="y"))
+```
+
+`get_weather` 故意做成「每个城市第一次查都超时」，模拟不稳定的接口。
+
+### 运行：分两个进程
+
+```bash
+python lg_full.py start     # 跑到发邮件前暂停，进程退出
+python lg_full.py resume    # 另开一个进程，从 SQLite 里读出状态接着跑
+```
+
+```
+== start
+  [agent] 497 token $0.000141  要调：["get_weather({'city': '北京'})", "get_weather({'city': '上海'})"]
+  [tools] get_weather → Error: TimeoutError('天气接口超时（北京），请重试')  Please fix
+  [tools] get_weather → Error: TimeoutError('天气接口超时（上海），请重试')  Please fix
+  [agent] 636 token $0.000147  要调：["get_weather({'city': '北京'})", "get_weather({'city': '上海'})"]
+  [tools] get_weather → {"city": "北京", "天气": "晴", "最高": 6, "最低": -4}
+  [tools] get_weather → {"city": "上海", "天气": "小雨", "最高": 13, "最低": 8}
+  [agent] 740 token $0.000106  要调：["calculate({'expression': '13-6'})"]
+  [tools] calculate → 7
+  [agent] 869 token $0.000215  要调：["send_email({'to': '小王', 'content': '小王，你"]
+  ⏸ 暂停等确认：{'action': 'send_email', 'to': '小王'}
+  本次合计 $0.000609
+== resume
+  停在： ('tools',)
+    【已发送邮件】给 小王：'小王，你好：\n\n明天（北京、上海）的最高气温如下：\n- 北京'…
+  [tools] send_email → 发送成功
+  [agent] 941 token $0.000146  回答：'已完成 ✅\n\n- **北京**：晴，最高 6℃（最低 -4℃）\n- **上海**'
+  本次合计 $0.000146
+```
+
+- **工具重试**：两个城市第一次都超时，报错交给了模型，模型自己重新调了一次，查到了。
+- **断点恢复**：`start` 进程停在发邮件前就退出了。`resume` 是一个全新的进程，从 `checkpoints.db` 里读到 `task-42` 停在 `tools` 节点，用户确认后接着发邮件、给出回答。这就是 6.6 节说的「用户过一个小时才点确认」的真实做法。
+- **Trace 和成本**：每一步的 token 和花费都打出来了，这个任务一共约 0.00076 美元。
+- **流式**：`stream_mode="updates"` 每个节点跑完就吐出结果，配合 4.6 节的 SSE，就是 6.11 节的前端展示。另外还有 `stream_mode="messages"`：模型生成的文字一个片段一个片段地吐。
+
+写的时候踩了一个坑：一开始 `ToolNode(TOOLS)` 没加 `handle_tool_errors=True`，工具一超时整个程序就崩了。而且 `resume` 时它又从失败的那一步重跑，又崩一次。**工具报错要变成消息交给模型，不能让异常直接抛出来**（6.2 节的原则）。
+
+### 规则（记住就行）
+
+1. 调模型的节点加 `RetryPolicy`：网络、限流这类临时错误自动重试。
+2. `ToolNode` 加 `handle_tool_errors=True`：工具出错交给模型处理。
+3. Checkpointer 用存数据库的（SQLite、PostgreSQL），不用 `InMemorySaver`：服务重启任务也不丢。
+4. 每个任务一个 `thread_id`，存进你自己的任务表，前端凭它查进度、确认、恢复。
+5. 用 `stream` 代替 `invoke`，边跑边记 Trace、边推给前端。
+
+## 6.18 多 Agent：Planner / Executor / Writer / Reviewer {#multi-agent-graph}
+
+6.10 节只有「写」和「审」两个角色。这一节用 LangGraph 编排四个角色，共用一份状态：
+
+- **Planner**：把任务拆成查资料、计算的步骤。
+- **Executor**：逐步执行（用 6.2 节的单 Agent）。
+- **Writer**：根据资料写成稿。
+- **Reviewer**：检查成稿，不合格就打回。
+
+任务是一条**45 字以内**的天气简报，要包含三个城市的天气和温度、温差最大的城市、一句穿衣建议。字数要求很紧，故意让它被打回几次。
+
+### 第一版：打回都交给 Planner，而且没有 Writer
+
+第一版只有三个角色，Executor 查完资料顺手把成稿也写了，Reviewer 不通过就回到 Planner 重新规划：
+
+```
+[Planner 第 1 轮] ['查北京、上海、广州明天各自的天气及最高最低气温。', '计算三个城市的昼夜温差，找出温差最大的城市及其度数。', '根据温差情况给出一句穿衣建议，整合成45字以内的天气简报。']
+[Reviewer] 打回：超过 45 字（现在 49 字）
+[Planner 第 2 轮] ['查北京、上海、广州明天的天气和最高最低气温。', '计算三城的昼夜温差，找出温差最大的城市及具体度数。', '据此写一条45字以内的天气简报，含穿衣建议。']
+[Reviewer] 打回：超过 45 字（现在 55 字）
+[Planner 第 3 轮] [...]
+[Reviewer] 打回：超过 45 字（现在 47 字）
+```
+
+跑了三次，三次都没通过，问题有两个：
+
+1. 问题只是「字数多了」，却每次都**从头重新规划、重新查天气**，白花钱。
+2. 重新写成稿的那一步**根本没收到审核意见**：意见只交给了 Planner，写稿的人不知道要删几个字，字数忽多忽少。
+
+这就是多 Agent 最常见的毛病：**打回给了错的角色，意见没传到该改的人手里**。
+
+### 第二版：拆出 Writer，按问题类型打回
+
+```python
+# multi_graph.py：多 Agent：Planner 拆步骤 → Executor 查资料 → Writer 写 → Reviewer 检查，不合格按问题打回给对应的角色
+import operator
+from typing import Annotated, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+from pydantic import BaseModel
+
+from agent import run_agent
+from lc_llm import llm
+
+
+class State(TypedDict):   # 共享状态：三个角色都读写这一份
+    task: str
+    plan: list[str]
+    results: Annotated[list[str], operator.add]   # Annotated + operator.add：节点返回的列表追加进去，而不是覆盖
+    report: str
+    feedback: str
+    target: str     # 打回给谁：writer（只是文字问题）/ planner（资料不够，要重新查）
+    round: int
+
+
+class Plan(BaseModel):
+    steps: list[str]
+
+
+class Review(BaseModel):
+    passed: bool
+    problems: list[str]
+    need_more_data: bool   # 是不是缺资料：缺资料要重新规划，只是写得不好就让 Writer 改
+
+
+def planner(state: State) -> dict:
+    extra = f"\n上一版被打回，问题：{state['feedback']}。这次的计划要补上缺的信息。" if state["feedback"] else ""
+    plan = llm.with_structured_output(Plan, method="function_calling").invoke(
+        f"把任务拆成 2～4 个步骤，每步一句话。可用能力：查北京/上海/广州明天的天气、计算。只拆查资料和计算的步骤，写成稿是 Writer 的事。\n任务：{state['task']}{extra}"
+    )
+    print(f"[Planner 第 {state['round'] + 1} 轮] {plan.steps}")
+    return {"plan": plan.steps}
+
+
+def executor(state: State) -> dict:
+    new = []
+    for step in state["plan"]:   # 每一步交给 6.2 节的单 Agent 去做
+        answer, _ = run_agent(f"已知：{state['results'] + new}\n只做这一步：{step}", confirm=lambda *_: False, log=lambda _: None)
+        new.append(f"{step}：{answer}")
+        print(f"[Executor] {step} ✓")
+    return {"results": new}
+
+
+def writer(state: State) -> dict:
+    extra = f"\n上一稿：{state['report']}\n审核意见：{state['feedback']}\n按意见修改。" if state["feedback"] else ""
+    report = llm.invoke(f"任务：{state['task']}\n资料：{state['results']}{extra}\n只输出成稿本身。").content
+    print(f"[Writer 第 {state['round'] + 1} 稿] {report}")
+    return {"report": report, "round": state["round"] + 1}
+
+
+def reviewer(state: State) -> dict:
+    review = llm.with_structured_output(Review, method="function_calling").invoke(
+        f"任务：{state['task']}\n资料：{state['results']}\n成稿：{state['report']}\n"
+        "逐条检查成稿是否满足任务的每个要求、数字是否和资料一致。全部满足 passed=true。"
+        "资料里缺信息才 need_more_data=true。"
+    )
+    if len(state["report"]) > 45:   # 字数交给代码判断（6.10 节：模型数不准）
+        review.passed = False
+        n = len(state["report"])
+        review.problems.append(f"超过 45 字：现在 {n} 字，至少要删掉 {n - 45} 个字")   # 意见要具体到「改多少」
+    print(f"[Reviewer] {'通过' if review.passed else '打回：' + '；'.join(review.problems)}")
+    target = "planner" if review.need_more_data else "writer"
+    return {"feedback": "" if review.passed else "；".join(review.problems), "target": target}
+
+
+def route(state: State) -> str:   # 条件边：通过就结束；超过 3 稿也结束（交给人）；否则打回给对应的角色
+    if not state["feedback"] or state["round"] >= 3:
+        return END
+    return state["target"]
+
+
+g = StateGraph(State)
+g.add_node("planner", planner)
+g.add_node("executor", executor)
+g.add_node("writer", writer)
+g.add_node("reviewer", reviewer)
+g.add_edge(START, "planner")
+g.add_edge("planner", "executor")
+g.add_edge("executor", "writer")
+g.add_edge("writer", "reviewer")
+g.add_conditional_edges("reviewer", route)
+app = g.compile()
+
+final = app.invoke({"task": "给小王写一条天气简报：北京、上海、广州明天的天气和最高最低气温，指出哪个城市昼夜温差最大、温差几度，再给一句穿衣建议，45 字以内。",
+                    "plan": [], "results": [], "report": "", "feedback": "", "target": "", "round": 0})
+print("\n最终：", final["report"])
+```
+
+```
+[Planner 第 1 轮] ['查询北京、上海、广州明天的天气及最高、最低气温', '计算三个城市各自的昼夜温差，找出温差最大的城市及其温差度数', '根据温差最大的城市情况给出一句穿衣建议']
+[Executor] ...（4 步）
+[Writer 第 1 稿] 北京晴-4~6℃，上海小雨8~13℃，广州多云17~24℃；北京温差最大达10℃。建议洋葱式穿搭，厚外套配毛衣。
+[Reviewer] 打回：...；超过 45 字：现在 56 字，至少要删掉 11 个字
+[Writer 第 2 稿] 北京晴-4~6℃，上海小雨8~13℃，广州多云17~24℃；北京温差最大10℃。厚外套配毛衣，方便增减。
+[Reviewer] 打回：超过 45 字：现在 52 字，至少要删掉 7 个字
+[Writer 第 3 稿] 北京晴-4~6℃，上海小雨8~13℃，广州多云17~24℃；北京温差最大10℃。洋葱式穿搭。
+[Reviewer] 打回：...；超过 45 字：现在 46 字，至少要删掉 1 个字
+
+最终： 北京晴-4~6℃，上海小雨8~13℃，广州多云17~24℃；北京温差最大10℃。洋葱式穿搭。
+```
+
+- 只规划、查资料了一次，后面三稿都是 Writer 根据意见改，省了两轮查资料。
+- 意见具体到「至少删几个字」后，字数一稿比一稿接近：56 → 52 → 46。
+- 3 稿还差 1 个字，到上限就停了。真实项目里这时候交给人，或者放宽要求，不要无限改下去。
+- Reviewer 有时也会数错字数（「约 48 字」），所以字数由代码判断。
+
+### 共享状态和冲突怎么处理
+
+- **共享状态**：`State` 是所有角色共用的一份数据。`results` 用 `Annotated[list[str], operator.add]` 标成「追加」：几个节点都往里写时不会互相覆盖。其他字段默认是「后写的覆盖先写的」。
+- **冲突**：两个角色给出的结论不一样怎么办？定好规则：工具查到的数据优先于模型自己的说法；Reviewer 只指出问题、不自己改；最终由一个角色（这里是 Writer）出成稿。
+- **角色边界要写进 prompt**：一开始 Planner 的计划里也有「写简报」这一步，和 Writer 重复了，后来在 prompt 里写明「写成稿是 Writer 的事」。
+
+### 规则（记住就行）
+
+1. 先想清楚每个角色负责什么、产出什么，写进各自的 prompt。
+2. 打回要按问题类型交给对应的角色：缺资料找 Planner，写得不好找 Writer。
+3. 意见要传到要改的那个角色手里，而且要具体。
+4. 有轮数上限，到了就交给人。
+5. 每个角色的调用都记 Trace（6.3 节），多 Agent 的花费涨得很快。
+
+## 6.19 故障分析和调优 {#agent-debug}
+
+Agent 出问题时，先看 Trace（6.3 节）：每一步输入了多少 token、调了什么工具、工具返回了什么。下面是两种常见故障，都是从 Trace 里看出来的。
+
+```python
+# failure_demo.py：两种常见故障，从 Trace 里看出来，再改掉
+import json
+
+from llm import MODEL, NO_THINKING, client
+import tools as t
+
+
+def mini_agent(task: str, tools: list[dict], functions: dict) -> None:
+    """最小循环，打印每一步的输入 token 和工具结果（就是一份简单的 Trace）。"""
+    messages = [{"role": "user", "content": task}]
+    for step in range(1, 6):
+        resp = client.chat.completions.create(model=MODEL, messages=messages, tools=tools, extra_body=NO_THINKING)
+        msg = resp.choices[0].message
+        print(f"  第 {step} 步 输入 {resp.usage.prompt_tokens} token", end="")
+        if not msg.tool_calls:
+            print(f"  回答：{msg.content.replace(chr(10), ' ')[:60]}")
+            return
+        messages.append(msg)
+        for call in msg.tool_calls:
+            try:
+                result = json.dumps(functions[call.function.name](**json.loads(call.function.arguments)), ensure_ascii=False)
+            except Exception as e:
+                result = str(e)
+            print(f"  {call.function.name}({call.function.arguments}) → {result[:40]}")
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+
+
+def schema(name: str, desc: str, props: dict) -> dict:
+    return {"type": "function", "function": {"name": name, "description": desc,
+            "parameters": {"type": "object", "properties": props, "required": list(props)}}}
+
+
+WEATHER_TOOL = [schema("get_weather", "查城市明天的天气", {"city": {"type": "string"}})]
+
+# ---------- 故障一：报错信息太含糊，模型不知道怎么改 ----------
+def weather_vague(city: str) -> dict:
+    if city not in t.WEATHER:
+        raise ValueError("查询失败")                       # 只说失败，不说为什么
+    return t.WEATHER[city]
+
+
+def weather_clear(city: str) -> dict:
+    if city not in t.WEATHER:
+        raise ValueError(f"没有「{city}」，城市名只能是：{'、'.join(t.WEATHER)}（不带「市」）")   # 说清楚错在哪、正确的是什么
+    return t.WEATHER[city]
+
+
+print("故障一：报错含糊")
+mini_agent("Is it cold in Beijing tomorrow? 用中文回答", WEATHER_TOOL, {"get_weather": weather_vague})
+print("改：报错说清楚")
+mini_agent("Is it cold in Beijing tomorrow? 用中文回答", WEATHER_TOOL, {"get_weather": weather_clear})
+
+
+# ---------- 故障二：工具返回太长，上下文一下子撑大 ----------
+LOGS = [f"2026-11-25 10:{i // 60:02d}:{i % 60:02d} INFO 请求正常 id={i}" for i in range(3000)]
+LOGS[2345] = "2026-11-25 10:39:05 ERROR 数据库连接超时 id=2345"
+LOG_TOOL = [schema("read_logs", "读取今天的服务日志", {"keyword": {"type": "string", "description": "可选，只看包含这个词的行，不需要就传空字符串"}})]
+
+
+def read_logs_all(keyword: str = "") -> str:
+    return "\n".join(LOGS)                                 # 不管要什么，全部返回
+
+
+def read_logs_filtered(keyword: str = "") -> str:
+    lines = [line for line in LOGS if keyword in line] if keyword else LOGS
+    head = "\n".join(lines[:20])                           # 最多给 20 行
+    return head + (f"\n……还有 {len(lines) - 20} 行，用 keyword 缩小范围（比如 ERROR）" if len(lines) > 20 else "")
+
+
+print("\n故障二：工具结果太长")
+mini_agent("今天服务日志里有没有报错？", LOG_TOOL, {"read_logs": read_logs_all})
+print("改：截断 + 提示怎么缩小范围")
+mini_agent("今天服务日志里有没有报错？", LOG_TOOL, {"read_logs": read_logs_filtered})
+
+
+def read_logs_fixed(keyword: str = "") -> str:
+    lines = [line for line in LOGS if keyword.lower() in line.lower()]   # 不区分大小写：模型传 error 也能匹配 ERROR
+    if not lines:
+        return f"没有包含「{keyword}」的行（共 {len(LOGS)} 行日志）"         # 空结果也要说清楚，别返回空字符串
+    head = "\n".join(lines[:20])
+    return head + (f"\n……还有 {len(lines) - 20} 行，用 keyword 缩小范围（比如 ERROR）" if len(lines) > 20 else "")
+
+
+print("再改：不区分大小写、空结果说清楚")
+mini_agent("今天服务日志里有没有报错？", LOG_TOOL, {"read_logs": read_logs_fixed})
+```
+
+### 故障一：报错信息太含糊
+
+```
+故障一：报错含糊
+  第 1 步 输入 274 token  get_weather({"city": "Beijing"}) → 查询失败
+  第 2 步 输入 326 token  回答：抱歉，我查询北京明天天气时失败了，暂时无法判断明天北京冷不冷。建议你稍后再试，或查看天气预报应用获取准确信息。
+改：报错说清楚
+  第 1 步 输入 274 token  get_weather({"city": "Beijing"}) → 没有「Beijing」，城市名只能是：北京、上海、广州（不带「市」）
+  第 2 步 输入 343 token  get_weather({"city": "北京"}) → {"天气": "晴", "最高": 6, "最低": -4}
+  第 3 步 输入 410 token  回答：北京明天是晴天，气温在 **-4°C 到 6°C** 之间，早晚会比较冷……
+```
+
+英文提问，模型传了 `Beijing`。报错只说「查询失败」，模型以为接口坏了，直接放弃；报错说清楚了正确的写法，模型马上改成「北京」重试，答对了。
+
+### 故障二：工具返回太长，还藏着一个 bug
+
+```
+故障二：工具结果太长
+  第 1 步 输入 288 token  read_logs({"keyword": "error"}) → "2026-11-25 10:00:00 INFO 请求正常 id=0\n202
+  read_logs({"keyword": "报错"}) → "2026-11-25 10:00:00 INFO 请求正常 id=0\n202
+  第 2 步 输入 124380 token  回答：有，今天只发现 **1 条**报错……
+```
+
+答对了，但第 2 步输入了 **12 万个 token**：两次都把 3000 行日志原样塞了进去。一次 0.04 美元，是正常任务的几十倍；日志再多一点就超出上下文窗口，直接报错。
+
+改成「最多返回 20 行 + 提示怎么缩小范围」，token 降下来了，但另一次运行冒出一个新问题：
+
+```
+改：截断 + 提示怎么缩小范围
+  第 1 步 输入 288 token  read_logs({"keyword": "error"}) → ""
+  read_logs({"keyword": ""}) → "2026-11-25 10:00:00 INFO 请求正常 id=0\n202
+  第 2 步 输入 797 token  回答：今天的日志里**没有报错**。  我做了两次查询：  1. **按 `error` 关键字过滤**：没有匹配到任何一行，……
+```
+
+**答错了**。模型搜的是小写 `error`，日志里写的是大写 `ERROR`，搜出来是空字符串；再不带关键词搜，只拿到前 20 行正常日志，模型就以为没有报错。上面那次运行碰巧又搜了一次大写的才答对。这种 bug 只看最终回答很难发现，看 Trace 里工具返回了一个空字符串就一目了然。
+
+再改：匹配不区分大小写，搜不到时明确说「没有包含 xx 的行」：
+
+```
+再改：不区分大小写、空结果说清楚
+  第 1 步 输入 288 token  read_logs({"keyword": "报错"}) → "没有包含「报错」的行（共 3000 行日志）"
+  read_logs({"keyword": "ERROR"}) → "2026-11-25 10:39:05 ERROR 数据库连接超时 id=23
+  第 2 步 输入 428 token  回答：今天的日志里确实有报错，但不多——只找到 1 条……
+```
+
+### 常见故障对照表
+
+| 现象（在 Trace 里看到的） | 常见原因 | 怎么改 |
+|---|---|---|
+| 同一个工具反复调、参数差不多 | 报错太含糊，模型不知道哪里错 | 报错写清楚错在哪、正确的格式是什么（故障一） |
+| 某一步输入 token 突然暴涨 | 工具返回太长 | 截断、分页、只返回需要的字段（故障二） |
+| 工具返回空，模型说「没有」 | 工具的 bug（大小写、编码、时区） | 空结果要明确说明；给工具写单元测试 |
+| 该调工具时不调，自己编答案 | 工具描述写得不清楚；system 里没要求用工具 | 描述写清楚「什么时候用」；评测集里检查有没有调（6.9 节） |
+| 调了不该调的工具 | 工具太多、描述太像 | 合并或删掉相近的工具；按任务只给相关的几个 |
+| 步数用完还没完成 | 任务太大、计划不清楚 | 先规划再执行（6.12 节）；拆成子任务 |
+| 越往后越慢越贵 | 历史越来越长 | 裁剪、摘要（6.4 节）；工具结果只留关键部分 |
+
+### 规则（记住就行）
+
+1. 先看 Trace 再改：哪一步、输入了什么、返回了什么。不要只看最终回答猜原因。
+2. 工具的报错和返回值是写给模型看的：要说清楚，要短。
+3. 每修一个故障，把这个例子加进评测集（6.9 节），以后改动时能发现它有没有回来。
+
+## 6.20 AI 编程和低代码平台：Vibe Coding、Coze、Dify {#vibe-coding}
+
+这一节没有代码，讲两类工具：用 AI 写代码，和不写代码搭 Agent。招聘要求里越来越常见，面试会问「你实际怎么用的」。
+
+### Vibe Coding：用 AI 编程工具交付
+
+Claude Code、Cursor、Codex 这类工具，能读懂整个项目、改多个文件、跑命令和测试。这份笔记网站就是这么做出来的。用好它的关键不是「让它写」，而是**拆需求**和**验收**：
+
+1. **需求拆成能验证的小任务**：不说「做一个学习网站」，而是「首页显示学习路线，每个阶段显示已学几节；点了跳到对应章节」。每个小任务都能明确判断做没做好。
+2. **先让它说计划再动手**：大改动先要方案，看过再让它改，和 6.12 节的「先规划再执行」一样。
+3. **自己验收**：
+   - 看 diff：改了哪些文件，有没有改到不相关的地方。
+   - 跑测试、本地点一遍，边界情况自己造：空数据、很长的数据、网络断了。
+   - 让它把验证过程和结果写出来，比如截图、测试输出，不要只听它说「已完成」。
+4. **把规则写下来**：项目里的约定，比如代码风格、提交规范、哪些命令不能跑，写进 `CLAUDE.md` 这类文件，它每次都会读。这就是 6.8 节的 Skill 思路。
+
+| AI 写的代码常见问题 | 怎么防 |
+|---|---|
+| 看着对，边界情况没处理 | 自己造边界数据测；让它补单元测试 |
+| 引用了不存在的函数、库的旧写法 | 跑一遍就知道；看报错让它改（6.13 节的自我修正） |
+| 改了不该改的地方 | 每次看 diff；任务拆小 |
+| 「顺手」加了没要求的功能 | 需求写清楚范围；不需要的让它删掉 |
+
+### Coze、Dify：不写代码搭 Agent
+
+| | Coze（扣子） | Dify |
+|---|---|---|
+| 是什么 | 字节的 Agent 搭建平台 | 开源的 LLM 应用平台，可以自己部署 |
+| 能做什么 | 拖拽搭工作流、知识库（RAG）、插件（工具）、发布到飞书、微信等 | 一样：工作流、知识库、Agent、对外提供 API |
+| 适合 | 快速验证想法、做内部小工具 | 要私有部署、数据不能出公司 |
+
+它们做的事，就是这个阶段手写的那些：知识库对应阶段五，插件对应工具和 MCP，工作流对应 LangGraph。区别是**拖拽配置**代替写代码。
+
+什么时候用：
+
+- **用平台**：想法要一天内验证、流程简单、不需要深度定制。
+- **写代码**：要接复杂的业务系统、要精细控制每一步（权限、重试、成本）、要做成产品。
+
+学习建议：两个平台会一个就行，花半天照着官方教程搭一个「知识库问答 + 一个工具」的 Agent。面试时能说清「平台搭的和自己写的各适合什么场景」比会操作更重要。

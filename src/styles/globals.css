@@ -223,18 +223,6 @@ aside {
   color: var(--muted);
 }
 
-.chev {
-  display: inline-block;
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1;
-  transition: transform 0.15s;
-}
-
-.chev.open {
-  transform: rotate(90deg);
-}
-
 .mini-bar {
   display: block;
   height: 4px;
