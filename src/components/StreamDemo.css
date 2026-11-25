@@ -1,0 +1,178 @@
+/* 笔记正文里的「前端流式接收」演示 */
+.stream-demo {
+  margin: 16px 0 24px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  font-size: 14px;
+}
+
+.stream-demo .sd-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.stream-demo .sd-status {
+  color: var(--muted);
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+}
+
+.stream-demo .sd-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.stream-demo button {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.stream-demo .sd-play {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #fff;
+}
+
+.stream-demo button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.stream-demo .sd-box {
+  margin-top: 10px;
+}
+
+.stream-demo .sd-label {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.stream-demo .sd-label code {
+  font-size: 12px;
+}
+
+.stream-demo .sd-reads,
+.stream-demo .sd-split,
+.stream-demo .sd-page {
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 8px 10px;
+  min-height: 40px;
+}
+
+.stream-demo .sd-reads {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  min-height: 92px;
+}
+
+.stream-demo .sd-read {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  word-break: break-all;
+  animation: sd-in 0.25s ease-out;
+}
+
+.stream-demo .sd-read:last-child span {
+  color: var(--text);
+}
+
+.stream-demo .sd-read span {
+  color: var(--muted);
+}
+
+.stream-demo .sd-read em {
+  flex: none;
+  font-style: normal;
+  color: var(--accent);
+}
+
+.stream-demo .nl {
+  font-style: normal;
+  color: var(--warn);
+  margin: 0 1px;
+}
+
+.stream-demo .sd-chip {
+  display: inline-block;
+  margin: 2px 6px 2px 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  animation: sd-in 0.25s ease-out;
+}
+
+.stream-demo .sd-chip.done {
+  background: color-mix(in srgb, var(--done) 16%, transparent);
+  color: var(--done);
+}
+
+.stream-demo .sd-none {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stream-demo .sd-left {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--warn);
+  word-break: break-all;
+}
+
+.stream-demo .sd-left span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px dashed var(--warn);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.stream-demo .sd-page {
+  font-size: 15px;
+  line-height: 1.8;
+  min-height: 84px;
+}
+
+.stream-demo .sd-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--accent);
+  animation: sd-blink 0.9s steps(1) infinite;
+}
+
+.stream-demo .sd-end {
+  display: block;
+  color: var(--done);
+  font-size: 13px;
+}
+
+.stream-demo .sd-end.err {
+  color: var(--warn);
+}
+
+@keyframes sd-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes sd-blink {
+  50% { opacity: 0; }
+}

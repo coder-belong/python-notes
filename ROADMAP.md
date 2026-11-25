@@ -70,53 +70,53 @@
 - [x] ★★★ LLM API 调用（第 4.1 节，用 DeepSeek + openai SDK）
 - [x] ★★★ 消息结构、System Prompt、Token 和上下文长度（第 4.2 节）
 - [x] ★★★ 成本、超时、重试、限流（第 4.3 节）
-- [ ] ★★ Prompt Engineering（边做边学，不用单独花时间）
-- [ ] ★★ Few-shot：在 prompt 里给几个示例，让输出格式和风格更稳
-- [ ] ★ Transformer、上下文窗口是怎么回事（只要概念，不推公式）
-- [ ] ★★ 模型选型：DeepSeek、通义、豆包、Kimi 各自擅长什么，代码里怎么方便切换模型
-- [ ] ★★ 多模态：让模型看图（截图、票据、图表），语音转文字；会调接口即可
-- [ ] ★ 本地模型：用 Ollama 在本机跑一个小模型（数据不能出内网的场景会用到）
+- [x] ★★ Prompt Engineering（第 4.8 节）
+- [x] ★★ Few-shot：在 prompt 里给几个示例，让输出格式和风格更稳（第 4.8 节）
+- [x] ★ Transformer、上下文窗口是怎么回事（只要概念，不推公式）（第 4.7 节）
+- [x] ★★ 模型选型：DeepSeek、通义、豆包、Kimi 各自擅长什么，代码里怎么方便切换模型（第 4.10 节）
+- [ ] ★★ 多模态：让模型看图（截图、票据、图表），语音转文字；会调接口即可（待补：要另外装看图模型）
+- [ ] ★ 本地模型：用 Ollama 在本机跑一个小模型（数据不能出内网的场景会用到）（待补：要装 Ollama）
 - [x] ★★★ Structured Output（结合 Pydantic）（第 4.4 节）
 - [x] ★★★ Function Calling（第 4.5 节）
 - [x] ★★★ Streaming 流式输出（第 4.6 节）
 - [x] ★★★ SSE：后端推送模型输出和执行事件，前端用 `fetch` + `ReadableStream` 接收；处理连接断开、取消、最终结果保存（第 4.6 节）
-- [ ] ★★★ 效果评估（eval）：固定一组测试问题，改了 prompt 或换了模型就跑一遍对比，不靠感觉判断「变好了」
-- [ ] ★★ 安全：Prompt 注入、敏感信息不进 prompt
+- [x] ★★★ 效果评估（eval）：固定一组测试问题，改了 prompt 或换了模型就跑一遍对比，不靠感觉判断「变好了」（第 4.9 节）
+- [x] ★★ 安全：Prompt 注入、敏感信息不进 prompt（第 4.11 节）
 
 验收：写一个接口：用 Function Calling 查业务数据，按固定 JSON 格式整理结果，流式返回给前端，并记下每次调用花了多少钱。
 
 ## 阶段五：RAG 与知识库（第 8～9 周）
 
-- [ ] ★★★ Embedding 向量化
-- [ ] ★★★ RAG 检索增强生成
-- [ ] ★★★ 文档解析：PDF、Word、网页、表格转成干净文字；扫描件 OCR（MinerU 这类工具），去掉页眉页脚
-- [ ] ★★★ RAG 细节：文档切分、关键词检索（BM25）、混合检索、RRF / Rerank、查询改写、HyDE、回答带出处
-- [ ] ★★ pgvector：在 PostgreSQL 里做向量检索，业务数据和向量放同一个库
-- [ ] ★★ 向量数据库：Milvus / Qdrant 选型（先用 pgvector，会一个就能迁移）
-- [ ] ★★★ RAG 评估：用 Ragas 这类指标（召回率、忠实度、答案相关性）量化检索和回答质量
+- [ ] ★★★ Embedding 向量化（待补：要向量模型）
+- [x] ★★★ RAG 检索增强生成（第 5.1、5.4 节，关键词检索版）
+- [x] ★★★ 文档解析：PDF、Word、网页、表格转成干净文字；扫描件 OCR（MinerU 这类工具），去掉页眉页脚（第 5.2 节；OCR 只列了工具）
+- [ ] ★★★ RAG 细节：文档切分、关键词检索（BM25）、混合检索、RRF / Rerank、查询改写、HyDE、回答带出处（切分、BM25、查询改写、出处见第 5.2～5.4 节；混合检索、Rerank、HyDE 待补，要向量模型）
+- [ ] ★★ pgvector：在 PostgreSQL 里做向量检索，业务数据和向量放同一个库（待补：要向量模型）
+- [ ] ★★ 向量数据库：Milvus / Qdrant 选型（先用 pgvector，会一个就能迁移）（待补：要向量模型）
+- [ ] ★★★ RAG 评估：用 Ragas 这类指标（召回率、忠实度、答案相关性）量化检索和回答质量（召回率见第 5.5 节；Ragas 待补）
 
 验收：做一个能上传文档、回答带出处、流式返回的知识库问答接口；用一组固定问题量出「改动前后」召回和回答质量的变化。
 
 ## 阶段六：Agent 开发（第 10～11 周）
 
-- [ ] ★★★ Agent 基本原理：ReAct（思考 → 行动 → 观察）循环
-- [ ] ★★★ 手写最小 Agent Runtime：调模型 → 判断要不要用工具 → 执行工具 → 结果放回上下文 → 继续，直到完成或达到最大步数；自己处理超时、重试、错误恢复、取消（先于 LangGraph）
-- [ ] ★★★ Tool Calling
-- [ ] ★★★ 工具系统：Tool Schema、校验模型输出、失败不能无限重试、高风险操作人工确认
-- [ ] ★★ 工作流编排
-- [ ] ★★ LangChain：PromptTemplate、Chain、Runnable、对话记忆、输出解析（学到能看懂、能用，很多招聘要求写它）
-- [ ] ★★★ LangGraph：State、Node、Edge、Checkpoint 断点恢复（招聘直接点名；手写过 Runtime 再学）
-- [ ] ★★ 多 Agent 协作：Planner / Executor / Reviewer 这类分工（先把单 Agent 做扎实）
-- [ ] ★★★ Memory 记忆机制
-- [ ] ★★ Human-in-the-loop
-- [ ] ★★ Agent 状态管理
-- [ ] ★★★ 上下文管理：Token 预算、按完整轮次裁剪、滚动摘要（Running Summary）、超限恢复
-- [ ] ★★ 任务和步骤持久化：任务记录、工具调用记录、失败重试或转人工
-- [ ] ★★★ MCP（Model Context Protocol）：Agent 接工具的通用协议
-- [ ] ★★ Skill：把「某类事情怎么做」写成说明文档 + 脚本，用到时才加载进上下文，不把所有规则都塞进 system
-- [ ] ★★★ Agent 调试和追踪（tracing）：看清每一步做了什么、花了多少 Token（Langfuse / LangSmith）
-- [ ] ★★★ Agent 评测：建一组评测用例，对比改动前后的成功率、步数、成本（A/B），不靠感觉判断「变好了」
-- [ ] ★★★ Agent 前端：流式展示执行过程（分析、检索、工具调用、结果）、取消、断线后恢复
+- [x] ★★★ Agent 基本原理：ReAct（思考 → 行动 → 观察）循环（第 6.1 节）
+- [x] ★★★ 手写最小 Agent Runtime：调模型 → 判断要不要用工具 → 执行工具 → 结果放回上下文 → 继续，直到完成或达到最大步数；自己处理超时、重试、错误恢复、取消（先于 LangGraph）（第 6.1～6.2 节）
+- [x] ★★★ Tool Calling（第 4.5、6.1 节）
+- [x] ★★★ 工具系统：Tool Schema、校验模型输出、失败不能无限重试、高风险操作人工确认（第 6.2 节）
+- [x] ★★ 工作流编排（第 6.6 节）
+- [x] ★★ LangChain：PromptTemplate、Chain、Runnable、对话记忆、输出解析（学到能看懂、能用，很多招聘要求写它）（第 6.5 节）
+- [x] ★★★ LangGraph：State、Node、Edge、Checkpoint 断点恢复（招聘直接点名；手写过 Runtime 再学）（第 6.6 节）
+- [x] ★★ 多 Agent 协作：Planner / Executor / Reviewer 这类分工（先把单 Agent 做扎实）（第 6.10 节）
+- [x] ★★★ Memory 记忆机制（第 6.4 节）
+- [x] ★★ Human-in-the-loop（第 6.2、6.6 节）
+- [x] ★★ Agent 状态管理（第 6.6 节）
+- [x] ★★★ 上下文管理：Token 预算、按完整轮次裁剪、滚动摘要（Running Summary）、超限恢复（第 6.4 节）
+- [x] ★★ 任务和步骤持久化：任务记录、工具调用记录、失败重试或转人工（第 6.2～6.3 节）
+- [x] ★★★ MCP（Model Context Protocol）：Agent 接工具的通用协议（第 6.7 节）
+- [x] ★★ Skill：把「某类事情怎么做」写成说明文档 + 脚本，用到时才加载进上下文，不把所有规则都塞进 system（第 6.8 节）
+- [x] ★★★ Agent 调试和追踪（tracing）：看清每一步做了什么、花了多少 Token（Langfuse / LangSmith）（第 6.3 节，手写版）
+- [x] ★★★ Agent 评测：建一组评测用例，对比改动前后的成功率、步数、成本（A/B），不靠感觉判断「变好了」（第 6.9 节）
+- [x] ★★★ Agent 前端：流式展示执行过程（分析、检索、工具调用、结果）、取消、断线后恢复（第 6.11 节）
 
 验收：手写一个带 3 个工具的 Agent：有最大步数、失败重试、高风险操作人工确认，每一步有 Trace 和 Token 成本；再用 LangGraph 实现一遍，并用评测用例比较两版。
 

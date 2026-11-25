@@ -26,6 +26,7 @@ import ProgressDrawer from "./ProgressDrawer";
 import MoreMenu from "./MoreMenu";
 import SectionLayout from "./SectionToc";
 import SideResizer from "./SideResizer";
+import { mountStreamDemos } from "./StreamDemo";
 import ThemeToggle from "./ThemeToggle";
 import StudyPanel, { StudyEntry } from "./StudyPanel";
 
@@ -333,6 +334,9 @@ export default function NotesApp({ notes }: { notes: Notes }) {
     });
     return () => buttons.forEach((b) => b.remove());
   }, [route]);
+
+  // 正文里的演示动图（<div class="stream-demo"> 占位），换节时重新挂
+  useEffect(() => mountStreamDemos(), [route]);
 
   const togglePart = (part: string) =>
     setOpenParts((s) => {

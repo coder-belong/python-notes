@@ -22,6 +22,11 @@ uv pip install openai pydantic fastapi uvicorn
 | 4.4 Structured Output | `json_demo.py` JSON 模式 + Pydantic 校验 | `python json_demo.py` |
 | 4.5 Function Calling | `tool_demo.py` 模型调用查任务、完成任务两个函数 | `python tool_demo.py` |
 | 4.6 流式和 SSE | `stream_demo.py` 流式输出；`chat_api_min.py` SSE 最小版；`chat_api.py` FastAPI SSE 完整版（断开、出错、保存）；`chat.mjs` 前端接收和取消 | 见下面 |
+| 4.7 生成原理 | `next_token_demo.py` 看每一步的候选 token 和概率 | `python next_token_demo.py` |
+| 4.8 Prompt 和 Few-shot | `fewshot_demo.py` 只写要求 vs 加规则和示例 | `python fewshot_demo.py` |
+| 4.9 效果评估 | `eval_demo.py` 12 条评测集，对比两种写法 | `python eval_demo.py` |
+| 4.10 换模型 | `models_demo.py` 配置化切换厂商和模型 | `python models_demo.py` |
+| 4.11 Prompt 注入 | `inject_demo.py` 注入演示、加标签防护、敏感信息打码 | `python inject_demo.py` |
 
 4.6 要开两个终端：
 
