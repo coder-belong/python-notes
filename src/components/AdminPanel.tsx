@@ -8,6 +8,22 @@ import { dayKey, formatDuration } from "@/lib/study-store";
 import "./AdminPanel.css";
 import { blurActive } from "@/lib/blur";
 
+/** 国家代码 → 中文，常见的几个；其他的原样显示。 */
+const COUNTRY: Record<string, string> = { CN: "中国", HK: "中国香港", TW: "中国台湾", MO: "中国澳门", US: "美国", JP: "日本", SG: "新加坡", KR: "韩国" };
+
+/** 地区 / IP：上面一行城市（国内只写城市「Shenzhen」，国外带上国家「Tokyo · 日本」），下面一行灰色小字的 IP。 */
+function IpCell({ ip, location }: { ip: string | null; location: string | null }) {
+  if (!ip) return <td className="ip dim">—</td>;
+  const [city, , country] = (location ?? "").split(", ");
+  const place = [city, country && country !== "CN" ? (COUNTRY[country] ?? country) : ""].filter(Boolean).join(" · ");
+  return (
+    <td className="ip" title={location ?? undefined}>
+      <span className="ip-place">{place || "未知地区"}</span>
+      <span className="ip-addr">{ip}</span>
+    </td>
+  );
+}
+
 type UserRow = {
   username: string;
   created_at: string | null;
@@ -17,6 +33,8 @@ type UserRow = {
   study_days: number;
   last_day: string | null;
   last_at: string | null; // 最近一次同步的时间（UTC），学习时每分钟同步一次
+  ip: string | null; // 最近一次登录 / 同步时的 IP
+  location: string | null; // IP 大概在哪：「Shenzhen, GD, CN」，线上由 Vercel 按 IP 判断
   pomodoros: number;
   done_sections: number;
 };
@@ -29,6 +47,8 @@ type GuestRow = {
   last_day: string | null;
   last_at: string | null; // 最近一次上报的时间（UTC）
   became: string | null; // 后来注册 / 登录成了哪个用户
+  ip: string | null; // 最近一次上报时的 IP
+  location: string | null;
 };
 
 type GuestData = {
@@ -239,6 +259,7 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
                       </th>
                     ))}
                     <th className="num">注册于</th>
+                    <th>地区 / IP</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -260,6 +281,7 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
                       <td className="num">{u.done_sections} 节</td>
                       <td className={`num ${u.last_day === today ? "strong" : "dim"}`}>{lastText(u.last_at, u.last_day, today)}</td>
                       <td className="num dim">{dateText(u.created_at)}</td>
+                      <IpCell ip={u.ip} location={u.location} />
                     </tr>
                   ))}
                 </tbody>
@@ -286,6 +308,7 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
                       <th className="num">最近学习</th>
                       <th className="num">首次访问</th>
                       <th>后来注册为</th>
+                      <th>地区 / IP</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -301,6 +324,7 @@ export default function AdminPanel({ token, me, onClose }: { token: string; me: 
                         <td className={`num ${g.last_day === today ? "strong" : "dim"}`}>{lastText(g.last_at, g.last_day, today)}</td>
                         <td className="num dim">{dateText(g.created_at)}</td>
                         <td className={g.became ? "" : "dim"}>{g.became ?? "—"}</td>
+                        <IpCell ip={g.ip} location={g.location} />
                       </tr>
                     ))}
                   </tbody>

@@ -110,9 +110,9 @@ uv run uvicorn app.main:app --reload --port 8000
 | `POST /auth/login` | 登录，返回 token |
 | `GET /auth/me` | 当前登录的是谁、是不是管理员；线上累计学习秒数、能不能用问 AI |
 | `POST /sync` | 发增量、拿回账号的全部学习记录 |
-| `GET /admin/users?today=2026-11-13` | 管理员看所有用户的学习时长（今天、近 7 天、累计、学习天数、学完几节、最近学习），不是管理员返回 403 |
+| `GET /admin/users?today=2026-11-13` | 管理员看所有用户的学习时长（今天、近 7 天、累计、学习天数、学完几节、最近学习、最近一次登录 / 同步的 IP 和大概城市：城市来自 Vercel 按 IP 加的请求头 `x-vercel-ip-city`，本机直连没有），不是管理员返回 403 |
 | `POST /guest/sync` | 没登录的访客上报每天的学习秒数（不用 token，发总数不是增量） |
-| `GET /admin/guests?today=2026-11-13` | 管理员看访客：总人数、今天来过几人、后来注册了几人，以及最近 200 个访客的时长 |
+| `GET /admin/guests?today=2026-11-13` | 管理员看访客：总人数、今天来过几人、后来注册了几人，以及最近 200 个访客的时长和最近一次上报的 IP、城市 |
 | `POST /ai/chat` | 问 AI：带上这一节的正文和对话历史，回答用 SSE 流式返回（`delta` / `done` / `error` 三种事件）；要登录（否则 401），并且累计学习满 30 分钟（否则 403，提示还差多少），管理员不限 |
 
 线上要配的环境变量：`JWT_SECRET`（签 token 的密钥，一串随机字符）、`DATABASE_URL`（接 Neon 后自动有）、`ADMIN_USERNAMES`（可选，管理员用户名，逗号隔开，默认 `belong`）、`DEEPSEEK_API_KEY`（问 AI 用的 DeepSeek key，不填的话问 AI 返回 503，其他功能不受影响）、`AI_MODEL`（可选，默认 `deepseek-flash`）。

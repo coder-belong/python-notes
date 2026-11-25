@@ -1,0 +1,113 @@
+/* 更新日志弹窗：头部固定，下面按日期分组滚动 */
+.modal.cl-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  padding: 0;
+  overflow: hidden; /* 弹窗本身不滚，只滚 .cl-body */
+}
+
+.cl-modal .cl-head {
+  margin: 0;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.cl-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 22px 14px;
+}
+
+/* 日期：分组标题，滚动时吸在顶上 */
+.cl-date {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 14px 0 8px;
+  background: var(--panel);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cl-date span {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.cl-day ul {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.cl-day li {
+  display: flex;
+  align-items: flex-start; /* 标签和第一行对齐，不跟着多行文字居中 */
+  gap: 10px;
+  margin: 0;
+  padding: 6px 0;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.cl-day li + li {
+  border-top: 1px dashed color-mix(in srgb, var(--line) 70%, transparent);
+}
+
+/* 类型标签：固定宽度，左边一列对得齐 */
+.cl-tag {
+  flex: none;
+  width: 44px;
+  margin-top: 2px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  line-height: 18px;
+  text-align: center;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+}
+
+.cl-tag.feat {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.cl-tag.improve {
+  color: var(--done);
+  background: color-mix(in srgb, var(--done) 12%, transparent);
+}
+
+.cl-tag.fix {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+
+.cl-tag.notes {
+  color: #8b5cf6;
+  background: color-mix(in srgb, #8b5cf6 12%, transparent);
+}
+
+.cl-text {
+  min-width: 0;
+  color: var(--text);
+}
+
+.cl-text code {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  font-size: 0.9em;
+}

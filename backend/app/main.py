@@ -3,10 +3,11 @@
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated
+from urllib.parse import unquote
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, inspect, select, text
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
@@ -17,11 +18,28 @@ from .models import Guest, GuestDay, SectionDate, SectionStat, StudyDay, SyncBat
 from .schemas import AuthIn, GuestSyncIn, SyncIn
 from .security import AdminUser, CurrentUser, create_token, hash_password, is_admin, verify_password
 
+# 表建好之后又加的列：create_all 只建新表、不给老表加列，启动时检查一下，缺了就补上（没用 Alembic 的简单做法）
+ADDED_COLUMNS = [
+    ("users", "last_ip", "VARCHAR(64)"),
+    ("guests", "last_ip", "VARCHAR(64)"),
+    ("users", "last_location", "VARCHAR(120)"),
+    ("guests", "last_location", "VARCHAR(120)"),
+]
+
+
+def add_missing_columns() -> None:
+    insp = inspect(engine)
+    for table, column, sql_type in ADDED_COLUMNS:
+        if column not in {c["name"] for c in insp.get_columns(table)}:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {sql_type}"))
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时建表（已经有的表不会动）。以后要改表结构，再换成 Alembic 做迁移
+    # 启动时建表（已经有的表不会动），再补上后来加的列。以后改表多了，再换成 Alembic 做迁移
     Base.metadata.create_all(engine)
+    add_missing_columns()
     yield
 
 
@@ -37,6 +55,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def client_ip(request: Request) -> str | None:
+    """访问者的 IP。部署在 Vercel 上，请求先经过它的代理：真实 IP 在 X-Forwarded-For 的第一个，直连本机时才看 request.client。"""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64]
+    return request.headers.get("x-real-ip") or (request.client.host if request.client else None)
+
+
+def client_location(request: Request) -> str | None:
+    """IP 大概在哪：Vercel 会按访问者 IP 在请求头里带上城市、省 / 州、国家，不用自己查 IP 库。
+    城市名是 URL 编码的（São Paulo 这种），要 unquote；本机直连没有这些请求头，返回 None。"""
+    parts = [
+        unquote(request.headers.get("x-vercel-ip-city", "")),
+        request.headers.get("x-vercel-ip-country-region", ""),
+        request.headers.get("x-vercel-ip-country", ""),
+    ]
+    return ", ".join(p for p in parts if p)[:120] or None
+
+
+def record_visit(obj: User | Guest, request: Request) -> None:
+    """记下最近一次访问的 IP 和位置。"""
+    obj.last_ip = client_ip(request)
+    obj.last_location = client_location(request)
 
 
 def auth_result(user: User) -> dict:
@@ -56,12 +99,13 @@ def health() -> dict:
 
 
 @app.post("/auth/register")
-def register(body: AuthIn, session: Db) -> dict:
+def register(body: AuthIn, request: Request, session: Db) -> dict:
     """注册成功直接返回 token，前端拿到就算登录了，不用再去登录页输一遍。"""
     exists = session.scalar(select(User).where(User.username == body.username))
     if exists:
         raise fail(409, "这个用户名已经有人用了")
     user = User(username=body.username, password_hash=hash_password(body.password))
+    record_visit(user, request)
     session.add(user)
     session.commit()  # 先提交拿到 user.id，token 里要用
     link_guest(session, body.guest_id, user)
@@ -69,11 +113,12 @@ def register(body: AuthIn, session: Db) -> dict:
 
 
 @app.post("/auth/login")
-def login(body: AuthIn, session: Db) -> dict:
+def login(body: AuthIn, request: Request, session: Db) -> dict:
     user = session.scalar(select(User).where(User.username == body.username))
     # 用户名不存在和密码错都报同一句话，不让别人试出哪些用户名注册过
     if user is None or not verify_password(body.password, user.password_hash):
         raise fail(401, "用户名或密码不对")
+    record_visit(user, request)
     link_guest(session, body.guest_id, user)
     return success(auth_result(user), "登录成功")
 
@@ -135,12 +180,13 @@ def save_dates(session: Session, user_id: int, body: SyncIn) -> None:
 
 
 @app.post("/sync")
-def sync(body: SyncIn, user: CurrentUser, session: Db) -> dict:
+def sync(body: SyncIn, request: Request, user: CurrentUser, session: Db) -> dict:
     """前端把新增的记录发上来，加到账号上，再把账号的全部记录返回去。
 
     发的是增量（「刚才又学了 60 秒」）而不是总数：两台电脑各学各的，加起来就是总时长，不会互相覆盖。
     每批带一个 batch_id，同一批发两次只算一次。全是空的就只是来取最新数据。
     """
+    record_visit(user, request)  # 学习时每分钟同步一次，所以这就是「最近在用的 IP」
     has_changes = body.days or body.pomodoros or body.sections or body.done or body.started or body.finished
     seen = session.get(SyncBatch, (user.id, body.batch_id))
     if has_changes and seen is None:
@@ -158,7 +204,7 @@ def sync(body: SyncIn, user: CurrentUser, session: Db) -> dict:
 
 
 @app.post("/guest/sync")
-def guest_sync(body: GuestSyncIn, session: Db) -> dict:
+def guest_sync(body: GuestSyncIn, request: Request, session: Db) -> dict:
     """没登录的访客上报学习时长，不需要 token。
 
     发的是每天的总秒数，不是增量：访客的记录只在一个浏览器里，发重了取较大的那个就行，不会多算。
@@ -169,6 +215,7 @@ def guest_sync(body: GuestSyncIn, session: Db) -> dict:
         session.add(guest)
     else:
         guest.last_seen = func.now()
+    record_visit(guest, request)
     for day, seconds in body.days.items():
         row = session.get(GuestDay, (body.guest_id, day))
         if row is None:
@@ -226,7 +273,7 @@ def admin_users(
         .subquery()
     )
     rows = session.execute(
-        select(User.username, User.created_at, days, done.c.done, last_sync.c.last_at)
+        select(User.username, User.created_at, User.last_ip, User.last_location, days, done.c.done, last_sync.c.last_at)
         .outerjoin(days, days.c.user_id == User.id)  # outerjoin：注册了还没学过的用户也要列出来
         .outerjoin(done, done.c.user_id == User.id)
         .outerjoin(last_sync, last_sync.c.user_id == User.id)
@@ -242,6 +289,8 @@ def admin_users(
             "study_days": r.days or 0,
             "last_day": r.last_day,
             "last_at": as_utc(r.last_at),
+            "ip": r.last_ip,
+            "location": r.last_location,
             "pomodoros": r.pomodoros or 0,
             "done_sections": r.done or 0,
         }
@@ -270,7 +319,10 @@ def admin_guests(
         .subquery()
     )
     rows = session.execute(
-        select(Guest.id, Guest.created_at, Guest.last_seen, User.username.label("became"), days)
+        select(
+            Guest.id, Guest.created_at, Guest.last_seen, Guest.last_ip, Guest.last_location,
+            User.username.label("became"), days,
+        )
         .outerjoin(days, days.c.guest_id == Guest.id)
         .outerjoin(User, User.id == Guest.user_id)
         .order_by(Guest.last_seen.desc())
@@ -295,6 +347,8 @@ def admin_guests(
             "today_seconds": r.today or 0,
             "last_day": r.last_day,
             "last_at": as_utc(r.last_seen),  # 最近一次上报的时间，精确到秒
+            "ip": r.last_ip,
+            "location": r.last_location,
             "became": r.became,
         }
         for r in rows

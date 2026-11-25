@@ -15,6 +15,8 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(20), unique=True)
     password_hash: Mapped[str] = mapped_column(String(200))  # 只存哈希，不存密码本身
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    last_ip: Mapped[str | None] = mapped_column(String(64), default=None)  # 最近一次登录 / 同步时的 IP
+    last_location: Mapped[str | None] = mapped_column(String(120), default=None)  # 这个 IP 大概在哪：城市, 省, 国家
 
 
 class StudyDay(Base):
@@ -72,6 +74,8 @@ class Guest(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())  # 第一次上报的时间
     last_seen: Mapped[datetime] = mapped_column(server_default=func.now())  # 最近一次上报的时间
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), default=None)  # 后来注册 / 登录成了哪个用户
+    last_ip: Mapped[str | None] = mapped_column(String(64), default=None)  # 最近一次上报时的 IP
+    last_location: Mapped[str | None] = mapped_column(String(120), default=None)  # 这个 IP 大概在哪：城市, 省, 国家
 
 
 class GuestDay(Base):

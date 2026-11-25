@@ -7,7 +7,7 @@
 .modal.admin-modal {
   display: flex;
   flex-direction: column;
-  width: min(1000px, 100%);
+  width: min(1080px, 100%); /* 多了一列地区 / IP */
   height: min(760px, calc(100vh - 32px));
   overflow: hidden; /* 弹窗本身不滚动 */
   padding: 20px 24px 16px;
@@ -225,3 +225,19 @@
   }
 }
 
+
+/* 地区 / IP 列：上面城市，下面等宽小字的 IP；IPv6 很长，不换行 */
+.admin-modal .admin-table td.ip {
+  white-space: nowrap;
+}
+
+.admin-modal .admin-table td.ip .ip-place {
+  display: block;
+}
+
+.admin-modal .admin-table td.ip .ip-addr {
+  display: block;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
