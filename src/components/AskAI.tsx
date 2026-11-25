@@ -57,6 +57,30 @@ function sectionText(html: string): string {
 }
 
 /** 第一个问题前面带上选中的内容；追问就只发问题本身。 */
+const WIDTH_KEY = "python-notes:ask-ai-width"; // 拖出来的面板宽度，下次打开还是这个宽度
+const MIN_WIDTH = 400;
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+const SHORTCUT = IS_MAC ? "⌘J" : "Ctrl+J";
+
+/** 正文里当前选中的文字和位置；没选中、太长、不在正文里都返回 null。 */
+function pickSelection(): { text: string; range: Range } | null {
+  const sel = window.getSelection();
+  const text = sel?.toString().trim() ?? "";
+  const node = sel?.anchorNode;
+  const el = node instanceof Element ? node : node?.parentElement;
+  if (!sel || sel.rangeCount === 0 || !text || text.length > MAX_QUOTE || !el?.closest(".sec-main")) return null;
+  return { text, range: sel.getRangeAt(0).cloneRange() };
+}
+
+/** 回到原文：滚到那一段，用浏览器的「自定义高亮」标两秒（不改选区，也就不会又弹出问 AI 按钮）。 */
+function flashRange(range: Range): void {
+  const target = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
+  target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (typeof CSS === "undefined" || !("highlights" in CSS)) return;
+  CSS.highlights.set("ask-ai-jump", new Highlight(range));
+  window.setTimeout(() => CSS.highlights.delete("ask-ai-jump"), 2200);
+}
+
 function withQuote(quote: string, question: string): string {
   return `我在这一节里选中了下面这段：\n"""\n${quote}\n"""\n\n${question}`;
 }
@@ -67,7 +91,7 @@ function withQuote(quote: string, question: string): string {
  */
 export default function AskAI({ token, section }: { token: string; section: Section }) {
   const [isAdmin, setIsAdmin] = useState(() => adminCache.get(token) ?? false);
-  const [btn, setBtn] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [btn, setBtn] = useState<{ x: number; y: number; text: string; range: Range } | null>(null);
   const [open, setOpen] = useState(false);
   const [closing, setClosing] = useState(false); // 正在播放滑出动画，播完再真正关掉
   const [quote, setQuote] = useState("");
@@ -78,6 +102,51 @@ export default function AskAI({ token, section }: { token: string; section: Sect
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickRef = useRef(true); // 列表是不是停在最底部：用户往上翻着看时，新内容不再把它拽回底部
+  const quoteRangeRef = useRef<Range | null>(null); // 选中内容在正文里的位置，「回到原文」用
+  const lastDownRef = useRef(0); // 上次在拖动条上按下的时间：两次挨得很近就当双击
+  const [width, setWidth] = useState<number | null>(() => {
+    try {
+      return Number(localStorage.getItem(WIDTH_KEY)) || null; // null：用 CSS 里的默认宽度
+    } catch {
+      return null;
+    }
+  });
+  const saveWidth = (w: number | null) => {
+    setWidth(w);
+    try {
+      if (w) localStorage.setItem(WIDTH_KEY, String(w));
+      else localStorage.removeItem(WIDTH_KEY);
+    } catch {
+      // 存不了就只在这次生效
+    }
+  };
+
+  // 拖面板左边缘调宽：按下后跟着鼠标走，松开时记下来
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const now = Date.now();
+    if (now - lastDownRef.current < 350) {
+      saveWidth(null); // 双击：恢复默认宽度
+      return;
+    }
+    lastDownRef.current = now;
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+    document.body.classList.add("ask-ai-resizing");
+    let w = width;
+    const move = (ev: PointerEvent) => {
+      w = Math.round(Math.min(Math.max(window.innerWidth - ev.clientX, MIN_WIDTH), window.innerWidth - 48));
+      setWidth(w);
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      document.body.classList.remove("ask-ai-resizing");
+      saveWidth(w);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+  };
   const text = useMemo(() => sectionText(section.html), [section.html]);
 
   useEffect(() => {
@@ -99,18 +168,15 @@ export default function AskAI({ token, section }: { token: string; section: Sect
     if (!isAdmin) return;
     let timer = 0;
     const check = () => {
-      const sel = window.getSelection();
-      const picked = sel?.toString().trim() ?? "";
-      const node = sel?.anchorNode;
-      const el = node instanceof Element ? node : node?.parentElement;
-      if (!sel || sel.rangeCount === 0 || !picked || picked.length > MAX_QUOTE || !el?.closest(".sec-main")) {
+      const picked = pickSelection();
+      if (!picked) {
         setBtn(null);
         return;
       }
-      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      const rect = picked.range.getBoundingClientRect();
       const x = Math.min(Math.max(rect.right - 40, 8), window.innerWidth - 90);
       const y = rect.bottom + 44 > window.innerHeight ? rect.top - 38 : rect.bottom + 8;
-      setBtn({ x, y, text: picked });
+      setBtn({ x, y, ...picked });
     };
     const onChange = () => {
       window.clearTimeout(timer);
@@ -160,10 +226,10 @@ export default function AskAI({ token, section }: { token: string; section: Sect
     return () => window.removeEventListener("keydown", onKey, true);
   }, [open, close]);
 
-  const startWithSelection = () => {
-    if (!btn) return;
+  const startWithSelection = (picked: { text: string; range: Range }) => {
     abortRef.current?.abort();
-    setQuote(btn.text);
+    setQuote(picked.text);
+    quoteRangeRef.current = picked.range;
     setMsgs([]);
     setInput("");
     setOpen(true);
@@ -180,6 +246,39 @@ export default function AskAI({ token, section }: { token: string; section: Sect
     setClosing(false);
     stickRef.current = true;
     setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  // 快捷键 ⌘J / Ctrl+J：面板开着就关；正文里选了文字就带上它开始问；都没有就打开面板
+  const shortcutRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    shortcutRef.current = () => {
+      if (open && !closing) {
+        close();
+        return;
+      }
+      const picked = pickSelection();
+      if (picked) startWithSelection(picked);
+      else openPanel();
+    };
+  });
+  useEffect(() => {
+    if (!isAdmin) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((IS_MAC ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        shortcutRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isAdmin]);
+
+  // 点引用的内容：关掉面板，正文滚回那一段并高亮
+  const jumpToQuote = () => {
+    const range = quoteRangeRef.current;
+    if (!range?.startContainer.isConnected) return;
+    close();
+    window.setTimeout(() => flashRange(range), 240); // 等面板滑出去再滚
   };
 
   const send = useCallback(
@@ -270,7 +369,7 @@ export default function AskAI({ token, section }: { token: string; section: Sect
           className="ask-ai-btn"
           style={{ left: btn.x, top: btn.y }}
           onMouseDown={(e) => e.preventDefault()} // 不让点击把选区取消掉
-          onClick={startWithSelection}
+          onClick={() => btn && startWithSelection(btn)}
           title={open ? "用新选中的内容开始新对话" : undefined}
         >
           <Sparkle />
@@ -279,13 +378,25 @@ export default function AskAI({ token, section }: { token: string; section: Sect
       )}
 
       {!open && (
-        <button type="button" className="ask-ai-fab" onClick={openPanel} title="问 AI：问这一节的问题（选中正文再问，会带上选中的内容）" aria-label="问 AI">
+        <button type="button" className="ask-ai-fab" onClick={openPanel} title={`问 AI（${SHORTCUT}）：问这一节的问题；先选中正文再按 ${SHORTCUT}，会带上选中的内容`} aria-label="问 AI">
           <Sparkle />
         </button>
       )}
 
+      {open && <div className={`ask-ai-mask ${closing ? "closing" : ""}`} onClick={close} aria-hidden="true" />}
+
       {open && (
-        <section className={`ask-ai ${closing ? "closing" : ""}`} aria-label="问 AI">
+        <section
+          className={`ask-ai ${closing ? "closing" : ""}`}
+          style={width ? { width: `min(${width}px, 100vw)` } : undefined}
+          aria-label="问 AI"
+        >
+          <div
+            className="ask-ai-resize"
+            onPointerDown={startResize}
+            title="拖动调整宽度，双击恢复默认"
+            aria-hidden="true"
+          />
           <header className="ask-ai-head">
             <span className="ask-ai-logo" aria-hidden="true">
               <Sparkle />
@@ -317,8 +428,17 @@ export default function AskAI({ token, section }: { token: string; section: Sect
             }}
           >
             {quote && (
-              <figure className="ask-ai-quote">
-                <figcaption>选中的内容</figcaption>
+              <figure
+                className="ask-ai-quote"
+                role="button"
+                tabIndex={0}
+                title="回到原文"
+                onClick={jumpToQuote}
+                onKeyDown={(e) => e.key === "Enter" && jumpToQuote()}
+              >
+                <figcaption>
+                  选中的内容<span>点击回到原文 ↩</span>
+                </figcaption>
                 <blockquote>{quote}</blockquote>
               </figure>
             )}
@@ -346,9 +466,6 @@ export default function AskAI({ token, section }: { token: string; section: Sect
                 </div>
               ) : (
                 <div key={i} className="ask-ai-a">
-                  <span className="ask-ai-avatar" aria-hidden="true">
-                    <Sparkle />
-                  </span>
                   <div className="ask-ai-body">
                     {m.content ? (
                       <div
@@ -419,7 +536,7 @@ export default function AskAI({ token, section }: { token: string; section: Sect
                 </button>
               )}
             </div>
-            <p className="ask-ai-hint">Enter 发送 · Shift + Enter 换行 · Esc 关闭</p>
+            <p className="ask-ai-hint">Enter 发送 · Shift + Enter 换行 · {SHORTCUT} 或 Esc 关闭</p>
           </form>
         </section>
       )}
