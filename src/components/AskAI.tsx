@@ -451,10 +451,12 @@ export default function AskAI({ token, section }: { token: string; section: Sect
               <span>{section.title}</span>
             </div>
             {msgs.length > 0 && (
-              <button type="button" className="ask-ai-icon" onClick={newChat} title="新对话：清空对话，选中的内容保留">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              <button type="button" className="ask-ai-new" onClick={newChat} title="清空这次对话，重新开始；选中的内容保留">
+                {/* 写成文字按钮：之前只放一个铅笔图标，看着像「编辑」，其实是清空重来 */}
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" />
                 </svg>
+                新对话
               </button>
             )}
             <button type="button" className="ask-ai-icon" onClick={close} aria-label="关闭（Esc）" title="关闭（Esc）">

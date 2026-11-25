@@ -681,3 +681,28 @@
   color: var(--muted);
   font-size: 12px;
 }
+
+/* 头部的「新对话」：文字按钮，一眼看出是清空重来 */
+.ask-ai-new {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.ask-ai-new:hover {
+  background: var(--code-bg);
+  color: var(--text);
+}
