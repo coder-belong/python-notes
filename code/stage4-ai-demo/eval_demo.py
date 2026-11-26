@@ -33,5 +33,6 @@ def run(name, classify):
         print("   ", w)
 
 
-run("zero-shot", classify_zero)
-run("few-shot ", classify_few)
+if __name__ == "__main__":   # 直接运行才执行；4.13 节 import CASES 时不执行
+    run("zero-shot", classify_zero)
+    run("few-shot ", classify_few)

@@ -20,3 +20,18 @@ uv pip install openai jieba rank-bm25 pypdf
 | 5.3 BM25 | `search.py` jieba 分词 + BM25 检索 | `python search.py` |
 | 5.4 完整问答 | `rag.py` 查询改写、检索、回答带出处 | `python rag.py` |
 | 5.5 检索评估 | `eval_search.py` 10 条评测集，原句和改写的召回率；`chunk_eval.py` 几种切分方式的召回率对比（不调模型） | `python eval_search.py` |
+
+## 5.6～5.10：向量检索、重排、pgvector、Ragas
+
+```bash
+uv pip install fastembed numpy "psycopg[binary]" ragas langchain-openai
+export HF_ENDPOINT=https://hf-mirror.com      # 向量、重排模型从国内镜像下载
+```
+
+| 小节 | 文件 | 运行 |
+|---|---|---|
+| 5.6 Embedding | `embed.py` 向量函数（bge-small-zh）；`similarity.py` 几组句子的相似度 | `python similarity.py` |
+| 5.7 向量 / 混合检索 | `vector_search.py`；`eval_hybrid.py` 比较关键词、向量、混合的召回 | `python eval_hybrid.py` |
+| 5.8 Rerank、HyDE | `rerank.py`（会下载约 570MB 的重排模型）；`hyde.py` | `python rerank.py` |
+| 5.9 pgvector | `pgvector_demo.py`，先用 Docker 起一个带 pgvector 的 PostgreSQL（命令见笔记） | `python pgvector_demo.py` |
+| 5.10 Ragas | `ragas_eval.py` 比较两种检索、两种提示词的召回和忠实度 | `python ragas_eval.py` |

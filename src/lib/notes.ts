@@ -65,6 +65,11 @@ function createMarked(): Marked {
     renderer: {
       // 代码块：构建时就用 highlight.js 上好色，页面上不再需要高亮脚本
       code({ text, lang }) {
+        // 流程图：```mermaid 里是图的文字描述，原样放进页面，前端加载 mermaid 后画成图（MermaidDiagrams.ts）
+        if (lang === "mermaid") {
+          const src = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          return `<pre class="mermaid-src">${src}</pre>\n`;
+        }
         const language = lang && hljs.getLanguage(lang) ? lang : "plaintext";
         const html = hljs.highlight(text, { language }).value;
         return `<pre><code class="hljs language-${language}">${html}</code></pre>\n`;
@@ -73,6 +78,16 @@ function createMarked(): Marked {
       heading({ tokens, depth }) {
         const text = this.parser.parseInline(tokens);
         return `<h${depth} id="${slugify(text)}">${text}</h${depth}>\n`;
+      },
+      // 笔记里的图片（放在 public/notes-images/）：构建时直接内联成 data URI，单文件 HTML 版里也能显示
+      image({ href, text }) {
+        if (href.startsWith("notes-images/")) {
+          const file = path.join(process.cwd(), "public", href);
+          const type = href.endsWith(".png") ? "image/png" : href.endsWith(".svg") ? "image/svg+xml" : "image/jpeg";
+          const b64 = readFileSync(file).toString("base64");
+          return `<img class="note-img" src="data:${type};base64,${b64}" alt="${text}" loading="lazy">`;
+        }
+        return `<img src="${href}" alt="${text}" loading="lazy">`;
       },
       // 外链新窗口打开
       link({ href, title, tokens }) {

@@ -40,3 +40,18 @@ node chat.mjs                        # 终端 2：前端读流，第二段 2 秒
 ```
 
 模型每次的回答都会有点不一样，笔记里注释的输出是其中一次实际运行的结果。
+
+## 4.13～4.14：本地模型、看图、听语音
+
+| 小节 | 文件 | 运行 |
+|---|---|---|
+| 4.13 本地模型 | `local_demo.py` 用 Ollama 跑通义千问 1.5B，和 DeepSeek 比 4.9 节的评测集 | 先 `ollama serve`，再 `python local_demo.py` |
+| 4.14 看图 | `vision_demo.py` 读小票转 JSON（默认 DeepSeek，加 `local` 用本地 Qwen2.5-VL 3B）；`make_receipt.py` 画小票图片 | `python vision_demo.py` |
+| 4.14 听语音 | `speech_demo.py` Whisper 识别语音，再整理成 JSON | `HF_ENDPOINT=https://hf-mirror.com python speech_demo.py` |
+
+额外的依赖：`uv pip install pillow faster-whisper`。Ollama 的模型从魔搭下载：
+
+```bash
+ollama pull modelscope.cn/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M
+ollama pull modelscope.cn/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF:Q4_K_M
+```

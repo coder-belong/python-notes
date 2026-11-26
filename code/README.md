@@ -8,9 +8,11 @@
 | `stage2-advanced/` | 阶段二：Python 进阶与工程化，每节一个子目录 |
 | `stage3-todo-api/` | 阶段三：3.16 节结束时的完整 todo 后端（FastAPI + Postgres + Alembic + JWT），带测试 |
 | `stage3-oauth-demo/` | 阶段三 3.21：认证中心 + 两个网站，演示 OAuth 2.0 授权码流程、OIDC、单点登录 |
-| `stage4-ai-demo/` | 阶段四：大模型应用基础（DeepSeek + openai SDK），4.1～4.11 |
-| `stage5-rag-demo/` | 阶段五：RAG 与知识库（关键词检索版，不需要向量模型），5.1～5.5 |
-| `stage6-agent-demo/` | 阶段六：Agent 开发（手写 Agent、LangChain、LangGraph、MCP、Skill），6.1～6.11 |
+| `stage4-ai-demo/` | 阶段四：大模型应用基础（DeepSeek + openai SDK），4.1～4.14 |
+| `stage5-rag-demo/` | 阶段五：RAG 与知识库（关键词、向量、混合检索，pgvector，Ragas），5.1～5.10 |
+| `stage6-agent-demo/` | 阶段六：Agent 开发（手写 Agent、LangChain、LangGraph、MCP、Skill），6.1～6.20 |
+| `stage7-deploy/` | 阶段七：Dockerfile、docker compose、Nginx + HTTPS、任务队列（ARQ）、监控、CI |
+| `stage8-ticket-agent/` | 阶段八：综合项目「智能售后 Agent」，和前端面试的两个小例子 |
 
 - 每个工程各自建虚拟环境 `.venv`，不提交；换电脑后按 README 重建。
 - `stage3-todo-api/.env` 放本机的数据库地址和密钥，不提交；照着 `.env.example` 自己建。

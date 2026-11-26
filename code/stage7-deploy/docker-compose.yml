@@ -1,0 +1,51 @@
+# docker-compose.yml：一条命令把后端、PostgreSQL、Redis、Nginx 一起跑起来
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: todo
+      POSTGRES_PASSWORD: ${DB_PASSWORD}        # 从 .env 读，不写死在这里
+      POSTGRES_DB: todo
+    volumes:
+      - pgdata:/var/lib/postgresql/data        # 数据存在命名卷里：容器删了重建，数据还在
+    healthcheck:                               # 「数据库真的能连了」才算启动好
+      test: ["CMD-SHELL", "pg_isready -U todo"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ../stage3-todo-api               # 把阶段三的代码作为构建上下文
+      dockerfile: ../stage7-deploy/Dockerfile
+    environment:
+      # 容器之间用服务名当主机名：db、redis，不是 localhost
+      DATABASE_URL: postgresql+psycopg://todo:${DB_PASSWORD}@db:5432/todo
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      db:
+        condition: service_healthy               # 等数据库健康检查通过再启动后端
+      redis:
+        condition: service_healthy
+    restart: unless-stopped                      # 挂了自动重启
+
+  nginx:
+    image: nginx:1.27
+    ports:
+      - "8080:80"                                # 只有 Nginx 对外开端口，后端、数据库都不直接暴露
+      - "8443:443"                               # HTTPS；线上直接用 80 和 443
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro              # 证书文件挂进容器
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

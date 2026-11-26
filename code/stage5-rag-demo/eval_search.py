@@ -28,5 +28,6 @@ def recall(use_rewrite: bool) -> None:
     print(f"{'改写' if use_rewrite else '原句'}：前 2 段里有正确答案 {hit}/{len(CASES)}")
 
 
-recall(False)
-recall(True)
+if __name__ == "__main__":   # 直接运行才执行；别的文件 import CASES 时不执行
+    recall(False)
+    recall(True)

@@ -1,0 +1,44 @@
+# stage3-tests.yml：GitHub Actions：每次推送阶段三的代码，自动在 GitHub 的机器上跑一遍测试
+# 要启用：复制到仓库根目录的 .github/workflows/ 下，推送后在 GitHub 的 Actions 页面看结果
+name: stage3-tests
+
+on:
+  push:
+    paths: ["code/stage3-todo-api/**"]          # 只有这个目录改了才跑
+  pull_request:
+    paths: ["code/stage3-todo-api/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest                       # GitHub 提供的 Linux 机器，每次都是全新的
+    services:                                    # 测试要用的数据库和 Redis，和 docker compose 的写法很像
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stage3_todo_test
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 3s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+    defaults:
+      run:
+        working-directory: code/stage3-todo-api
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/stage3_todo_test
+    steps:
+      - uses: actions/checkout@v4                # 拉代码
+      - uses: actions/setup-python@v5            # 装 Python
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q                           # 有一个测试失败，这次运行就是红的，PR 上会显示
+
+  # 部署（CD）：测试通过、而且是推到 main 分支，才执行
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "这里写部署命令：比如 ssh 到服务器执行 docker compose pull && docker compose up -d（7.7 节）"

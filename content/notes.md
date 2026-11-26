@@ -5,13 +5,13 @@
 - **阶段一：Python 语言基础**：只讲常用的写法，不常用的先跳过。
 - **阶段二：Python 进阶与工程化**：类型注解、依赖管理、调试、异步、发 HTTP 请求、并发、上下文管理器。
 - **阶段三：FastAPI 后端开发**：用 FastAPI + SQLAlchemy 从零做一个 todo 接口项目，再补权限、上传、Redis、第三方登录和单点登录。
-- **阶段四：大模型应用基础**：调大模型、控制成本、结构化输出、函数调用、流式输出、Prompt 和评测、安全。
-- **阶段五：RAG 与知识库**：把文档解析、切分、检索后让模型基于你的资料回答，并给出出处；用评测集量检索效果。
+- **阶段四：大模型应用基础**：调大模型、控制成本、结构化输出、函数调用、流式输出、Prompt 和评测、安全、本地模型和多模态。
+- **阶段五：RAG 与知识库**：把文档解析、切分、向量化，混合检索、重排后让模型基于你的资料回答，并给出出处；用评测集和 Ragas 量效果。
 - **阶段六：Agent 开发**：先手写 Agent 循环，再用 LangChain、LangGraph；工具、记忆、人工确认、Trace、MCP、Skill、评测。
 - **阶段七：部署与工程化**：Docker、任务队列、Nginx、监控和 CI/CD，让服务稳定跑在线上。
 - **阶段八：综合项目与面试**：做一个完整的业务型 Agent 项目，整理简历、准备面试。
 
-阶段五的向量检索、阶段七和八还在写，写到哪里可以看首页的「学习路线」。
+八个阶段都写完了。每一项学到哪、在第几节，可以看首页的「学习路线」。
 
 ---
 
@@ -6032,6 +6032,124 @@ def test_admin_users_cached(client: TestClient, auth: dict) -> None:
 
 `pytest` → `25 passed`。
 
+### 缓存三大问题：穿透、击穿、雪崩
+
+用了缓存，面试几乎一定会问这三个问题。下面用一个「假数据库」（每次查 50 毫秒、记一次数）把它们都跑出来，再看怎么解决：
+
+```python
+# cache_problems.py：缓存三大问题：穿透、击穿、雪崩。用一个「假数据库」数被查了几次
+import json
+import random
+import threading
+import time
+
+from redis import Redis
+
+r = Redis.from_url("redis://localhost:6379/3", decode_responses=True)   # 演示用 3 号库
+db_hits = 0
+lock = threading.Lock()
+PRODUCTS = {i: {"id": i, "name": f"商品{i}"} for i in range(1, 101)}   # 数据库里只有 1～100 号
+
+
+def query_db(pid: int) -> dict | None:
+    """假装查数据库：每次 50 毫秒，并且记一次数。"""
+    global db_hits
+    with lock:
+        db_hits += 1
+    time.sleep(0.05)
+    return PRODUCTS.get(pid)
+
+
+# ---------- 普通写法：缓存没有就查数据库 ----------
+def get_naive(pid: int) -> dict | None:
+    if (cached := r.get(f"p:{pid}")) is not None:
+        return json.loads(cached)
+    data = query_db(pid)
+    if data:                                          # 查不到的不缓存
+        r.set(f"p:{pid}", json.dumps(data), ex=60)
+    return data
+
+
+# ---------- 改进：缓存空值 + 互斥锁 + 随机过期时间 ----------
+def get_safe(pid: int) -> dict | None:
+    key = f"p:{pid}"
+    for _ in range(50):
+        if (cached := r.get(key)) is not None:
+            return json.loads(cached) if cached != "null" else None     # 穿透：查不到也缓存一个 "null"
+        # 击穿：只让一个请求去查数据库，其他的等它写好缓存。SET NX：key 不存在才设置成功，就是一把锁
+        if r.set(f"lock:{key}", "1", nx=True, ex=5):
+            try:
+                if (cached := r.get(key)) is not None:                    # 拿到锁后再看一眼：可能别人刚写好
+                    return json.loads(cached) if cached != "null" else None
+                data = query_db(pid)
+                ttl = 60 + random.randint(0, 30)                         # 雪崩：过期时间加随机数，别同时过期
+                r.set(key, json.dumps(data) if data else "null", ex=ttl if data else 30)
+                return data
+            finally:
+                r.delete(f"lock:{key}")
+        time.sleep(0.02)                                                 # 没抢到锁：等一会儿再看缓存
+    return query_db(pid)
+
+
+def burst(fn, pid: int, n: int) -> None:
+    """模拟同一时刻 n 个请求查同一个商品。"""
+    threads = [threading.Thread(target=fn, args=(pid,)) for _ in range(n)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+
+def run(title: str, action) -> None:
+    global db_hits
+    r.flushdb()
+    db_hits = 0
+    action()
+    print(f"{title}：数据库被查了 {db_hits} 次")
+
+
+print("--- 穿透：反复查一个不存在的商品 999（比如被人恶意刷接口）")
+run("普通写法", lambda: [get_naive(999) for _ in range(20)])
+run("缓存空值", lambda: [get_safe(999) for _ in range(20)])
+
+print("--- 击穿：热门商品 1 的缓存刚过期，同时来了 50 个请求")
+run("普通写法", lambda: burst(get_naive, 1, 50))
+run("互斥锁  ", lambda: burst(get_safe, 1, 50))
+
+print("--- 雪崩：一批缓存同一时刻写进去（比如服务刚启动时预热）")
+r.flushdb()
+for i in range(1, 101):
+    r.set(f"fixed:{i}", "x", ex=60)                                      # 普通写法：都是 60 秒
+    r.set(f"random:{i}", "x", ex=60 + random.randint(0, 30))             # 改进：60～90 秒随机
+fixed = {r.ttl(f"fixed:{i}") for i in range(1, 101)}
+spread = [r.ttl(f"random:{i}") for i in range(1, 101)]
+print(f"普通写法：100 个 key 剩余时间都是 {sorted(fixed)} 秒 → 同一秒一起失效，请求一起打到数据库")
+print(f"随机过期：剩余时间分散在 {min(spread)}～{max(spread)} 秒，共 {len(set(spread))} 种 → 失效时间错开了")
+```
+
+```
+--- 穿透：反复查一个不存在的商品 999（比如被人恶意刷接口）
+普通写法：数据库被查了 20 次
+缓存空值：数据库被查了 1 次
+--- 击穿：热门商品 1 的缓存刚过期，同时来了 50 个请求
+普通写法：数据库被查了 50 次
+互斥锁  ：数据库被查了 1 次
+--- 雪崩：一批缓存同一时刻写进去（比如服务刚启动时预热）
+普通写法：100 个 key 剩余时间都是 [60] 秒 → 同一秒一起失效，请求一起打到数据库
+随机过期：剩余时间分散在 60～90 秒，共 30 种 → 失效时间错开了
+```
+
+| 问题 | 是什么 | 解决 |
+|---|---|---|
+| **穿透** | 查一个根本不存在的数据：缓存里没有、数据库里也没有，每次都打到数据库 | 查不到也缓存一个「空值」（过期时间短一点）；或者先用布隆过滤器判断 id 存不存在 |
+| **击穿** | 一个热门 key 刚好过期，同一时刻大量请求一起去查数据库 | 互斥锁：只让一个请求查数据库、写缓存，其他的等一下再读缓存；或者热门数据不设过期、后台定时刷新 |
+| **雪崩** | 大量 key 在同一时间过期（或者 Redis 挂了），请求全部打到数据库 | 过期时间加随机数，错开失效时间；Redis 做高可用；数据库前加限流 |
+
+- 互斥锁用的是 `SET key value NX EX 5`：key 不存在才设置成功，谁设置成功谁拿到锁；`EX 5` 防止拿到锁的请求崩了、锁一直不释放。
+- 一开始拿到锁后直接查数据库，结果数据库被查了 2 次：有个请求在第一个请求写好缓存、释放锁之后才抢到锁，又查了一遍。**拿到锁后要再看一眼缓存**（双重检查），改完就只查 1 次了。
+
+**数据库和缓存不一致**：改数据时，先更新数据库、再**删除**缓存（不是更新缓存），下次读的时候重新加载。再加上过期时间兜底，就算删缓存失败，最多不一致一个过期周期。
+
 ### 规则
 
 - **Redis 里的数据随时可能丢**（重启、内存满了被清掉），只放「丢了也能重新算出来」的东西。用户、任务这些正式数据还是存 PostgreSQL。
@@ -6059,13 +6177,22 @@ def test_admin_users_cached(client: TestClient, auth: dict) -> None:
 
 **授权码流程**（最常用、最安全的一种）：
 
-```
-① 网站 → 把浏览器跳到认证中心 /authorize（带上 client_id、跳回地址、随机的 state）
-② 认证中心 → 用户输入密码（密码只给认证中心，网站看不到）
-③ 认证中心 → 把浏览器跳回网站的 /callback，带上一次性的「授权码」code 和原来的 state
-④ 网站后端 → 拿 code + client_secret 去认证中心 /token 换 token（服务器对服务器，浏览器看不到）
-⑤ 网站后端 → 校验 id_token，知道「这个用户是谁」
-⑥ 网站 → 建立自己的登录状态（session 或 3.13 节的 JWT）
+```mermaid
+sequenceDiagram
+    participant B as 浏览器（用户）
+    participant W as 网站后端
+    participant P as 认证中心
+    B->>W: 点「用 xx 登录」
+    W-->>B: ① 跳到认证中心 /authorize（client_id、跳回地址、随机 state）
+    B->>P: 打开认证中心
+    P-->>B: ② 登录表单（密码只给认证中心，网站看不到）
+    B->>P: 输入密码
+    P-->>B: ③ 跳回网站 /callback?code=一次性授权码&state
+    B->>W: 带着 code 和 state 回来
+    W->>P: ④ 后端拿 code + client_secret 换 token（浏览器看不到）
+    P-->>W: access_token + id_token
+    Note over W: ⑤ 校验 id_token：签名、发给谁、谁发的、过期没有
+    W-->>B: ⑥ 建立网站自己的登录状态（session / JWT）
 ```
 
 为什么不在第 ③ 步直接把 token 给浏览器？跳转地址会留在浏览器历史、服务器日志里，不安全。所以只给一个**60 秒有效、只能用一次**的授权码，真正的 token 由网站后端带着密钥去换。
@@ -6359,6 +6486,7 @@ python flow_demo.py
 - 用评测集判断改动是变好还是变坏，按任务选模型、方便切换（[4.9～4.10](#eval)）
 - 防 Prompt 注入，敏感信息不发给模型（[4.11](#prompt-injection)）
 - 写一个前端聊天页：Markdown 边收边渲染、停止、重试、多会话（[4.12](#chat-frontend)）
+- 用 Ollama 在本机跑小模型；让模型看图、听语音（[4.13～4.14](#ollama)）
 
 ### 准备环境
 
@@ -6370,10 +6498,6 @@ cd code/stage4-ai-demo
 uv venv --python 3.12 .venv && source .venv/bin/activate
 uv pip install openai pydantic fastapi uvicorn
 ```
-
-### 待补
-
-本地模型（Ollama）和多模态（看图、语音转文字）要另外装模型，暂时没写。
 
 ## 4.1 第一次调用大模型 {#llm-call}
 
@@ -6891,12 +7015,21 @@ except ValidationError as e:
 3. **你的代码**去执行这个函数（模型自己执行不了）
 4. 把执行结果发回给模型，模型根据结果回答用户
 
-```
-用户：我还有哪些任务没做完？
-  → 模型：要调用 list_tasks(done=false)        ← 模型只是「说要调用」
-  → 你的代码：执行 list_tasks，得到两个任务
-  → 把结果发回给模型
-  → 模型：你还有「交季度报告」「跑步 5 公里」两个任务
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant C as 你的代码
+    participant M as 模型
+    participant DB as 数据库
+    U->>C: 我还有哪些任务没做完？
+    C->>M: ① 问题 + 能用的函数（tools）
+    M-->>C: ② 不直接回答：「请调用 list_tasks(done=false)」
+    Note over M: 模型只是「说要调用」，自己执行不了
+    C->>DB: ③ 你的代码执行 list_tasks
+    DB-->>C: 两个未完成的任务
+    C->>M: ④ 把执行结果放进历史，再问一次
+    M-->>C: 「你还有交季度报告、跑步 5 公里两个任务」
+    C-->>U: 显示回答
 ```
 
 ### 先手动走一遍：一个函数、调两次模型
@@ -7135,6 +7268,18 @@ for step in range(1, 6):                          # 最多 5 轮，防止模型�
 ## 4.6 流式输出和 SSE {#streaming-sse}
 
 模型写一段几百字的回答要好几秒。前面的调用都是等全部写完才返回，用户要盯着空白页等。**流式输出**：模型生成一点就返回一点，前端一个字一个字地显示，用户马上就能看到内容。
+
+整条链路是这样的，这一节从右往左一段一段实现：
+
+```mermaid
+flowchart LR
+    M["模型<br/>stream=True"] -- "一个个片段（chunk）" --> B["你的后端<br/>FastAPI 生成器"]
+    B -- "SSE 事件<br/>event: delta / done / error" --> F["前端<br/>fetch + getReader"]
+    F -- "追加到页面" --> U["用户看到<br/>一个字一个字出来"]
+    U -. "点停止：abort()" .-> F
+    F -. "连接断开" .-> B
+    B -. "stream.close()<br/>不再生成、不再计费" .-> M
+```
 
 ### Python 里接收流式输出
 
@@ -8122,6 +8267,238 @@ uvicorn chat_web:app --port 8430     # 然后浏览器打开 http://localhost:84
 4. 回答进行中禁止切换会话、禁止重复发送。
 5. 真实项目里会话存在后端数据库（按用户），`localStorage` 只适合 demo；历史太长时按 6.4 节裁剪或摘要。
 
+## 4.13 本地模型：用 Ollama 在本机跑 {#ollama}
+
+前面的模型都在 DeepSeek 的服务器上。有些场景数据不能发出去（医院、银行、公司内部文件），或者要离线用、不想按次付费，就要把模型**跑在自己的机器上**。**Ollama** 是最常用的本地模型工具：一条命令下载模型、启动服务，而且提供和 OpenAI 一样的接口。
+
+### 装 Ollama、下载模型
+
+```bash
+brew install ollama
+ollama serve                                   # 启动服务，默认在 localhost:11434；开着这个终端
+ollama pull modelscope.cn/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M   # 另开一个终端下载模型
+ollama list
+```
+
+- 默认从 Ollama 官方仓库下载（`ollama pull qwen2.5:1.5b`），国内常常很慢、甚至下不动。上面是从**魔搭（ModelScope，阿里的模型社区）**下载同一个模型，约 1.1GB，5MB/s 左右，几分钟就好。
+- **1.5B** 是 15 亿个参数，小模型，普通笔记本就能跑。DeepSeek 这类线上大模型的参数量要大几百倍。
+- **Q4_K_M** 是 4 位量化：把每个参数从 16 位压到 4 位左右，体积和内存都小三四倍，效果略降。本地跑模型基本都用量化版。
+
+### 代码：只换地址和模型名
+
+Ollama 兼容 OpenAI 的接口格式，所以和 4.10 节说的一样，只换 `base_url` 和模型名：
+
+```python
+# local_demo.py：本机用 Ollama 跑一个小模型，代码和调 DeepSeek 一样，只换地址和模型名
+import time
+
+from openai import OpenAI
+
+from eval_demo import CASES          # 4.9 节的 12 条评测集
+from fewshot_demo import EXAMPLES, FEW, classify_few
+
+local = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")   # Ollama 兼容 OpenAI 接口；key 随便填，不校验
+LOCAL_MODEL = "modelscope.cn/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M"     # 通义千问 1.5B，4 位量化，约 1.1GB
+
+# ① 普通对话
+start = time.perf_counter()
+resp = local.chat.completions.create(model=LOCAL_MODEL, messages=[{"role": "user", "content": "用一句话介绍 Python"}])
+print(f"{time.perf_counter() - start:.1f}s", resp.choices[0].message.content)
+
+
+# ② 用 4.9 节的评测集比一比：同样的 few-shot 写法，本地小模型答对几条
+def classify_local(text: str) -> str:
+    r = local.chat.completions.create(
+        model=LOCAL_MODEL,
+        messages=[{"role": "system", "content": FEW}, *EXAMPLES, {"role": "user", "content": text}],
+        max_tokens=5,
+    )
+    return r.choices[0].message.content.strip()
+
+
+for name, classify in [("本地 1.5B", classify_local), ("DeepSeek", classify_few)]:
+    start = time.perf_counter()
+    wrong = [(t, got) for t, want in CASES if (got := classify(t).strip()) != want]   # := 一边赋值一边判断：got 后面还要用
+    print(f"{name}：答对 {len(CASES) - len(wrong)}/{len(CASES)}，共 {time.perf_counter() - start:.1f}s  答错：{wrong}")
+```
+
+```
+0.2s Python是一种高级、面向对象、解释型的编程语言。
+本地 1.5B：答对 11/12，共 0.5s  答错：[('价格有点贵，不过味道确实不错。', '好评')]
+DeepSeek：答对 12/12，共 8.1s  答错：[]
+```
+
+- 4.9 节的 12 条评测集，本地 1.5B 小模型答对 11 条，只错了一条「价格有点贵，不过味道确实不错」这种两头都有的。分类这种简单任务，小模型已经够用。
+- 本地 0.5 秒跑完 12 条，DeepSeek 要 8 秒：本地没有网络往返，模型也小。但这是在 M 系列芯片的 Mac 上；换成没有显卡的服务器会慢很多。
+- 难一点的任务（写代码、多步推理、长文总结），小模型就明显不如大模型了。所以先用评测集比，再决定能不能用小模型。
+
+### 什么时候用本地模型
+
+| | 本地模型（Ollama） | 云端大模型（DeepSeek 等） |
+|---|---|---|
+| 数据 | 不出机器 | 要发给厂商 |
+| 费用 | 一次性的硬件钱，调用不花钱 | 按 token 付费 |
+| 效果 | 小模型只适合简单任务 | 强 |
+| 运维 | 要自己管机器、显卡、并发 | 不用管 |
+
+生产环境要私有部署大一点的模型时，一般用 **vLLM** 这类推理框架跑在有显卡的服务器上，同样提供 OpenAI 兼容的接口，代码写法不变。
+
+### 规则（记住就行）
+
+1. 本地模型走 OpenAI 兼容接口，换模型只改配置（4.10 节）。
+2. 国内下载模型用魔搭、HF 镜像这类国内源。
+3. 先用评测集确认小模型够用，再上线；不够用的任务继续交给大模型，一个应用里可以混用。
+
+## 4.14 多模态：让模型看图、听语音 {#multimodal}
+
+**多模态**就是模型不只读文字，还能看图片、听语音。最常见的用法是「把图片、语音变成结构化的数据」：拍小票记账、截图识别报错、语音建待办。
+
+### 看图：读小票
+
+先用代码画一张小票当例子（真实场景就是用户拍照上传）：
+
+![小票](notes-images/receipt.png)
+
+图片要转成 base64，和文字放在同一条 user 消息的 `content` 列表里。DeepSeek 现在的模型就能直接看图；也可以用 Ollama 里能看图的本地小模型（通义千问 2.5 VL 3B，约 2.8GB）：
+
+```python
+# vision_demo.py：让模型「看图」：把小票图片转成 JSON，再用代码核对金额
+import base64
+import sys
+
+from openai import OpenAI
+from pydantic import BaseModel
+
+from llm import MODEL, NO_THINKING, client
+
+
+class Item(BaseModel):
+    name: str
+    qty: int
+    price: float        # 这一行的金额
+
+
+class Receipt(BaseModel):
+    shop: str
+    items: list[Item]
+    total: float        # 合计
+    paid: float         # 实付
+
+
+def image_message(path: str, question: str) -> list[dict]:
+    """图片转成 base64 的 data URL，和文字一起放进同一条 user 消息里。"""
+    b64 = base64.b64encode(open(path, "rb").read()).decode()
+    return [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": question},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+        ],
+    }]
+
+
+ASK = """读这张小票，只输出 json：
+{"shop": "店名", "items": [{"name": "商品", "qty": 数量, "price": 金额}], "total": 合计, "paid": 实付}"""
+
+def read_receipt(api: OpenAI, model: str, **extra) -> Receipt:
+    resp = api.chat.completions.create(
+        model=model,
+        messages=image_message("images/receipt.png", ASK),
+        response_format={"type": "json_object"},
+        **extra,
+    )
+    raw = resp.choices[0].message.content
+    print(raw)
+    return Receipt.model_validate_json(raw)                        # 和 4.4 节一样：先校验格式
+
+
+if sys.argv[1:] == ["local"]:
+    # 本机 Ollama 里能看图的小模型（4.13 节）：数据不出本机
+    api = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
+    r = read_receipt(api, "modelscope.cn/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF:Q4_K_M", temperature=0)
+else:
+    r = read_receipt(client, MODEL, extra_body=NO_THINKING)       # DeepSeek：和平时调用一样，只是消息里多了图片
+
+calc = round(sum(i.price for i in r.items), 2)                    # 模型读的数字，用代码再核一遍
+print(f"逐项加起来 {calc}，小票上的合计 {r.total}：{'对得上' if calc == r.total else '对不上，要人工看一下'}")
+```
+
+```bash
+python vision_demo.py           # DeepSeek，约 1.6 秒
+python vision_demo.py local     # 本地 Qwen2.5-VL 3B，第一次要加载模型，约 8 秒
+```
+
+两个模型读出来的一样：
+
+```
+{"shop": "豆豆咖啡（科技园店）", "items": [{"name": "拿铁（大杯）", "qty": 1, "price": 28.0}, {"name": "美式（中杯）", "qty": 2, "price": 36.0}, {"name": "桂花酒酿奶茶", "qty": 1, "price": 18.0}], "total": 82.0, "paid": 73.8}
+逐项加起来 82.0，小票上的合计 82.0：对得上
+```
+
+- 和 4.4 节一样：要求输出 JSON，用 Pydantic 校验。
+- **模型读出来的数字要用代码再核一遍**：逐项相加和合计对不上，就标出来让人看。看图的模型可能看错一个数字，后面所有计算就都错了。
+
+### 听语音：语音转文字
+
+语音一般分两步：先用**语音识别（ASR）**模型转成文字，再把文字交给大模型理解。这里用 OpenAI 开源的 **Whisper**（`faster-whisper` 是跑得更快的版本），本机 CPU 就能跑。录音是用 macOS 自带的 `say` 命令生成的：
+
+```bash
+say -v Tingting "帮我把明天下午三点的会议改到周五上午十点，提醒小王带上季度报告。" -o images/voice.aiff
+ffmpeg -i images/voice.aiff -ar 16000 -ac 1 images/voice.wav      # 转成 16kHz 单声道
+```
+
+```python
+# speech_demo.py：语音转文字（ASR）：本机跑开源的 Whisper 小模型，再交给大模型整理成结构化的待办
+import time
+import wave
+
+import numpy as np
+from faster_whisper import WhisperModel
+
+from llm import MODEL, NO_THINKING, client
+
+# Whisper 是 OpenAI 开源的语音识别模型；faster-whisper 是跑得更快的版本，CPU 就行
+# small：约 460MB，第一次运行自动下载；中文识别比 tiny / base 准不少
+asr = WhisperModel("small", device="cpu", compute_type="int8")
+
+# 读 16kHz 单声道的 wav，转成 -1～1 的小数数组（直接传文件路径要靠 av 库解码，它的版本和 faster-whisper 对不上会报错）
+with wave.open("images/voice.wav") as f:
+    audio = np.frombuffer(f.readframes(f.getnframes()), dtype=np.int16).astype(np.float32) / 32768
+
+start = time.perf_counter()
+segments, info = asr.transcribe(audio, language="zh")   # 录音是用 macOS 的 say 命令生成的
+text = "".join(s.text for s in segments)
+print(f"识别（{time.perf_counter() - start:.1f}s）：{text}")
+
+# 识别出来的文字再交给大模型：和 4.4 节一样输出 JSON
+resp = client.chat.completions.create(
+    model=MODEL,
+    messages=[
+        {"role": "system", "content": '把用户的话整理成 json：{"action": "做什么", "from": "原时间", "to": "新时间", "notify": "要通知谁、带什么"}'},
+        {"role": "user", "content": text},
+    ],
+    response_format={"type": "json_object"},
+    extra_body=NO_THINKING,
+)
+print(resp.choices[0].message.content)
+```
+
+```
+识别（1.3s）：帮我把明天下午3点的会议改到周五上午10点,提醒小王戴上季度报告。
+{"action": "改会议时间", "from": "明天下午3点", "to": "周五上午10点", "notify": "提醒小王戴上季度报告"}
+```
+
+注意「带上」被识别成了「**戴上**」：同音字是语音识别最常见的错误，而且会一路传到后面的结果里。所以语音进来的内容，关键的地方（人名、数字、时间）要让用户确认一遍再执行。
+
+云端也有语音识别接口（阿里百炼、讯飞、OpenAI 的 Whisper 接口），准确率更高、不用自己跑模型，写法也是传音频文件拿回文字。
+
+### 规则（记住就行）
+
+1. 图片、语音先变成结构化数据，再交给程序处理；输出照样用 Pydantic 校验。
+2. 模型从图片、语音里读出的数字、名字，要用代码核对，或者让用户确认。
+3. 图片发给云端模型前，注意里面有没有敏感信息（身份证、人脸）。
+4. 用不用本地模型，看数据能不能出去、效果够不够，先用评测集比。
+
 # 阶段五：RAG 与知识库
 
 ## 阶段五导读 {#stage5-guide}
@@ -8139,6 +8516,9 @@ uvicorn chat_web:app --port 8430     # 然后浏览器打开 http://localhost:84
 - 用 BM25 做关键词检索（[5.3](#bm25)）
 - 查询改写、回答带出处，拼成一个完整的知识库问答（[5.4](#rag-answer)）
 - 用评测集量出检索的召回率，看到关键词检索的上限；召回不准怎么排查、切多长（[5.5](#rag-eval)）
+- 用向量模型把文字变成向量，做向量检索、混合检索（[5.6～5.7](#embedding)）
+- 用重排和 HyDE 让结果更准，把向量存进 PostgreSQL（[5.8～5.9](#rerank-hyde)）
+- 用 Ragas 给检索和回答打分（[5.10](#ragas)）
 
 ### 准备环境
 
@@ -8147,12 +8527,12 @@ uvicorn chat_web:app --port 8430     # 然后浏览器打开 http://localhost:84
 ```bash
 cd code/stage5-rag-demo
 uv venv --python 3.12 .venv && source .venv/bin/activate
-uv pip install openai jieba rank-bm25 pypdf
+uv pip install openai jieba rank-bm25 pypdf            # 5.1～5.5
+uv pip install fastembed numpy "psycopg[binary]" ragas langchain-openai   # 5.6～5.10
+export HF_ENDPOINT=https://hf-mirror.com               # 向量、重排模型从国内镜像下载
 ```
 
-### 待补
-
-Embedding 向量化、向量检索、混合检索（RRF / Rerank）、HyDE、pgvector、Ragas 评估要用到向量模型，暂时没写。5.5 节最后会看到为什么需要它们。
+5.9 节还要用 Docker 跑一个带 pgvector 的 PostgreSQL，命令在那一节。
 
 ## 5.1 RAG 是什么 {#rag}
 
@@ -8212,9 +8592,18 @@ ask("可以用支付宝付款吗？", all_docs)
 
 所以 RAG 分两步：
 
+**离线**：文档有变化时跑一次。
+
+```mermaid
+flowchart LR
+    D["文档<br/>PDF / Markdown"] --> P["解析成<br/>干净文字"] --> S["切成小段"] --> I[("建索引<br/>关键词 / 向量")]
 ```
-离线（文档有变化时跑一次）：  文档 → 解析成文字 → 切成小段 → 建索引
-在线（每次提问）：            问题 → 检索出最相关的几段 → 放进 prompt → 模型回答（带出处）
+
+**在线**：每次提问都走一遍，检索用的就是上面建好的索引。
+
+```mermaid
+flowchart LR
+    Q["问题"] --> R["检索出<br/>最相关的几段"] --> PR["放进 prompt"] --> A["模型回答<br/>带出处"]
 ```
 
 后面四节依次实现：5.2 解析和切分，5.3 检索，5.4 回答，5.5 评估。
@@ -8562,7 +8951,7 @@ recall(True)
 
 意思一样，字面不同。改写能补一部分，但改写的模型也不知道文档里用的是哪个词。
 
-这就是**向量检索**要解决的问题：用向量模型（Embedding）把每段文字变成一串数字，意思相近的文字，数字也相近，「学习」和「自习」、「上网」和「Wi-Fi」就能对上。实际项目里一般**关键词 + 向量一起用**（混合检索），各取所长：关键词对型号、编号、专有名词准，向量对同义、口语准。这部分等有了向量模型再补。
+这就是**向量检索**要解决的问题：用向量模型（Embedding）把每段文字变成一串数字，意思相近的文字，数字也相近，「学习」和「自习」、「上网」和「Wi-Fi」就能对上。实际项目里一般**关键词 + 向量一起用**（混合检索），各取所长：关键词对型号、编号、专有名词准，向量对同义、口语准。下面 5.6～5.7 节就来做。
 
 ### 召回不准从哪几个环节查
 
@@ -8660,6 +9049,602 @@ for name, chunks in [("按小标题", by_heading()), ("整个文件", whole_file
 1. 先评检索，再评回答：没搜到对的段，后面怎么调 prompt 都没用。
 2. 评测集里多放用户真实的说法，口语、错别字、简称都要有。
 3. 改切分、改分词、加改写、换检索方式，都用同一套评测集比召回率。
+
+## 5.6 Embedding：把文字变成向量 {#embedding}
+
+5.5 节看到，关键词检索只认字面：「学习」对不上「自习」，「上网」对不上「Wi-Fi」。**Embedding（向量化）** 换一种思路：用一个专门的模型，把一段文字变成一串数字（向量）。训练时让意思相近的文字得到相近的数字，搜索就变成了「找和问题的向量最接近的那几段」。
+
+### 向量模型：bge-small-zh
+
+聊天还是用 DeepSeek，向量要另外用一个**向量模型**（DeepSeek 不提供向量接口）。这里用 `bge-small-zh-v1.5`：
+
+- 北京智源人工智能研究院（BAAI）开源的中文向量模型，MIT 许可，免费，不用 key。
+- 小号，几千万参数，CPU 就能跑；每段文字变成 512 个数。
+- 通过 `fastembed` 这个包调用（向量数据库 Qdrant 团队做的），不用装 PyTorch。
+
+```python
+# embed.py：把文字变成向量。换成别的向量模型（比如百炼）只改这个文件
+from fastembed import TextEmbedding
+
+MODEL = "BAAI/bge-small-zh-v1.5"   # 智源开源的中文向量模型，小号，CPU 就能跑
+DIM = 512                           # 这个模型每段文字变成 512 个数
+
+_model = TextEmbedding(MODEL)       # 第一次运行会从 Hugging Face 下载约 100MB 的模型文件，之后用本机缓存
+
+
+def embed(texts: list[str]) -> list[list[float]]:
+    """一组文字 → 一组向量（每个向量是 DIM 个小数）。"""
+    return [v.tolist() for v in _model.embed(texts)]
+
+
+if __name__ == "__main__":
+    import time
+
+    start = time.perf_counter()
+    vecs = embed(["积分多久过期？"])
+    print(len(vecs[0]), [round(x, 3) for x in vecs[0][:5]], f"{time.perf_counter() - start:.1f}s")
+```
+
+第一次运行会从 Hugging Face 下载约 100MB 的模型文件。国内直连可能很慢，设一个镜像地址再运行：
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+python embed.py
+# 512 [0.036, 0.05, -0.007, 0.039, 0.019] 0.0s
+```
+
+### 意思相近，向量就相近
+
+两个向量有多接近，常用**余弦相似度**：方向越一致越接近 1，越不相关越接近 0。
+
+```python
+# similarity.py：意思相近的文字，向量也相近
+import numpy as np
+
+from embed import embed
+
+pairs = [
+    ("在店里学习可以吗", "店内可以自习"),
+    ("店里有网吗", "有插座和免费 Wi-Fi"),
+    ("充的钱能退吗", "储值卡余额不能退现金"),
+    ("我家狗狗能进来吗", "可以带宠物进店"),
+    ("我家狗狗能进来吗", "积分有效期 12 个月"),     # 不相关的一对：对照组
+    ("苹果手机多少钱", "苹果多少钱一斤"),           # 字面很像，意思不同
+]
+
+
+def cosine(a: list[float], b: list[float]) -> float:
+    """余弦相似度：两个向量方向越接近越接近 1，越不相关越接近 0。"""
+    a, b = np.array(a), np.array(b)
+    return float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+
+for x, y in pairs:
+    vx, vy = embed([x, y])
+    print(f"{cosine(vx, vy):.2f}  {x}  ↔  {y}")
+```
+
+```
+0.81  在店里学习可以吗  ↔  店内可以自习
+0.47  店里有网吗  ↔  有插座和免费 Wi-Fi
+0.67  充的钱能退吗  ↔  储值卡余额不能退现金
+0.65  我家狗狗能进来吗  ↔  可以带宠物进店
+0.26  我家狗狗能进来吗  ↔  积分有效期 12 个月
+0.82  苹果手机多少钱  ↔  苹果多少钱一斤
+```
+
+- 「学习」和「自习」、「狗狗」和「宠物」一个字都不一样，相似度却很高；不相关的那对只有 0.26。关键词检索做不到这一点。
+- 但也不是万能的：「苹果手机」和「苹果多少钱一斤」意思完全不同，相似度却有 0.82，字面重合多的句子容易被当成相近。「有网」和「Wi-Fi」也只有 0.47。所以实际项目里向量检索和关键词检索要一起用（5.7 节）。
+
+`a @ b` 是 numpy 的点积：两个向量对应位置相乘再加起来。`np.linalg.norm` 是向量的长度。
+
+### 换成云端的向量接口
+
+以后用阿里百炼这类云端向量模型，只要换掉 `embed()` 这个函数，其他代码都不动。百炼兼容 OpenAI 的接口格式，用的还是 `openai` 这个包：
+
+```python
+import os
+
+from openai import OpenAI
+
+client = OpenAI(api_key=os.environ["DASHSCOPE_API_KEY"], base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+
+
+def embed(texts: list[str]) -> list[list[float]]:
+    resp = client.embeddings.create(model="text-embedding-v3", input=texts)   # 模型名以百炼控制台为准
+    return [d.embedding for d in resp.data]
+```
+
+换模型时要注意：
+
+| 注意 | 说明 |
+|---|---|
+| 向量长度不同 | 这里是 512，云端模型常见 1024 甚至更长。存进数据库时向量列要写长度（5.9 节），换模型要改表 |
+| 不能混用 | 换了模型，全部文档都要用新模型重算一遍；问题和文档必须用同一个模型算 |
+| 云端有限制 | 一次传几段、每段多长都有上限，文档多要分批；按 token 收费 |
+
+### 规则（记住就行）
+
+1. 向量模型和聊天模型是两个东西：一个负责「找」，一个负责「答」。
+2. 文档的向量在入库时算一次存起来；每次提问只算问题的向量。
+3. 中文选中文或多语言的向量模型；效果用自己的评测集比（5.7 节），别只看排行榜。
+4. 向量不是万能的：字面像但意思不同的句子会被当成相近，数字、编号这类也不擅长。
+
+## 5.7 向量检索和混合检索 {#vector-search}
+
+有了向量，检索就是：文档的每一段先算好向量；提问时算出问题的向量，找最接近的几段。
+
+### 向量检索
+
+```python
+# vector_search.py：向量检索，以及和 BM25 合起来的混合检索
+import numpy as np
+
+from embed import embed
+from load_docs import Chunk, load_chunks
+from search import Searcher
+
+
+class VectorSearcher:
+    def __init__(self, chunks: list[Chunk]):
+        self.chunks = chunks
+        vecs = np.array(embed([c.title + "：" + c.text for c in chunks]))   # 建索引：每段算一次向量，存起来
+        self.vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)     # 先归一化，之后点积就是余弦相似度
+
+    def search(self, query: str, k: int = 2) -> list[tuple[float, Chunk]]:
+        q = np.array(embed([query])[0])
+        scores = self.vecs @ (q / np.linalg.norm(q))                       # 问题和每一段的相似度，一次算完
+        top = np.argsort(-scores)[:k]                                       # 分数从高到低，取前 k 个的下标
+        return [(float(scores[i]), self.chunks[i]) for i in top]
+
+
+def rrf(*rankings: list[Chunk], k: int = 60) -> list[Chunk]:
+    """RRF（倒数排名融合）：每种检索里排第 r 名的，得 1 / (k + r) 分，加起来再排序。
+    只看名次不看原始分数，所以 BM25 的分数（几分）和向量的分数（0～1）不用换算就能合并。"""
+    score: dict[int, float] = {}
+    by_id: dict[int, Chunk] = {}
+    for ranking in rankings:
+        for r, c in enumerate(ranking, 1):
+            score[id(c)] = score.get(id(c), 0) + 1 / (k + r)
+            by_id[id(c)] = c
+    return [by_id[i] for i in sorted(score, key=score.get, reverse=True)]
+
+
+class HybridSearcher:
+    def __init__(self, chunks: list[Chunk]):
+        self.bm25 = Searcher(chunks)
+        self.vector = VectorSearcher(chunks)
+
+    def search(self, query: str, k: int = 2, pool: int = 5) -> list[Chunk]:
+        a = [c for _, c in self.bm25.search(query, k=pool)]     # 两种检索各取前 pool 个
+        b = [c for _, c in self.vector.search(query, k=pool)]
+        return rrf(a, b)[:k]
+
+
+if __name__ == "__main__":
+    chunks = load_chunks()
+    v = VectorSearcher(chunks)
+    for q in ["在店里学习可以吗", "店里有网吗", "我家狗狗能进来吗"]:
+        print(q)
+        for s, c in v.search(q, k=2):
+            print(f"   {s:.2f} {c.source} · {c.title}")
+```
+
+```
+在店里学习可以吗
+   0.61 门店.md · 自习
+   0.45 会员.md · 怎么成为会员
+店里有网吗
+   0.46 门店.md · 自习
+   0.44 会员.md · 怎么成为会员
+我家狗狗能进来吗
+   0.53 门店.md · 带宠物
+   0.36 门店.md · 自习
+```
+
+5.3 节 BM25 一段都搜不到的三个问题，向量检索都把正确的那段排在了第一。
+
+- `vecs / np.linalg.norm(...)`：先把每个向量除以自己的长度（归一化），之后两个向量点积就等于余弦相似度，一次矩阵乘法就能算出问题和所有段的相似度。
+- `np.argsort(-scores)`：按分数从大到小排，返回下标。
+
+### 混合检索：RRF 把两种结果合起来
+
+关键词和向量各有擅长的地方。**混合检索**两种都搜，再把结果合并。合并常用 **RRF**（倒数排名融合）：某段在一种检索里排第 r 名，就得 `1 / (60 + r)` 分，两种检索的得分加起来再排序。它只看名次、不看原始分数，所以 BM25 的分数（几分）和向量的相似度（0～1）不用换算就能合并。60 是常用的默认值，让排第 1 和排第 2 的差距不至于太大。
+
+把这一节和下一节的检索步骤画在一起：
+
+```mermaid
+flowchart LR
+    Q["问题"] --> K["关键词 BM25<br/>取前 5 段"]
+    Q --> V["向量检索<br/>取前 5 段"]
+    K --> F["RRF 按名次合并"]
+    V --> F
+    F --> RR["重排模型逐段打分<br/>（5.8 节）"]
+    RR --> T["留最好的 1～2 段<br/>放进 prompt"]
+```
+
+### 三种检索比一比
+
+```python
+# eval_hybrid.py：同一组问题（5.5 节的 10 条），比较关键词、向量、混合三种检索的召回
+from eval_search import CASES
+from load_docs import load_chunks
+from search import Searcher
+from vector_search import HybridSearcher, VectorSearcher
+
+# 再加 6 条「关键词型」问题：带数字、专有名词，问法和文档的用词一样
+HARD = [
+    ("12 个月", "积分"),
+    ("300 积分", "积分"),
+    ("消费满 1000 元", "会员等级"),
+    ("7:30", "营业时间"),
+    ("超过 30 分钟", "外卖退款"),
+    ("Wi-Fi", "自习"),
+]
+
+chunks = load_chunks()
+methods = {
+    "关键词 BM25": lambda q, s=Searcher(chunks): [c for _, c in s.search(q, k=2)],
+    "向量": lambda q, s=VectorSearcher(chunks): [c for _, c in s.search(q, k=2)],
+    "混合（RRF）": lambda q, s=HybridSearcher(chunks): s.search(q, k=2),
+}
+
+if __name__ == "__main__":   # 直接运行才比较；rerank.py import 这里的问题时不执行
+    for label, cases in [("口语问题", CASES), ("关键词问题", HARD)]:
+        print(f"--- {label}")
+        for name, search in methods.items():
+            missed = [q for q, title in cases if title not in [c.title for c in search(q)]]
+            print(f"{name:<10} {len(cases) - len(missed)}/{len(cases)}   没搜到：{'、'.join(missed) or '无'}")
+```
+
+```
+--- 口语问题
+关键词 BM25   5/10   没搜到：我家狗狗能进来吗、几点开门、咖啡不好喝能退吗、在店里学习可以吗、店里有网吗
+向量         10/10   没搜到：无
+混合（RRF）    10/10   没搜到：无
+--- 关键词问题
+关键词 BM25   6/6   没搜到：无
+向量         5/6   没搜到：超过 30 分钟
+混合（RRF）    6/6   没搜到：无
+```
+
+- 口语问题（5.5 节的 10 条）：向量全对，关键词只对一半。
+- 带数字、专有名词的问题：关键词全对；向量漏了「超过 30 分钟」，它对「30 分钟」这种具体数字不敏感。
+- **混合检索两边都全对**：这就是实际项目里一般都用混合检索的原因。
+
+这里的文档只有 9 段，数字只能看个趋势。文档多了，差距会更明显，也更需要评测集来比。
+
+### 规则（记住就行）
+
+1. 默认用混合检索：向量管同义和口语，关键词管数字、编号、专有名词。
+2. 合并用 RRF，只看名次，不用调两种分数的权重。
+3. 每种检索各取前几个（这里 5 个）再合并，合并后再取最终的 k 个。
+4. 改了检索方式，用同一套评测集比召回（5.5 节）。
+
+## 5.8 Rerank 和 HyDE：让检索更准 {#rerank-hyde}
+
+混合检索能把正确的段落「捞进前几名」，但不一定排在第一。放进 prompt 的段落越少越省、越不容易被干扰，所以还有两个常用的优化：**重排**（Rerank）和 **HyDE**。
+
+### Rerank：先粗搜，再精排
+
+向量检索是问题和段落**各算各的**向量再比，快，但比较粗。**重排模型**（cross-encoder）把「问题 + 一段资料」**一起读进去**打一个相关分，准得多，但每一段都要单独算一次，很慢。所以分两步：先用混合检索粗搜 5 段，再用重排模型给这 5 段打分，取最好的 1～2 段。
+
+```python
+# rerank.py：先粗搜出 5 段，再用重排模型逐段打分，挑出最相关的
+from fastembed.rerank.cross_encoder import TextCrossEncoder
+
+from load_docs import Chunk
+
+# 重排模型：把「问题 + 一段资料」一起读进去打分，比向量相似度准，但慢，所以只给少量候选打分
+_reranker = TextCrossEncoder("BAAI/bge-reranker-v2-m3-int8")   # 智源的多语言重排模型（压缩版，约 570MB）
+
+
+def rerank(query: str, chunks: list[Chunk], k: int = 2) -> list[tuple[float, Chunk]]:
+    scores = list(_reranker.rerank(query, [c.title + "：" + c.text for c in chunks]))
+    ranked = sorted(zip(scores, chunks), key=lambda x: x[0], reverse=True)
+    return [(float(s), c) for s, c in ranked[:k]]
+
+
+if __name__ == "__main__":
+    from eval_hybrid import CASES, HARD, chunks
+    from vector_search import HybridSearcher
+
+    hybrid = HybridSearcher(chunks)
+    top1_before = top1_after = 0
+    for q, title in CASES + HARD:
+        pool = hybrid.search(q, k=5)                    # 第一步：混合检索粗搜 5 段
+        after = rerank(q, pool, k=1)[0][1]              # 第二步：重排，取第 1 名
+        top1_before += pool[0].title == title
+        top1_after += after.title == title
+        if pool[0].title != after.title:
+            print(f"{q}：重排前第 1 是「{pool[0].title}」，重排后是「{after.title}」（应为「{title}」）")
+    n = len(CASES + HARD)
+    print(f"第 1 名就是正确答案：重排前 {top1_before}/{n}，重排后 {top1_after}/{n}")
+```
+
+第一次运行会下载约 570MB 的重排模型（同样建议设 `HF_ENDPOINT` 镜像）。
+
+```
+在店里学习可以吗：重排前第 1 是「怎么成为会员」，重排后是「自习」（应为「自习」）
+超过 30 分钟：重排前第 1 是「营业时间」，重排后是「外卖退款」（应为「外卖退款」）
+第 1 名就是正确答案：重排前 14/16，重排后 16/16
+```
+
+混合检索的前 5 段里本来就有正确答案，重排把它挪到了第 1。
+
+### HyDE：用「假想的答案」去搜
+
+问题和文档的写法往往差很多：问题是「店里有网吗」，文档写的是「有插座和免费 Wi-Fi」。**HyDE**（Hypothetical Document Embeddings）先让模型编一段「假想的答案」，再用这段答案去搜：答案的写法更像文档，向量也就更接近。
+
+```python
+# hyde.py：HyDE：先让模型写一段「假想的答案」，用它去搜，而不是用问题本身去搜
+import numpy as np
+
+from embed import embed
+from llm import MODEL, NO_THINKING, client
+from load_docs import load_chunks
+
+
+def fake_answer(question: str) -> str:
+    """让模型照着「咖啡店规定」的口吻编一段答案：不用对，只要用词像文档就行。"""
+    resp = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": f"假设你是咖啡店的规章文档，用一两句话回答：{question}"}],
+        max_tokens=80,
+        extra_body=NO_THINKING,
+    )
+    return resp.choices[0].message.content
+
+
+chunks = {c.title: c for c in load_chunks()}
+for q, title in [("店里有网吗", "自习"), ("充的钱能退吗", "储值卡"), ("办会员要钱吗", "怎么成为会员")]:
+    target = np.array(embed([title + "：" + chunks[title].text])[0])
+    hyde = fake_answer(q)
+    sims = []
+    for text in (q, hyde):
+        v = np.array(embed([text])[0])
+        sims.append(float(v @ target / (np.linalg.norm(v) * np.linalg.norm(target))))   # 和正确那段的余弦相似度
+    print(f"{q}：问题本身 {sims[0]:.2f} → 假想答案 {sims[1]:.2f}")
+    print(f"    假想答案：{hyde}")
+```
+
+```
+店里有网吗：问题本身 0.46 → 假想答案 0.61
+    假想答案：本店提供免费Wi-Fi，具体网络名称与密码请向店员咨询。
+充的钱能退吗：问题本身 0.62 → 假想答案 0.72
+    假想答案：充值余额原则上不支持退款，但若有特殊情况（如门店关闭或您有未消费的充值），请携带凭证联系店长协商处理。
+办会员要钱吗：问题本身 0.64 → 假想答案 0.67
+    假想答案：办会员需要支付年费99元，付费后即可享受会员专属折扣和积分权益。
+```
+
+- 三个问题，和正确那段的相似度都提高了。
+- 但看最后一条：模型编了「年费 99 元」，文档里写的是「不收费」。**假想答案只能用来搜，绝不能当成回答给用户**。回答还是要根据搜到的真实资料来写。
+- 代价：每次提问多调一次模型，慢一点、多花一点钱。
+
+### 规则（记住就行）
+
+1. 重排放在最后一步：粗搜多取几段（5～20），重排后只留 1～3 段放进 prompt。
+2. HyDE 适合问题和文档写法差别大的场景；它多一次模型调用，先用评测集确认值得。
+3. 查询改写（5.4 节）、HyDE、重排都是可选的优化，按「改一个、测一次」的方式加。
+
+## 5.9 pgvector：把向量存进数据库 {#pgvector}
+
+前面的向量都放在内存里，程序一重启就要重新算。实际项目要把向量**存进数据库**，还要能和业务数据一起查（只搜某个用户的文档、只搜某个分类）。**pgvector** 是 PostgreSQL 的扩展：给 PostgreSQL 加上向量类型和相似度运算，业务数据和向量放在同一个库里。
+
+### 用 Docker 跑一个带 pgvector 的 PostgreSQL
+
+pgvector 要和 PostgreSQL 的版本配套。最省事的是用官方做好的 Docker 镜像（Docker 在阶段七讲，这里照着敲就行）：
+
+```bash
+colima start                     # 启动 Docker 运行环境（第一次会下载虚拟机，要几分钟）
+docker run -d --name notes-pgvector -e POSTGRES_PASSWORD=notes-demo -e POSTGRES_DB=rag \
+  -p 5433:5432 pgvector/pgvector:pg16
+```
+
+用 5433 端口，免得和本机已经在跑的 PostgreSQL（5432）冲突。密码只是本机演示用。
+
+### 存进去，用 SQL 搜
+
+```python
+# pgvector_demo.py：把段落和向量存进 PostgreSQL，用 SQL 做向量检索
+import os
+
+import psycopg
+
+from embed import DIM, embed
+from load_docs import load_chunks
+
+# 本机 Docker 里的 pgvector 容器（启动命令见 README），密码只是本机演示用
+DSN = os.environ.get("RAG_DSN", "postgresql://postgres:notes-demo@localhost:5433/rag")
+
+
+def to_pg(vec: list[float]) -> str:
+    return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"   # pgvector 认这种「[0.1,0.2,…]」格式的文字
+
+
+with psycopg.connect(DSN, autocommit=True) as conn:
+    conn.execute("CREATE EXTENSION IF NOT EXISTS vector")   # 打开 pgvector 扩展：多出 vector 类型和相似度运算符
+    conn.execute("DROP TABLE IF EXISTS chunks")
+    conn.execute(f"""
+        CREATE TABLE chunks (
+            id        serial PRIMARY KEY,
+            source    text NOT NULL,              -- 来自哪个文件：业务字段，可以和向量一起过滤
+            title     text NOT NULL,
+            body      text NOT NULL,
+            embedding vector({DIM}) NOT NULL      -- 向量列，长度要和向量模型一致
+        )""")
+
+    chunks = load_chunks()
+    vecs = embed([c.title + "：" + c.text for c in chunks])
+    with conn.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO chunks (source, title, body, embedding) VALUES (%s, %s, %s, %s::vector)",
+            [(c.source, c.title, c.text, to_pg(v)) for c, v in zip(chunks, vecs)],
+        )
+    # HNSW 索引：数据多了以后不用一行行比，近似地快速找最近的几个；vector_cosine_ops 表示按余弦距离
+    conn.execute("CREATE INDEX ON chunks USING hnsw (embedding vector_cosine_ops)")
+    print("存进去了：", conn.execute("SELECT count(*) FROM chunks").fetchone()[0], "段")
+
+    def search(question: str, source: str | None = None, k: int = 2):
+        q = to_pg(embed([question])[0])
+        # <=> 是余弦距离（越小越近），1 - 距离 = 相似度；WHERE 可以照常加业务条件
+        return conn.execute(
+            f"""SELECT title, source, round((1 - (embedding <=> %s::vector))::numeric, 2) AS sim
+                FROM chunks {"WHERE source = %s" if source else ""}
+                ORDER BY embedding <=> %s::vector LIMIT {k}""",
+            (q, source, q) if source else (q, q),
+        ).fetchall()
+
+    print(search("店里有网吗"))
+    print(search("能退款吗"))
+    print(search("能退款吗", source="会员.md"))   # 只在某个文件里搜：向量和业务数据在同一个库，一个 WHERE 就行
+```
+
+```
+存进去了： 9 段
+[('自习', '门店.md', Decimal('0.46')), ('怎么成为会员', '会员.md', Decimal('0.44'))]
+[('外卖退款', '退款.pdf', Decimal('0.69')), ('饮品退款', '退款.pdf', Decimal('0.62'))]
+[('积分', '会员.md', Decimal('0.44')), ('怎么成为会员', '会员.md', Decimal('0.37'))]
+```
+
+- `vector(512)`：向量列，长度和向量模型一致。
+- `<=>` 是余弦距离（越小越近），`ORDER BY embedding <=> 问题向量 LIMIT 2` 就是找最近的 2 段。pgvector 还有 `<->`（欧氏距离）、`<#>`（负内积）。
+- **HNSW 索引**：数据多了以后不用一行一行比，近似地快速找到最近的几个。几千段以内不建也很快。
+- 最后一个查询加了 `WHERE source = '会员.md'`：只在某个文件里搜。真实项目里就是 `WHERE user_id = ...`、`WHERE kb_id = ...`，权限和向量检索一条 SQL 搞定。注意这里「能退款吗」在会员文档里没有答案，相似度只有 0.44，**搜出来不代表相关**，可以设一个相似度下限，低于它就当没搜到。
+
+### 向量数据库怎么选
+
+| | pgvector | Milvus | Qdrant |
+|---|---|---|---|
+| 是什么 | PostgreSQL 的扩展 | 专门的向量数据库 | 专门的向量数据库 |
+| 好处 | 不用多一个数据库；和业务数据一起用 SQL 查、一起备份 | 亿级数据、分布式 | 部署简单，过滤和混合检索好用 |
+| 适合 | 百万级以内，大多数业务项目 | 数据量特别大 | 想要专门的向量库又不想太重 |
+
+先用 pgvector，数据量真的上去了再迁移。会一个，其他的概念都一样：建集合 / 表、插入向量、按相似度查、加过滤条件。
+
+### 规则（记住就行）
+
+1. 向量入库时算好存下来，重启不用重算；文档改了只重算改动的段。
+2. 表里存原文、出处、业务字段（用户、分类），检索时用 WHERE 过滤，权限不能靠 prompt。
+3. 向量列长度跟着向量模型走，换模型要重建这一列。
+4. 设相似度下限：最近的也可能不相关。
+
+## 5.10 RAG 评估：用 Ragas 打分 {#ragas}
+
+5.5 节自己写了「召回率」：正确的那段有没有搜到。完整的 RAG 还要看回答：有没有编、有没有答到点子上。**Ragas** 是常用的 RAG 评估库，把这些都做成了现成的指标。它的打分也是让一个模型当「评委」来判断，这里用 DeepSeek 当评委。
+
+| 指标 | 看什么 | 需要 |
+|---|---|---|
+| Context Recall（召回） | 标准答案里的每一句，检索到的资料里有没有依据 | 问题、检索到的资料、标准答案 |
+| Faithfulness（忠实度） | 回答里的每一句，在检索到的资料里能不能找到依据；找不到的就是编的 | 问题、资料、回答 |
+| Answer Relevancy（相关性） | 回答有没有答到问题上 | 问题、回答 |
+| Context Precision（精确度） | 检索到的资料里，有用的是不是排在前面 | 问题、资料、标准答案 |
+
+### 比较两种检索、两种提示词
+
+```python
+# ragas_eval.py：用 Ragas 给 RAG 打分：检索有没有找全（context recall）、回答有没有编（faithfulness）
+import asyncio
+import os
+
+from openai import AsyncOpenAI
+from ragas.llms import llm_factory
+from ragas.metrics.collections import ContextRecall, Faithfulness
+
+from llm import MODEL, NO_THINKING, client
+from load_docs import load_chunks
+from rerank import rerank
+from search import Searcher
+from vector_search import HybridSearcher
+
+# 打分也是让模型来判断，这里用 DeepSeek 当「评委」
+judge = llm_factory(
+    MODEL,
+    client=AsyncOpenAI(api_key=os.environ["DEEPSEEK_API_KEY"], base_url="https://api.deepseek.com"),
+    extra_body=NO_THINKING,   # 评委也关掉思考：快、便宜
+)
+recall_metric = ContextRecall(llm=judge)
+faith_metric = Faithfulness(llm=judge)
+
+# 评测集：问题 + 标准答案（人写的，用来判断检索到的资料够不够回答）
+DATA = [
+    ("店里有网吗", "有，店里提供免费 Wi-Fi，也有插座。"),
+    ("充的钱能退吗", "储值卡余额不能退现金，但可以转赠给其他会员。"),
+    ("超过 30 分钟送到能退款吗", "外卖超过预计送达时间 30 分钟，可以申请全额退款。"),
+    ("办会员要钱吗", "不收费，在小程序里用手机号注册就是普通会员。"),
+    ("金卡会员有哪些优惠", "生日月送一杯饮品，买饮品打九折。"),
+    ("会员积分能换什么", "100 积分换中杯美式，300 积分换任意一杯饮品。"),
+]
+
+chunks = load_chunks()
+bm25, hybrid = Searcher(chunks), HybridSearcher(chunks)
+RETRIEVERS = {
+    "关键词": lambda q: [c for _, c in bm25.search(q, k=2)],
+    "混合 + 重排": lambda q: [c for _, c in rerank(q, hybrid.search(q, k=5), k=2)],
+}
+PROMPTS = {
+    "只按资料": "你是豆豆咖啡的客服，只根据 <docs> 里的资料回答，一两句话；资料里没有的就说不清楚。",
+    "不限制": "你是豆豆咖啡的热情客服，参考 <docs> 回答，尽量把答案说得完整、丰富，可以补充你知道的常见做法。",
+}
+
+
+def answer(system: str, question: str, docs: list[str]) -> str:
+    resp = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "system", "content": system + "\n<docs>\n" + "\n".join(docs) + "\n</docs>"},
+                  {"role": "user", "content": question}],
+        extra_body=NO_THINKING,
+    )
+    return resp.choices[0].message.content
+
+
+async def run(retriever: str, prompt: str) -> None:
+    recalls, faiths = [], []
+    for q, ref in DATA:
+        docs = [c.title + "：" + c.text for c in RETRIEVERS[retriever](q)] or ["（没有检索到相关资料）"]   # 一段都没搜到时 Ragas 不接受空列表
+        resp = answer(PROMPTS[prompt], q, docs)
+        r = await recall_metric.ascore(user_input=q, retrieved_contexts=docs, reference=ref)
+        f = await faith_metric.ascore(user_input=q, response=resp, retrieved_contexts=docs)
+        recalls.append(r.value)
+        faiths.append(f.value)
+    avg = lambda xs: sum(xs) / len(xs)  # noqa: E731
+    print(f"检索={retriever:<6} 提示词={prompt:<4}  召回 {avg(recalls):.2f}  忠实度 {avg(faiths):.2f}")
+
+
+async def main() -> None:
+    await run("关键词", "只按资料")
+    await run("混合 + 重排", "只按资料")
+    await run("混合 + 重排", "不限制")
+
+
+asyncio.run(main())
+```
+
+```
+检索=关键词    提示词=只按资料  召回 0.83  忠实度 1.00
+检索=混合 + 重排 提示词=只按资料  召回 1.00  忠实度 1.00
+检索=混合 + 重排 提示词=不限制   召回 1.00  忠实度 0.62
+```
+
+- **检索的好坏看召回**：关键词检索有几个问题没搜到对的资料，召回 0.83；换成混合 + 重排，召回 1.00。
+- **提示词的好坏看忠实度**：同样的资料，提示词换成「尽量说得完整、可以补充你知道的常见做法」，模型就开始加资料里没有的内容，忠实度掉到 0.62。这种问题只看回答通不通顺是发现不了的。
+- 一开始评测集只有前 4 条简单问题，「不限制」的忠实度也是 1.00。后来加了两条资料里答案比较少的问题（金卡优惠、积分换什么），模型才开始自己补充。**评测集要有能暴露问题的例子**。
+
+写的时候遇到两个坑：
+
+- Ragas 不接受空的资料列表，关键词检索一段都没搜到时要放一句「没有检索到相关资料」。
+- Ragas 0.4 的写法和网上很多老教程不一样：指标在 `ragas.metrics.collections` 里，模型用 `llm_factory` 包一层，打分用 `await metric.ascore(...)`。照老教程写报错时，先查当前版本的文档。
+
+### 没有标准答案怎么开始
+
+写标准答案很花时间。没有的时候可以先用不需要标准答案的指标（忠实度、相关性），再从线上真实问题里每周挑一些补上标准答案，评测集慢慢攒起来。也可以让模型根据文档自动生成问答对，人工检查一遍再用。
+
+### 规则（记住就行）
+
+1. 检索和回答分开评：召回低先改检索，忠实度低先改提示词。
+2. 评委模型也会判错，分数看趋势和对比，不要盯着小数点后两位。
+3. 每次改动（切分、检索、重排、提示词、换模型）都跑同一套评测，记下前后的分数。
+4. 评测要花钱（每条都要调几次模型），评测集几十条起步，不用一开始就上千条。
 
 # 阶段六：Agent 开发
 
@@ -8799,6 +9784,17 @@ if __name__ == "__main__":
 4. 第 4 步不再调工具，给出最终回答。
 
 代码里没有写「先查天气再算再发邮件」，**顺序是模型每一步看着历史自己决定的**。这就是 Agent 和普通程序的区别，也是常说的 **ReAct**（Reason + Act）：思考 → 行动 → 观察结果 → 再思考……
+
+```mermaid
+flowchart TD
+    T["任务 + 历史消息"] --> M{"① 思考：调模型<br/>要不要调工具？"}
+    M -- "要：tool_calls" --> A["② 行动：你的代码执行工具"]
+    A --> O["③ 观察：工具结果放回历史"]
+    O --> L{"步数用完了？"}
+    L -- "没有" --> M
+    L -- "用完了" --> X["停下：交给人处理"]
+    M -- "不要：直接回答" --> R["最终回答"]
+```
 
 和 4.5 节的代码比，只多了一个 `for step in range(...)` 循环。Agent 的核心就这么多，后面几节都是在这个循环上补东西。
 
@@ -9364,6 +10360,17 @@ if __name__ == "__main__":
 暂停，等确认： {'action': 'send_email', 'to': '小王'}
     【已发送邮件】给 小王：'小王，你好：\n\n明天北京和上海的最高气温情况如下：\n- 北京'…
 ...（最终回答：两地天气、温差 7℃、邮件已发送）
+```
+
+画成图就是这样，`tools_condition` 决定从 agent 往哪走：
+
+```mermaid
+flowchart LR
+    S(["START"]) --> AG["agent<br/>调模型"]
+    AG -- "要调工具" --> TO["tools<br/>ToolNode 执行"]
+    TO --> AG
+    AG -- "不调工具" --> E(["END"])
+    TO -. "send_email 里 interrupt()<br/>暂停，状态存进 Checkpoint" .-> W["等用户确认<br/>Command(resume='y') 接着跑"]
 ```
 
 ### 和手写版对照
@@ -10402,7 +11409,7 @@ if __name__ == "__main__":
 
 - **编排**：一个任务，模型先后加载了 `weekly-report` 和 `email` 两个 Skill，把周报套进邮件格式。
 - **版本**：锁 1.0 时下周计划没有日期；用最新的 1.1，按新规则补了日期。改 Skill 和改代码一样，先用 6.9 节的评测集比较新旧版本，没问题再切过去。
-- **检索的问题**：「修了 3 个 bug」让 `bug-report` 也被检索出来了。这次模型没加载它，另一次运行它加载了却没用上，白花了 token。这里用的是最简单的「两字组重叠」打分；真实项目一般用向量检索（阶段五待补），或者先让模型从目录里挑。
+- **检索的问题**：「修了 3 个 bug」让 `bug-report` 也被检索出来了。这次模型没加载它，另一次运行它加载了却没用上，白花了 token。这里用的是最简单的「两字组重叠」打分；真实项目一般用向量检索（5.7 节），或者先让模型从目录里挑。
 - 模型还自己编了一个日期范围「1/13-1/17」：system 里没给今天的日期，它就瞎填。需要日期的 Skill，要把今天的日期放进 prompt。
 
 ### 规则（记住就行）
@@ -10670,6 +11677,17 @@ python lg_full.py resume    # 另开一个进程，从 SQLite 里读出状态接
 这就是多 Agent 最常见的毛病：**打回给了错的角色，意见没传到该改的人手里**。
 
 ### 第二版：拆出 Writer，按问题类型打回
+
+```mermaid
+flowchart LR
+    S(["START"]) --> PL["Planner<br/>拆查资料的步骤"]
+    PL --> EX["Executor<br/>逐步执行"]
+    EX --> WR["Writer<br/>写成稿"]
+    WR --> RV{"Reviewer<br/>检查"}
+    RV -- "通过 / 满 3 稿" --> E(["END"])
+    RV -- "只是写得不好" --> WR
+    RV -- "缺资料" --> PL
+```
 
 ```python
 # multi_graph.py：多 Agent：Planner 拆步骤 → Executor 查资料 → Writer 写 → Reviewer 检查，不合格按问题打回给对应的角色
@@ -10992,3 +12010,1647 @@ Claude Code、Cursor、Codex 这类工具，能读懂整个项目、改多个文
 - **写代码**：要接复杂的业务系统、要精细控制每一步（权限、重试、成本）、要做成产品。
 
 学习建议：两个平台会一个就行，花半天照着官方教程搭一个「知识库问答 + 一个工具」的 Agent。面试时能说清「平台搭的和自己写的各适合什么场景」比会操作更重要。
+
+# 阶段七：部署与工程化
+
+## 阶段七导读 {#stage7-guide}
+
+### 这个阶段讲什么
+
+前面的代码都是在自己电脑上 `uvicorn` 跑起来的。真正上线还要解决：别的机器上怎么装出一模一样的环境、数据库和 Redis 怎么一起跑、HTTPS 怎么配、长任务（调模型、处理文档）放哪里跑、出了问题怎么知道、改了代码怎么自动测试和发布。这个阶段用阶段三的 todo 后端做例子，一样一样配起来。
+
+### 学完你将会
+
+- 用 Docker 把后端打成镜像，用 docker compose 一条命令跑起后端、PostgreSQL、Redis、Nginx（[7.1～7.2](#docker)）
+- 用 Nginx 做反向代理、配 HTTPS（[7.3](#nginx)）
+- 用任务队列把长任务放到后台，能查进度、失败自动重试（[7.4](#task-queue)）
+- 打结构化日志、暴露监控指标、出错多了自动告警（[7.5](#monitoring)）
+- 用 GitHub Actions 推代码自动跑测试、自动部署（[7.6](#ci-cd)）
+- 知道部署到一台云服务器要做哪几步；知道微调是什么、什么时候用（[7.7～7.8](#server-deploy)）
+
+### 准备环境
+
+练习代码在 `code/stage7-deploy`。Docker 用 colima（免费、命令行，不用装 Docker Desktop）：
+
+```bash
+brew install colima docker docker-compose
+colima start                           # 启动一个装好 Docker 的小虚拟机，第一次要几分钟
+docker version                         # 能看到 Server 版本就说明好了
+
+cd code/stage7-deploy
+uv venv --python 3.12 .venv && source .venv/bin/activate
+uv pip install arq fastapi uvicorn httpx prometheus-client   # 7.4、7.5 用
+```
+
+brew 装的 `docker-compose` 是单独的命令，写成 `docker-compose up`；装 Docker Desktop 的话写成 `docker compose up`（中间是空格），两种用法一样。
+
+### 待补
+
+7.7 节没有真的买服务器部署，写的是步骤和命令；本机能跑的部分（Docker、compose、Nginx、HTTPS）都在前面几节跑过了。
+
+## 7.1 Docker：把服务打成镜像 {#docker}
+
+「我电脑上能跑，服务器上跑不起来」：Python 版本不同、少装了一个包、系统库不一样……**Docker** 把「代码 + Python + 依赖 + 启动命令」打成一个**镜像**，在任何装了 Docker 的机器上跑出来都一样。
+
+| 概念 | 是什么 |
+|---|---|
+| 镜像（image） | 打包好的「安装包」：只读，可以发给别人、上传到镜像仓库 |
+| 容器（container） | 镜像跑起来的一个进程：可以起好几个，删了重建很快 |
+| Dockerfile | 怎么做镜像的说明书：从哪个基础镜像开始、装什么、复制什么、怎么启动 |
+| 层（layer） | Dockerfile 每一步生成一层；没变的层直接用缓存，构建快 |
+
+### Dockerfile
+
+把阶段三的 todo 后端打成镜像：
+
+```dockerfile
+# Dockerfile：把阶段三的 todo 后端打成镜像（构建时的「上下文」是 ../stage3-todo-api，见 docker-compose.yml）
+FROM python:3.12-slim
+
+# 不生成 .pyc；日志直接输出，不在缓冲区攒着
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# 先只复制依赖清单装依赖：代码改了、依赖没变时，这一层直接用缓存，构建快很多
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt uvicorn alembic \
+    -i https://mirrors.aliyun.com/pypi/simple/
+
+# 再复制代码
+COPY app ./app
+COPY migrations ./migrations
+COPY alembic.ini .
+
+# 不用 root 跑：万一被攻破，权限小一点
+RUN useradd --create-home appuser && mkdir -p uploads && chown appuser uploads
+USER appuser
+
+EXPOSE 8000
+# 启动时先把数据库升级到最新的表结构（3.15 节），再启动服务
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+```
+
+- `FROM python:3.12-slim`：从官方的 Python 镜像开始，slim 是精简版，200MB 左右。
+- **先复制 requirements.txt 装依赖，再复制代码**：依赖不常变，代码常变。这样改代码时，装依赖那一层直接用缓存。
+- `USER appuser`：不用 root 运行，被攻破时权限小一些。
+- `CMD`：容器启动时执行，先跑数据库迁移（3.15 节），再启动服务。
+- pip 用了阿里云镜像源，国内装包快很多。
+
+### .dockerignore：别把没用的东西发给 Docker
+
+构建时，Docker 会把构建目录（上下文）里的所有文件先发给 Docker 引擎。阶段三的目录里有 `.venv`、上传的文件、`.env`（里面有密钥）：
+
+```
+# .dockerignore：构建镜像时不发给 Docker 的文件（7.1 节）
+.venv
+.env
+__pycache__
+.pytest_cache
+uploads
+tests
+```
+
+```
+没加之前：Sending build context to Docker daemon  15.99MB
+加了之后：Sending build context to Docker daemon  21.38kB
+```
+
+从 16MB 降到 21KB。更重要的是 `.env` 不会被打进镜像：镜像发给别人，密钥也就跟着泄露了。
+
+### 改了代码，重新构建很快
+
+改一行代码再构建：
+
+```
+Step 5/13 : RUN pip install --no-cache-dir -r requirements.txt uvicorn alembic     -i https://mirrors.aliyun.com/pypi/simple/
+ ---> Using cache
+Step 6/13 : COPY app ./app
+ ---> Running in 2d04000e7f83
+```
+
+装依赖那一步 `Using cache`，从复制代码那一步才开始重新做。要是先复制全部代码再装依赖，每改一行代码都要重装所有依赖。
+
+### 规则（记住就行）
+
+1. 先复制依赖清单装依赖，再复制代码。
+2. 一定要写 `.dockerignore`：`.venv`、`.env`、日志、上传的文件都不进镜像。
+3. 密钥不写进 Dockerfile、不打进镜像，运行时用环境变量传进去（下一节）。
+4. 用 slim 这类精简的基础镜像，不用 root 运行。
+
+## 7.2 docker compose：一条命令跑整套服务 {#compose}
+
+一个后端要配 PostgreSQL、Redis，可能还有 Nginx、任务队列。一个一个 `docker run` 很麻烦，**docker compose** 把它们写在一个文件里，一条命令全部启动。
+
+```mermaid
+flowchart LR
+    U["浏览器"] -- "8080 / 8443" --> N["nginx"]
+    subgraph compose["docker compose（同一个内部网络）"]
+        N -- "api:8000" --> A["api<br/>todo 后端"]
+        A -- "db:5432" --> D[("db<br/>PostgreSQL")]
+        A -- "redis:6379" --> R[("redis")]
+    end
+```
+
+```yaml
+# docker-compose.yml：一条命令把后端、PostgreSQL、Redis、Nginx 一起跑起来
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: todo
+      POSTGRES_PASSWORD: ${DB_PASSWORD}        # 从 .env 读，不写死在这里
+      POSTGRES_DB: todo
+    volumes:
+      - pgdata:/var/lib/postgresql/data        # 数据存在命名卷里：容器删了重建，数据还在
+    healthcheck:                               # 「数据库真的能连了」才算启动好
+      test: ["CMD-SHELL", "pg_isready -U todo"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ../stage3-todo-api               # 把阶段三的代码作为构建上下文
+      dockerfile: ../stage7-deploy/Dockerfile
+    environment:
+      # 容器之间用服务名当主机名：db、redis，不是 localhost
+      DATABASE_URL: postgresql+psycopg://todo:${DB_PASSWORD}@db:5432/todo
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      db:
+        condition: service_healthy               # 等数据库健康检查通过再启动后端
+      redis:
+        condition: service_healthy
+    restart: unless-stopped                      # 挂了自动重启
+
+  nginx:
+    image: nginx:1.27
+    ports:
+      - "8080:80"                                # 只有 Nginx 对外开端口，后端、数据库都不直接暴露
+      - "8443:443"                               # HTTPS；线上直接用 80 和 443
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro              # 证书文件挂进容器
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+```
+
+密码和密钥放在同目录的 `.env` 文件里（不提交），compose 会自动读，`${DB_PASSWORD}` 换成里面的值：
+
+```bash
+DB_PASSWORD=换成随机字符串
+JWT_SECRET=换成很长的随机字符串
+```
+
+### 跑起来
+
+```bash
+docker-compose up -d --build           # -d：后台运行；--build：先构建镜像
+docker-compose ps
+```
+
+```
+SERVICE   STATUS                    PORTS
+api       Up 12 seconds             8000/tcp
+db        Up 16 seconds (healthy)   5432/tcp
+nginx     Up 12 seconds             0.0.0.0:8080->80/tcp, [::]:8080->80/tcp
+redis     Up 15 seconds (healthy)   6379/tcp
+```
+
+```bash
+curl -s localhost:8080/
+# {"code":200,"msg":"ok","data":{"status":"ok"}}
+curl -s -X POST localhost:8080/auth/register -H 'Content-Type: application/json' -d '{"username":"docker1","password":"docker-pass-1"}'
+# {"code":200,"msg":"注册成功","data":{"token":"eyJhbGciOiJIUzI1NiIs…
+docker-compose logs api --tail 4
+# api-1  | INFO  [alembic.runtime.migration] Running upgrade  -> e8c576e2caac, create users and tasks
+# api-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+```
+
+- 只有 nginx 映射了端口到本机，后端、数据库、Redis 都只在 compose 的内部网络里，外面直接连不上。
+- **容器之间用服务名当主机名**：后端连数据库写 `db:5432`，不是 `localhost`。容器里的 `localhost` 是容器自己。
+- `depends_on` + `healthcheck`：等数据库真的能连了再启动后端。只写 `depends_on` 的话，数据库容器一启动后端就开始连，经常连不上。
+- 启动时自动跑了数据库迁移，表建好了。
+
+### 数据存在卷里，删了容器也不丢
+
+```bash
+docker-compose down                    # 停掉并删除所有容器
+docker-compose up -d
+curl -s -X POST localhost:8080/auth/login -H 'Content-Type: application/json' -d '{"username":"docker1","password":"docker-pass-1"}'
+# {"code":200,"msg":"登录成功",…
+```
+
+容器删了重建，之前注册的账号还在：数据库的数据存在命名卷 `pgdata` 里。`docker-compose down -v` 会连卷一起删，数据就真没了，执行前想清楚。
+
+### 常用命令
+
+| 命令 | 做什么 |
+|---|---|
+| `docker-compose up -d --build` | 构建并后台启动全部服务 |
+| `docker-compose ps` / `logs -f api` | 看状态 / 持续看某个服务的日志 |
+| `docker-compose restart api` | 重启某个服务 |
+| `docker-compose exec db psql -U todo` | 进到容器里执行命令（这里是连数据库） |
+| `docker-compose down` / `down -v` | 停掉删除容器 / 连数据卷一起删 |
+
+### 规则（记住就行）
+
+1. 一个服务一个容器，写在同一个 compose 文件里。
+2. 密钥放 `.env`，不写进 compose 文件，`.env` 不提交。
+3. 只给 Nginx 开端口，数据库、Redis 不对外。
+4. 数据库数据放命名卷，`down -v` 之前确认有备份。
+
+## 7.3 Nginx：反向代理和 HTTPS {#nginx}
+
+**反向代理**：用户的请求先到 Nginx，Nginx 再转给后端。为什么不让用户直接连后端：
+
+- **HTTPS**：证书、加密都在 Nginx 配，后端只管业务。
+- **一个域名多个服务**：`/api` 转给后端，`/` 给前端静态文件。
+- **静态文件、限流、上传大小**这些通用的事交给 Nginx，它做得快。
+- 后端可以开好几个，Nginx 帮着分流（负载均衡）。
+
+```nginx
+# nginx.conf：反向代理：外面的请求先到 Nginx，再转给后端
+
+# 80 端口（HTTP）：全部跳到 HTTPS
+server {
+    listen 80;
+    return 301 https://$host:8443$request_uri;   # 本机演示映射到了 8443；线上就是 https://$host$request_uri
+}
+
+# 443 端口（HTTPS）
+server {
+    listen 443 ssl;
+    ssl_certificate     /etc/nginx/certs/local.crt;   # 证书：本机演示用 openssl 自签名的；线上用 Let's Encrypt 免费证书
+    ssl_certificate_key /etc/nginx/certs/local.key;   # 私钥：不能提交到仓库
+    client_max_body_size 10m;                         # 上传文件最大 10MB（3.19 节）
+
+    location / {
+        proxy_pass http://api:8000;                   # 转给 compose 里叫 api 的服务
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;                          # 把真实 IP 告诉后端
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE / 流式输出（4.6 节）：不要攒着，收到一段就发一段
+        proxy_buffering off;
+        proxy_read_timeout 300s;                      # 长回答也不要中途断开
+    }
+}
+```
+
+本机演示用 openssl 生成一张自签名证书：
+
+```bash
+mkdir -p certs
+openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=localhost" \
+  -keyout certs/local.key -out certs/local.crt
+```
+
+```bash
+curl -s -o /dev/null -w "%{http_code} -> %{redirect_url}\n" http://localhost:8080/
+# 301 -> https://localhost:8443/              HTTP 自动跳到 HTTPS
+curl -sk https://localhost:8443/
+# {"code":200,"msg":"ok","data":{"status":"ok"}}
+curl -sS https://localhost:8443/
+# curl: (60) SSL certificate problem: self signed certificate
+```
+
+`-k` 是不校验证书。不加 `-k` 就报错：自签名的证书没有权威机构担保，浏览器也会提示「不安全」。**线上要用正规证书**，一般用 Let's Encrypt 的免费证书：在服务器上装 `certbot`，它会自动申请、自动续期（7.7 节）。
+
+几个要注意的配置：
+
+- `proxy_buffering off`：Nginx 默认会把后端的响应攒一部分再发出去，SSE 流式输出（4.6 节）就变成一大块一大块地出来了。流式接口一定要关掉。
+- `proxy_read_timeout`：默认 60 秒没收到数据就断开，模型回答长的话要调大。
+- `X-Forwarded-For`：经过 Nginx 后，后端看到的来访 IP 都是 Nginx 的，真实 IP 要从这个请求头里取（网站的「所有用户」表格就是这么拿 IP 的）。
+- `client_max_body_size`：默认只允许 1MB 的请求体，上传文件会 413，要调大。
+
+### 规则（记住就行）
+
+1. 对外只开 80 和 443，HTTP 全部跳到 HTTPS。
+2. 证书用 Let's Encrypt，自动续期；私钥不提交。
+3. 流式接口关掉 `proxy_buffering`，调大超时。
+4. 后端取真实 IP 看 `X-Forwarded-For`。
+
+## 7.4 任务队列：把长任务放到后台 {#task-queue}
+
+AI 应用里很多事一次要跑几十秒到几分钟：处理上传的文档（解析、切分、向量化）、批量生成、跑评测。放在接口里同步做，用户要一直等，网关也会超时断开。
+
+FastAPI 自带的 `BackgroundTasks` 能让接口先返回、任务在后面跑，但它不够用：
+
+| | BackgroundTasks | 任务队列（ARQ / Celery） |
+|---|---|---|
+| 在哪跑 | 和接口在同一个进程里 | 单独的 worker 进程，可以开好几个、放别的机器 |
+| 服务重启 | 正在跑的任务直接丢了 | 任务存在 Redis 里，重启后接着做 |
+| 失败重试 | 没有 | 有，可以设次数、间隔 |
+| 查进度 / 结果 | 要自己想办法 | 有任务 id，随时查 |
+| 并发控制 | 没有，任务多了拖慢接口 | worker 数量自己定 |
+
+**任务队列**：接口只负责「接单」，把任务写进 Redis 就返回一个任务 id；另一个 worker 进程从 Redis 里取任务来做，进度和结果写回 Redis；前端拿着 id 查进度。
+
+```mermaid
+sequenceDiagram
+    participant F as 前端
+    participant A as 接口（FastAPI）
+    participant R as Redis
+    participant W as worker
+    F->>A: POST /reports
+    A->>R: 放进队列
+    A-->>F: 马上返回 job_id
+    W->>R: 取任务
+    loop 每做完一步
+        W->>R: 写进度
+        F->>A: GET /reports/{job_id}
+        A->>R: 读进度
+        A-->>F: in_progress 2/4
+    end
+    W->>R: 写结果（失败就按设置重试）
+    F->>A: GET /reports/{job_id}
+    A-->>F: complete + 结果
+```
+
+这里用 **ARQ**：基于 asyncio、用 Redis 存任务，比 Celery 轻，和 FastAPI 的 async 写法一样。
+
+### worker：干活的进程
+
+```python
+# worker.py：任务队列的「干活的人」：从 Redis 里取任务、执行，结果写回 Redis
+import asyncio
+import json
+
+from arq import Retry
+from arq.connections import RedisSettings
+
+REDIS = RedisSettings(host="localhost", port=6379, database=2)   # 单独用 2 号库，不和别的数据混
+
+
+async def make_report(ctx: dict, topic: str) -> str:
+    """模拟一个要跑很久的任务：比如让模型读 100 份文档写总结。分 4 步，每步汇报进度。"""
+    job_id, redis = ctx["job_id"], ctx["redis"]
+    if ctx["job_try"] == 1 and topic == "会失败一次":
+        raise Retry(defer=1)                      # 第一次故意失败：1 秒后自动重试（比如模型接口限流）
+    for step in range(1, 5):
+        await asyncio.sleep(1)                    # 真实项目里这里是调模型、读文件
+        await redis.set(f"progress:{job_id}", json.dumps({"step": step, "total": 4}), ex=3600)
+    return f"《{topic}》报告写好了（第 {ctx['job_try']} 次尝试成功）"
+
+
+class WorkerSettings:                             # arq 的约定：worker 的配置写成这样一个类
+    functions = [make_report]
+    redis_settings = REDIS
+    max_tries = 3                                 # 最多试 3 次
+    job_timeout = 600                             # 单个任务最多跑 10 分钟
+```
+
+### 接口：接单和查进度
+
+```python
+# app.py：接口只负责「接单」：把任务放进队列马上返回，再提供一个查进度的接口
+import json
+from contextlib import asynccontextmanager
+
+from arq import create_pool
+from arq.jobs import Job, JobStatus
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+from worker import REDIS
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.redis = await create_pool(REDIS)   # 启动时连接 Redis（2.8 节的 lifespan），放进 app.state 供各个接口用
+    yield
+    await app.state.redis.close()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+class ReportIn(BaseModel):
+    topic: str
+
+
+@app.post("/reports")
+async def create_report(body: ReportIn) -> dict:
+    job = await app.state.redis.enqueue_job("make_report", body.topic)   # 放进队列，不等它做完
+    return {"job_id": job.job_id}
+
+
+@app.get("/reports/{job_id}")
+async def get_report(job_id: str) -> dict:
+    redis = app.state.redis
+    job = Job(job_id, redis)
+    status = await job.status()                   # queued 排队中 / in_progress 进行中 / complete 完成
+    out: dict = {"status": status.value}
+    if progress := await redis.get(f"progress:{job_id}"):
+        out["progress"] = json.loads(progress)
+    if status == JobStatus.complete:
+        info = await job.result_info()
+        out["result"] = info.result if info.success else f"失败：{info.result}"
+        out["tries"] = info.job_try
+    return out
+```
+
+### 跑起来
+
+开三个终端：
+
+```bash
+redis-server                                  # 终端 1：Redis（3.20 节已经装过；brew services 启动的就不用了）
+cd queue_demo && ../.venv/bin/arq worker.WorkerSettings          # 终端 2：worker
+cd queue_demo && ../.venv/bin/uvicorn app:app --port 8800        # 终端 3：接口
+```
+
+用一个小脚本提交两个任务，每秒查一次进度：
+
+```python
+# client_demo.py：提交两个任务，每秒查一次进度
+import time
+
+import httpx
+
+api = httpx.Client(base_url="http://localhost:8800")
+ids = {t: api.post("/reports", json={"topic": t}).json()["job_id"] for t in ["季度销售", "会失败一次"]}
+print("提交了：", {t: i[:8] for t, i in ids.items()}, "（接口马上就返回了）")
+
+for _ in range(12):
+    time.sleep(1)
+    states = {t: api.get(f"/reports/{i}").json() for t, i in ids.items()}
+    line = "  ".join(f"{t}: {s['status']} {s.get('progress', {}).get('step', '-')}/4" for t, s in states.items())
+    print(line)
+    if all(s["status"] == "complete" for s in states.values()):
+        for t, s in states.items():
+            print(f"  {t} → {s['result']}（试了 {s['tries']} 次）")
+        break
+```
+
+```
+提交了： {'季度销售': '1f348e14', '会失败一次': 'be6916ac'} （接口马上就返回了）
+季度销售: in_progress -/4  会失败一次: deferred -/4
+季度销售: in_progress 1/4  会失败一次: in_progress -/4
+季度销售: in_progress 2/4  会失败一次: in_progress 1/4
+季度销售: in_progress 3/4  会失败一次: in_progress 2/4
+季度销售: complete 4/4  会失败一次: in_progress 3/4
+季度销售: complete 4/4  会失败一次: complete 4/4
+  季度销售 → 《季度销售》报告写好了（第 1 次尝试成功）（试了 1 次）
+  会失败一次 → 《会失败一次》报告写好了（第 2 次尝试成功）（试了 2 次）
+```
+
+worker 那边的日志：
+
+```
+20:04:17:   0.41s → 1f348e14…:make_report('季度销售')
+20:04:17:   0.41s → be6916ac…:make_report('会失败一次')
+20:04:17:   0.00s ↻ be6916ac…:make_report retrying job in 1.00s
+20:04:18:   1.42s → be6916ac…:make_report('会失败一次') try=2
+20:04:21:   4.01s ← 1f348e14…:make_report ● '《季度销售》报告写好了（第 1 次尝试成功）'
+20:04:22:   4.01s ← be6916ac…:make_report ● '《会失败一次》报告写好了（第 2 次尝试成功）'
+```
+
+- 接口提交完马上返回，两个任务在 worker 里同时跑。
+- 「会失败一次」第一次抛了 `Retry`，状态是 `deferred`（推迟），1 秒后自动重试，第 2 次成功。真实场景就是模型接口限流、超时。
+- `if progress := await redis.get(...)`：`:=` 一边赋值一边判断，取到了才往下走。
+
+**Celery** 是 Python 里最老牌的任务队列，功能更全（定时任务、多种消息队列、监控面板），很多老项目在用。概念一样：broker 存任务、worker 干活、结果存起来。会一个，另一个看看文档就能上手。
+
+### 规则（记住就行）
+
+1. 超过几秒的事都放任务队列：接口只接单、返回 id。
+2. 任务要能重试：设最大次数；重试不能造成重复扣费、重复发消息（做成幂等）。
+3. 进度写到 Redis 或数据库，前端轮询，或者用 SSE 推（4.6 节）。
+4. worker 单独部署、单独扩容；docker compose 里多加一个 worker 服务就行。
+
+## 7.5 日志、监控和告警 {#monitoring}
+
+服务上线后，你不可能一直盯着。要做到三件事：**出了问题能查到原因**（日志）、**随时知道服务好不好**（指标）、**出问题第一时间知道**（告警）。
+
+```python
+# app.py：上线后怎么知道服务好不好：① 结构化日志 ② 指标（给 Prometheus 采集）③ 出错多了就告警
+import json
+import logging
+import random
+import time
+from collections import deque
+
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+
+
+# ---------- ① 结构化日志：每行一个 JSON，方便日志平台按字段搜索、统计 ----------
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return json.dumps({"level": record.levelname, "msg": record.getMessage(), **getattr(record, "extra", {})}, ensure_ascii=False)
+
+
+handler = logging.StreamHandler()
+handler.setFormatter(JsonFormatter())
+log = logging.getLogger("app")
+log.addHandler(handler)
+log.setLevel(logging.INFO)
+
+# ---------- ② 指标：请求数（按接口、状态码分）和耗时分布 ----------
+REQUESTS = Counter("http_requests_total", "请求数", ["path", "status"])
+LATENCY = Histogram("http_request_seconds", "请求耗时（秒）", ["path"], buckets=[0.05, 0.1, 0.3, 1, 3])
+
+# ---------- ③ 告警：最近 20 个请求里 5xx 超过 30% 就报警 ----------
+recent: deque[bool] = deque(maxlen=20)
+alerted = False
+
+
+def alert(text: str) -> None:
+    # 真实项目里发到飞书 / 钉钉 / 企业微信的机器人 webhook，或者交给 Prometheus 的 Alertmanager
+    print(f"🚨 告警：{text}", flush=True)
+
+
+app = FastAPI()
+
+
+@app.middleware("http")                              # 中间件（3.16 节）：每个请求都经过这里
+async def observe(request: Request, call_next):
+    global alerted
+    start = time.perf_counter()
+    response = await call_next(request)
+    cost = time.perf_counter() - start
+    path = request.url.path
+    if path != "/metrics":
+        REQUESTS.labels(path, str(response.status_code)).inc()
+        LATENCY.labels(path).observe(cost)
+        log.info("request", extra={"extra": {"path": path, "status": response.status_code, "ms": round(cost * 1000)}})
+        recent.append(response.status_code >= 500)
+        rate = sum(recent) / len(recent)
+        if len(recent) >= 10 and rate > 0.3 and not alerted:
+            alerted = True                            # 只报一次，免得刷屏；恢复后再重置
+            alert(f"最近 {len(recent)} 个请求有 {rate:.0%} 出错，最后一个是 {path}")
+    return response
+
+
+@app.get("/chat")
+async def chat() -> dict:
+    time.sleep(random.uniform(0.05, 0.4))            # 模拟调模型的耗时
+    return {"answer": "ok"}
+
+
+@app.get("/flaky")
+async def flaky() -> PlainTextResponse:
+    if random.random() < 0.6:                         # 模拟一个不稳定的接口：六成会失败
+        return PlainTextResponse("模型接口超时", status_code=502)
+    return PlainTextResponse("ok")
+
+
+@app.get("/metrics")
+def metrics() -> PlainTextResponse:
+    """Prometheus 每隔几秒来拉一次这个接口，存成时间序列，Grafana 再画成图表。"""
+    return PlainTextResponse(generate_latest().decode(), media_type=CONTENT_TYPE_LATEST)
+```
+
+压一些请求看看。第一轮大部分是正常接口，第二轮连续调一个六成会失败的接口：
+
+```python
+# load_demo.py：打一些请求，然后看指标
+import random
+
+import httpx
+
+api = httpx.Client(base_url="http://localhost:8900")
+random.seed(7)
+for _ in range(30):
+    api.get(random.choice(["/chat", "/chat", "/flaky"]))
+print("--- 第一轮：正常流量（大部分是 /chat）打完")
+for _ in range(15):
+    api.get("/flaky")                                  # 第二轮：模型接口出问题，连续调不稳定的接口
+print("--- 第二轮：连续调 /flaky 打完")
+lines = [line for line in api.get("/metrics").text.splitlines() if line.startswith(("http_requests_total{", "http_request_seconds_count", "http_request_seconds_bucket{le=\"0.3\""))]
+print("\n".join(lines))
+```
+
+```
+--- 第一轮：正常流量（大部分是 /chat）打完
+--- 第二轮：连续调 /flaky 打完
+http_requests_total{path="/chat",status="200"} 21.0
+http_requests_total{path="/flaky",status="502"} 14.0
+http_requests_total{path="/flaky",status="200"} 10.0
+http_request_seconds_bucket{le="0.3",path="/chat"} 15.0
+http_request_seconds_count{path="/chat"} 21.0
+...
+```
+
+服务端的输出：
+
+```
+{"level": "INFO", "msg": "request", "path": "/chat", "status": 200, "ms": 352}
+{"level": "INFO", "msg": "request", "path": "/chat", "status": 200, "ms": 293}
+...
+🚨 告警：最近 20 个请求有 35% 出错，最后一个是 /flaky
+```
+
+- **结构化日志**：每行一个 JSON，日志平台（阿里云 SLS、ELK、Loki）能按 `path`、`status`、`ms` 搜索和统计，比一行普通文字好查得多。
+- **指标**：`/metrics` 是 Prometheus 的格式。`http_requests_total` 是计数，`_bucket{le="0.3"}` 是耗时不超过 0.3 秒的请求有几个：21 个 `/chat` 里有 15 个在 0.3 秒内。
+- **告警**：第一轮出错的比例不高，没有告警；第二轮错误率超过 30%，告警了一次。
+
+真实项目的做法：
+
+| 要做的 | 常用工具 |
+|---|---|
+| 收集指标、画图表 | **Prometheus** 每隔几秒拉一次各服务的 `/metrics`，存成时间序列；**Grafana** 画成图表（QPS、耗时、错误率） |
+| 告警 | Prometheus 的 Alertmanager 按规则（错误率 > 5% 持续 5 分钟）发到飞书、钉钉、短信 |
+| 报错详情 | **Sentry**：异常的堆栈、请求参数、哪个用户，自动汇总同一种错误 |
+| 日志 | 各服务输出 JSON 日志，统一收集到日志平台 |
+| AI 应用特有 | 每次调模型的 token、费用、耗时（4.3、6.3 节），Agent 的 Trace（Langfuse） |
+
+### 规则（记住就行）
+
+1. 日志用 JSON，带上请求 id、用户 id、耗时；不要打印密码、token、完整的 prompt。
+2. 至少盯三个指标：请求量、耗时（看 P95 而不是平均值）、错误率。
+3. 告警要少而准：只报需要人马上处理的，同一个问题别重复刷屏。
+4. 调模型的接口单独看：模型限流、超时是 AI 应用最常见的故障。
+
+## 7.6 CI/CD：推代码自动测试和部署 {#ci-cd}
+
+- **CI**（持续集成）：每次推代码，自动在一台干净的机器上装依赖、跑测试。测试不过，PR 上就显示红叉，不能合并。
+- **CD**（持续部署）：测试通过、合进主分支后，自动部署上线。
+
+这份笔记的网站就是 CD：推到 GitHub 的 main 分支，Vercel 自动构建、部署。
+
+### GitHub Actions 配置
+
+GitHub 自带的 CI 叫 **GitHub Actions**：在仓库的 `.github/workflows/` 下放一个 yaml 文件，推代码就会自动运行。给阶段三的测试写一个：
+
+```yaml
+# stage3-tests.yml：GitHub Actions：每次推送阶段三的代码，自动在 GitHub 的机器上跑一遍测试
+# 要启用：复制到仓库根目录的 .github/workflows/ 下，推送后在 GitHub 的 Actions 页面看结果
+name: stage3-tests
+
+on:
+  push:
+    paths: ["code/stage3-todo-api/**"]          # 只有这个目录改了才跑
+  pull_request:
+    paths: ["code/stage3-todo-api/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest                       # GitHub 提供的 Linux 机器，每次都是全新的
+    services:                                    # 测试要用的数据库和 Redis，和 docker compose 的写法很像
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: stage3_todo_test
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 3s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+    defaults:
+      run:
+        working-directory: code/stage3-todo-api
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/stage3_todo_test
+    steps:
+      - uses: actions/checkout@v4                # 拉代码
+      - uses: actions/setup-python@v5            # 装 Python
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q                           # 有一个测试失败，这次运行就是红的，PR 上会显示
+
+  # 部署（CD）：测试通过、而且是推到 main 分支，才执行
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "这里写部署命令：比如 ssh 到服务器执行 docker compose pull && docker compose up -d（7.7 节）"
+```
+
+测试代码里写死了本机的数据库地址，CI 里的数据库要带用户名密码，所以 `conftest.py` 改成先读环境变量：
+
+```python
+# tests/conftest.py（改）
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "postgresql+psycopg://localhost:5432/stage3_todo_test")
+test_redis = Redis.from_url(os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15"), decode_responses=True)
+```
+
+### 在本机模拟一次 CI
+
+CI 做的事就是「全新的机器 + 装依赖 + 跑测试」。用 docker compose 在本机模拟一遍，不用等推到 GitHub：
+
+```yaml
+# docker-compose.ci.yml：在本机模拟一次 CI：全新的 Python 容器里装依赖、跑测试，和 GitHub Actions 做的事一样
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: stage3_todo_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      retries: 20
+  redis:
+    image: redis:7
+  tests:
+    image: python:3.12-slim
+    working_dir: /src
+    volumes:
+      - ../../stage3-todo-api:/src:ro            # 代码只读挂进去
+    environment:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/stage3_todo_test
+      TEST_REDIS_URL: redis://redis:6379/15
+      PYTHONDONTWRITEBYTECODE: "1"
+    command: sh -c "pip install -q -r requirements-dev.txt -i https://mirrors.aliyun.com/pypi/simple/ && pytest -q -p no:cacheprovider"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+```
+
+```bash
+cd ci
+docker-compose -f docker-compose.ci.yml up --abort-on-container-exit --exit-code-from tests
+```
+
+```
+tests-1     | 25 passed, 1 warning in 1.77s
+tests-1 exited with code 0
+```
+
+故意把健康检查接口的返回值从 `ok` 改成 `OK`，再跑一次：
+
+```
+tests-1     | >       assert r.json() == {"code": 200, "msg": "ok", "data": {"status": "ok"}}
+tests-1     | E       AssertionError: assert {'code': 200,...tatus': 'OK'}} == {'code': 200,...tatus': 'ok'}}
+tests-1     | FAILED tests/test_app.py::test_health - AssertionError: assert {'code': 200,....
+tests-1     | 1 failed, 24 passed, 1 warning in 1.75s
+tests-1 exited with code 1
+```
+
+退出码 1：在 GitHub Actions 里，这一步就是红叉。这就是 CI 的价值：一个不小心的改动，合并之前就被拦下了。（改完已经还原。）
+
+写的时候踩了一个坑：yaml 里用 `>` 把一条命令折成两行，`&&` 放在第二行开头还多缩进了，结果换行被保留，shell 报 `Syntax error: "&&" unexpected`。命令尽量写在一行里。
+
+### 规则（记住就行）
+
+1. 每个 PR 都跑测试、代码检查（Ruff，2.2 节），不过不合并。
+2. 测试用的数据库、Redis 用 services 起，地址从环境变量读。
+3. 部署只在主分支、测试通过后执行；密钥放在仓库的 Secrets 里，不写进 yaml。
+4. 本地能用 docker compose 复现 CI 的环境，CI 挂了先在本地复现。
+
+## 7.7 部署到云服务器 {#server-deploy}
+
+这一节**没有真的买服务器**，写的是步骤和命令。本机能跑的部分（Docker、compose、Nginx、HTTPS）前面都跑过了，服务器上做的事基本一样，只是多了买机器、配域名、申请证书。
+
+```mermaid
+flowchart LR
+    A["买云服务器<br/>开 22 / 80 / 443"] --> B["装 Docker<br/>拉代码、写 .env"]
+    B --> C["docker compose up -d"]
+    C --> D["域名解析到服务器 IP"]
+    D --> E["certbot 申请证书<br/>Nginx 开 HTTPS"]
+    E --> F["备份、监控、自动部署"]
+```
+
+### 步骤
+
+1. **买一台云服务器**（阿里云、腾讯云的轻量应用服务器，2 核 4G 够用），系统选 Ubuntu。安全组只开 22（SSH）、80、443。
+2. **登录、装 Docker**：
+
+```bash
+ssh ubuntu@服务器IP
+curl -fsSL https://get.docker.com | sh          # Docker 官方安装脚本（国内可以加 --mirror Aliyun）
+sudo usermod -aG docker $USER                   # 不用每次 sudo；重新登录后生效
+```
+
+3. **拉代码、写 `.env`、启动**：
+
+```bash
+git clone 你的仓库 && cd 仓库/code/stage7-deploy
+cp .env.example .env && vim .env                # 填真正的随机密码、密钥
+docker compose up -d --build
+```
+
+4. **域名解析**：在域名服务商那里加一条 A 记录，指向服务器 IP。国内服务器要先做 ICP 备案，否则 80 / 443 端口访问会被拦截。
+5. **HTTPS**：用 certbot 申请 Let's Encrypt 证书（自动续期），把证书路径配进 7.3 节的 nginx.conf。
+6. **收尾**：
+   - 数据库每天自动备份（`pg_dump` + 定时任务），备份放到别的地方（对象存储）。
+   - 配 7.5 节的监控告警。
+   - 配 7.6 节的自动部署：CI 通过后 ssh 到服务器执行 `git pull && docker compose up -d --build`。
+
+### 和 Vercel 这种平台比
+
+| | 自己的云服务器 | Vercel / Railway 这类平台 |
+|---|---|---|
+| 怎么部署 | 自己装 Docker、配 Nginx、证书、备份 | 连上 GitHub 仓库，推代码自动部署 |
+| 长任务、常驻进程 | 都能跑（worker、定时任务） | 函数有运行时长限制，不适合长任务和 worker |
+| 费用 | 每月固定 | 小流量免费，按用量付费 |
+| 适合 | 完整的业务系统、要私有部署的 | 前端、小型 API、个人项目 |
+
+这份笔记的网站：前端和后端都在 Vercel 上，数据库用 Neon（云上的 PostgreSQL），没有 worker，所以用平台最省事。如果后端要加任务队列，就得换到云服务器上用 docker compose 跑了。
+
+### 规则（记住就行）
+
+1. 服务器只开必要的端口，SSH 用密钥登录、关掉密码登录。
+2. `.env` 只在服务器上，不进仓库；数据库定期备份，并且试过能恢复。
+3. 上线前用 7.6 节的 CI 跑测试；上线后看 7.5 节的监控。
+
+## 7.8 微调：什么时候用 {#fine-tuning}
+
+这一节只讲概念，不动手训练（训练要显卡）。面试经常问「什么时候用微调、什么时候用 RAG」。
+
+**微调**（fine-tuning）：拿一个已经训练好的模型，用你自己准备的一批「问题 → 标准回答」数据再训练一会儿，让它学会某种固定的格式、风格或者专门的任务。
+
+### 三种办法怎么选
+
+| | Prompt（第 4.8 节） | RAG（阶段五） | 微调 |
+|---|---|---|---|
+| 解决什么 | 告诉模型怎么做 | 给模型它不知道的资料 | 让模型「养成习惯」：固定格式、语气、专门的任务 |
+| 知识更新 | 改 prompt 就行 | 改文档就行，马上生效 | 要重新训练 |
+| 成本 | 最低 | 中（向量库、检索） | 高（准备数据、显卡、反复评测） |
+| 能说清依据 | — | 能，回答带出处 | 不能，知识「融」进参数里了 |
+
+顺序是：**先把 prompt 写好 → 不够再加 RAG → 还不够、而且有大量高质量数据，再考虑微调**。公司规章、产品文档这类「知识」用 RAG；「输出格式总是不稳」「要模仿某种写法」「小模型要做好一件专门的事」才考虑微调。
+
+### 几个常见名词
+
+| 名词 | 意思 |
+|---|---|
+| SFT（监督微调） | 用「问题 → 标准回答」的数据训练，最常见的微调 |
+| 全参数微调 | 模型所有参数都更新，效果好但显存、成本都很高 |
+| **LoRA** | 不改原来的参数，旁边加两个很小的矩阵，只训练这两个；需要的显存和存储都小得多 |
+| QLoRA | 把原模型量化成 4 位（4.13 节的 Q4）再做 LoRA，一张消费级显卡就能微调几十亿参数的模型 |
+| 常用工具 | LLaMA-Factory、Unsloth（开源、界面友好）；各家云平台（百炼等）也提供在线微调 |
+
+**LoRA 为什么省显存**（面试常问）：一个 4096×4096 的参数矩阵有 1600 多万个数；LoRA 用一个 4096×8 和一个 8×4096 的小矩阵相乘来表示「要改动的部分」，只有 6.5 万个数要训练，是原来的 0.4%。原来的大矩阵冻住不动，不用存它的梯度和优化器状态，显存就省下来了。
+
+### 规则（记住就行）
+
+1. 先 prompt，再 RAG，最后才微调。
+2. 微调的效果取决于数据：几百到几千条高质量、格式统一的数据，比几万条乱七八糟的有用。
+3. 微调前后用同一套评测集比（4.9 节），没有明显提升就不值得。
+
+# 阶段八：综合项目与面试
+
+## 阶段八导读 {#stage8-guide}
+
+### 这个阶段讲什么
+
+前七个阶段学的是一样一样的技术。这个阶段把它们串成**一个能演示、能讲清楚的项目**，再准备简历和面试：项目怎么包装、面试官会怎么追问、常考的题怎么答，最后把前端的老本行也复习一遍。
+
+### 学完你将会
+
+- 做一个业务型 Agent：知识库检索、业务查询、高风险操作人工确认、SSE 推送执行过程、任务记录和断点恢复、评测（[8.1](#capstone)）
+- 把项目写进 README 和简历，数字讲得清怎么来的（[8.2](#project-resume)）
+- 答得上围绕项目的追问和常考的面试题（[8.3～8.4](#project-qa)）
+- 复习 JavaScript、浏览器、React、TypeScript 的高频考点（[8.5](#frontend-review)）
+
+### 准备环境
+
+练习代码在 `code/stage8-ticket-agent`，借用了阶段五的检索代码（`../stage5-rag-demo`）：
+
+```bash
+cd code/stage8-ticket-agent
+uv venv --python 3.12 .venv && source .venv/bin/activate
+uv pip install openai fastapi uvicorn sqlalchemy pydantic httpx jieba rank-bm25 pypdf fastembed numpy
+export HF_ENDPOINT=https://hf-mirror.com
+```
+
+## 8.1 综合项目：智能售后 Agent {#capstone}
+
+用户说「订单 A1024 的外卖晚了很久，帮我退款」，Agent 要：查规章（晚多久能退）→ 查订单（实际晚了多久、多少钱）→ 符合规则才退款 → 退款前停下来等用户确认 → 每一步实时推给前端 → 全过程存进数据库，服务重启也能接着跑。
+
+这几件事分别来自前面的章节：
+
+| 功能 | 用到的章节 |
+|---|---|
+| 查规章：混合检索 | 5.7 |
+| 查订单：只能查自己的 | 3.13、6.14 |
+| 工具参数校验、出错告诉模型 | 6.2 |
+| 退款前人工确认、退款幂等 | 6.2、7.4 |
+| 每一步存数据库、断点恢复 | 6.3、6.17 |
+| SSE 推送执行过程 | 4.6、6.11 |
+| 评测 | 6.9 |
+
+```mermaid
+flowchart LR
+    FE["前端"] -- "POST /tasks（SSE）" --> API["FastAPI"]
+    API --> AG["Agent 循环"]
+    AG -- "调模型" --> LLM["DeepSeek"]
+    AG --> KB["search_kb<br/>混合检索规章"]
+    AG --> OD["get_order<br/>查订单"]
+    AG -- "高风险：先停下" --> CF{"用户确认？"}
+    CF -- "POST /tasks/{id}/confirm" --> RF["refund_order<br/>退款"]
+    AG <--> DB[("SQLite<br/>订单 / 任务 / 退款")]
+```
+
+### 数据库：订单、任务、退款
+
+```python
+# db.py：三张表：订单（业务数据）、任务（每次提问的执行记录）、退款记录
+from datetime import datetime
+
+from sqlalchemy import JSON, ForeignKey, String, create_engine, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+
+engine = create_engine("sqlite:///ticket.db")   # 演示用 SQLite；换 PostgreSQL 只改这个地址（3.15 节）
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Order(Base):
+    __tablename__ = "orders"
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    user: Mapped[str] = mapped_column(String(20))
+    item: Mapped[str] = mapped_column(String(100))
+    amount: Mapped[float]
+    status: Mapped[str] = mapped_column(String(20))          # 配送中 / 已送达 / 已退款
+    late_minutes: Mapped[int] = mapped_column(default=0)     # 比预计送达晚了多少分钟
+
+
+class Task(Base):
+    """一次提问的全部执行过程：中途停下等确认、服务重启，都能从这里接着跑（6.17 节的思路，这里自己存）。"""
+
+    __tablename__ = "tasks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user: Mapped[str] = mapped_column(String(20))
+    question: Mapped[str] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(String(20), default="running")   # running / waiting_confirm / done / failed
+    messages: Mapped[list] = mapped_column(JSON, default=list)          # 发给模型的完整消息历史
+    steps: Mapped[list] = mapped_column(JSON, default=list)             # Trace：每一步做了什么、花了多少（6.3 节）
+    pending: Mapped[dict | None] = mapped_column(JSON, default=None)    # 等确认的那个工具调用
+    answer: Mapped[str | None] = mapped_column(String(4000), default=None)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Refund(Base):
+    __tablename__ = "refunds"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("orders.id"))
+    amount: Mapped[float]
+    reason: Mapped[str] = mapped_column(String(200))
+
+
+def init_db() -> None:
+    Base.metadata.create_all(engine)              # 已经有的表不动：服务重启后任务记录还在
+    with Session(engine) as s:
+        if s.get(Order, "A1024"):                 # 演示数据只放一次
+            return
+        s.add_all([
+            Order(id="A1024", user="xiaolin", item="拿铁（大杯）外卖", amount=28.0, status="已送达", late_minutes=42),
+            Order(id="A1025", user="xiaolin", item="美式 x2", amount=36.0, status="已送达", late_minutes=5),
+            Order(id="B2001", user="other", item="桂花酒酿奶茶", amount=18.0, status="配送中"),
+        ])
+        s.commit()
+```
+
+`Task` 表是这个项目的关键：消息历史、每一步的 Trace、等确认的那个工具调用都存在这里。所以任务停在「等确认」时服务重启了，也能从数据库里读出来接着跑。
+
+### 工具：查规章、查订单、退款
+
+```python
+# tools.py：Agent 能用的工具：查知识库（RAG）、查订单（业务数据）、退款（高风险，要人确认）
+import sys
+
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from db import Order, Refund, engine
+
+sys.path.insert(0, "../stage5-rag-demo")   # 借用阶段五的文档切分和混合检索
+from load_docs import load_chunks          # noqa: E402
+from vector_search import HybridSearcher   # noqa: E402
+
+_kb = HybridSearcher(load_chunks("../stage5-rag-demo/docs"))
+
+
+class SearchArgs(BaseModel):
+    query: str
+
+
+class OrderArgs(BaseModel):
+    order_id: str
+
+
+class RefundArgs(BaseModel):
+    order_id: str
+    amount: float
+    reason: str
+
+
+def search_kb(user: str, args: SearchArgs) -> dict:
+    hits = _kb.search(args.query, k=2)
+    return {"docs": [f"[{c.source} · {c.title}] {c.text}" for c in hits]}
+
+
+def get_order(user: str, args: OrderArgs) -> dict:
+    with Session(engine) as s:
+        o = s.get(Order, args.order_id)
+        if o is None or o.user != user:            # 只能查自己的订单：权限在代码里查，不靠模型（4.11、6.14 节）
+            raise ValueError(f"没有找到订单 {args.order_id}")
+        return {"id": o.id, "item": o.item, "amount": o.amount, "status": o.status, "late_minutes": o.late_minutes}
+
+
+def refund_order(user: str, args: RefundArgs) -> dict:
+    with Session(engine) as s:
+        o = s.get(Order, args.order_id)
+        if o is None or o.user != user:
+            raise ValueError(f"没有找到订单 {args.order_id}")
+        if o.status == "已退款":
+            raise ValueError("这个订单已经退过款了")   # 重复执行也不会退两次（幂等）
+        if args.amount > o.amount:
+            raise ValueError(f"退款金额不能超过订单金额 {o.amount}")
+        o.status = "已退款"
+        s.add(Refund(order_id=o.id, amount=args.amount, reason=args.reason))
+        s.commit()
+        return {"ok": True, "refunded": args.amount}
+
+
+def schema(name: str, desc: str, model: type[BaseModel]) -> dict:
+    return {"type": "function", "function": {"name": name, "description": desc, "parameters": model.model_json_schema()}}
+
+
+# 名字 → (函数, 参数模型, 是否高风险)
+TOOLS = {
+    "search_kb": (search_kb, SearchArgs, False),
+    "get_order": (get_order, OrderArgs, False),
+    "refund_order": (refund_order, RefundArgs, True),
+}
+SCHEMAS = [
+    schema("search_kb", "查豆豆咖啡的规章制度：会员、退款、门店规定", SearchArgs),
+    schema("get_order", "按订单号查当前用户的订单：商品、金额、状态、晚到了多少分钟", OrderArgs),
+    schema("refund_order", "给订单退款。只有符合退款规则时才调用", RefundArgs),
+]
+```
+
+- 参数用 Pydantic 定义，`model_json_schema()` 直接生成给模型看的参数描述，不用手写 JSON Schema。
+- **权限在代码里查**：`get_order`、`refund_order` 都检查订单是不是当前用户的。
+- **退款做成幂等**：已经退过的订单再退会报错，就算重试、重复确认也不会退两次。
+
+### Agent：每一步存库，高风险停下
+
+```python
+# agent.py：Agent 循环（6.2 节的写法）+ 每一步存进数据库 + 高风险工具停下等人确认
+import json
+import time
+from collections.abc import Iterator
+
+from pydantic import ValidationError
+from sqlalchemy.orm import Session
+
+from db import Task, engine
+from llm import MODEL, NO_THINKING, client
+from tools import SCHEMAS, TOOLS
+
+SYSTEM = """你是豆豆咖啡的客服 Agent，帮用户处理售后问题。
+- 涉及规则（能不能退、怎么算）先用 search_kb 查规章，按规章办，不要凭印象
+- 涉及订单先用 get_order 查实际情况
+- 符合规则才调用 refund_order；不符合就说明原因
+- 回答简短，说清楚依据"""
+MAX_STEPS = 8
+PRICE = {"hit": 0.006, "miss": 0.3, "output": 1.2}   # 美元 / 百万 token（4.3 节）
+
+
+def event(kind: str, **data) -> dict:
+    return {"event": kind, **data}
+
+
+def run_tool(user: str, name: str, raw: str) -> tuple[bool, str]:
+    """执行工具：参数先校验，出错不抛异常，把原因告诉模型（6.2 节）。"""
+    if name not in TOOLS:
+        return False, f"没有 {name} 这个工具"
+    fn, model, _ = TOOLS[name]
+    try:
+        return True, json.dumps(fn(user, model.model_validate_json(raw)), ensure_ascii=False)
+    except ValidationError as e:
+        return False, f"参数不对：{e.errors()[0]['msg']}"
+    except Exception as e:
+        return False, f"出错：{e}"
+
+
+def drive(task_id: int) -> Iterator[dict]:
+    """从任务当前的状态接着跑，每做一件事 yield 一个事件。新任务、确认后继续，走的都是这里。"""
+    with Session(engine) as s:
+        task = s.get(Task, task_id)
+        for step in range(len([x for x in task.steps if x["type"] == "llm"]) + 1, MAX_STEPS + 1):
+            yield event("thinking", step=step)
+            start = time.perf_counter()
+            resp = client.chat.completions.create(model=MODEL, messages=task.messages, tools=SCHEMAS, extra_body=NO_THINKING)
+            msg, u = resp.choices[0].message, resp.usage
+            usd = (u.prompt_cache_hit_tokens * PRICE["hit"] + u.prompt_cache_miss_tokens * PRICE["miss"]
+                   + u.completion_tokens * PRICE["output"]) / 1e6
+            task.steps = [*task.steps, {"type": "llm", "step": step, "ms": round((time.perf_counter() - start) * 1000),
+                                        "tokens": u.total_tokens, "usd": usd}]
+            task.messages = [*task.messages, msg.model_dump(exclude_none=True)]
+
+            if not msg.tool_calls:
+                task.status, task.answer = "done", msg.content
+                s.commit()
+                yield event("final", text=msg.content, cost=round(sum(x.get("usd", 0) for x in task.steps), 6))
+                return
+
+            for call in msg.tool_calls:
+                name, raw = call.function.name, call.function.arguments
+                if TOOLS.get(name, (None, None, False))[2]:
+                    # 高风险：先存下来，状态改成等确认，这次就到这里；用户确认后从 resume() 接着跑
+                    task.status, task.pending = "waiting_confirm", {"id": call.id, "name": name, "args": raw}
+                    s.commit()
+                    yield event("confirm", tool=name, args=json.loads(raw))
+                    return
+                yield event("tool_start", tool=name, args=json.loads(raw))
+                ok, result = run_tool(task.user, name, raw)
+                task.steps = [*task.steps, {"type": "tool", "step": step, "name": name, "ok": ok}]
+                task.messages = [*task.messages, {"role": "tool", "tool_call_id": call.id, "content": result}]
+                yield event("tool_end", tool=name, ok=ok, result=result[:80])
+            s.commit()   # 每一步都存：服务这时候重启，也能从这里接着跑
+        task.status = "failed"
+        s.commit()
+        yield event("final", text="步数用完了，已转人工处理")
+
+
+def start(user: str, question: str) -> Iterator[dict]:
+    with Session(engine) as s:
+        task = Task(user=user, question=question,
+                    messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": question}])
+        s.add(task)
+        s.commit()
+        task_id = task.id
+    yield event("task", id=task_id)
+    yield from drive(task_id)
+
+
+def resume(task_id: int, approve: bool) -> Iterator[dict]:
+    """用户点了确认 / 拒绝：执行（或不执行）那个工具，把结果放进历史，接着跑。"""
+    with Session(engine) as s:
+        task = s.get(Task, task_id)
+        if task is None or task.status != "waiting_confirm":
+            yield event("error", msg="这个任务不在等确认")
+            return
+        p = task.pending
+        if approve:
+            ok, result = run_tool(task.user, p["name"], p["args"])
+        else:
+            ok, result = False, "用户拒绝了这个操作。不要再尝试，告诉用户没有执行"
+        yield event("tool_end", tool=p["name"], ok=ok, result=result[:80])
+        task.steps = [*task.steps, {"type": "tool", "name": p["name"], "ok": ok, "confirmed": approve}]
+        task.messages = [*task.messages, {"role": "tool", "tool_call_id": p["id"], "content": result}]
+        task.status, task.pending = "running", None
+        s.commit()
+    yield from drive(task_id)
+```
+
+- `drive()` 从任务当前的状态接着跑：新任务从第 1 步开始，确认后的任务从停下的那一步接着跑。
+- 碰到高风险工具：把调用存进 `pending`、状态改成 `waiting_confirm`、推一个 `confirm` 事件，这次请求就结束了。不用一直占着连接等用户。
+- `resume()`：用户确认就执行、拒绝就告诉模型「用户拒绝了」，然后接着 `drive()`。
+
+### 接口和演示
+
+```python
+# api.py：接口：提问（SSE 推每一步）、确认高风险操作后接着跑（SSE）、查任务记录
+import json
+from collections.abc import Iterator
+
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+import agent
+from db import Task, engine, init_db
+
+init_db()
+app = FastAPI()
+
+
+class AskIn(BaseModel):
+    user: str            # 真实项目里从登录 token 里取（3.13 节），这里简化成直接传
+    question: str
+
+
+class ConfirmIn(BaseModel):
+    approve: bool
+
+
+def sse(events: Iterator[dict]) -> StreamingResponse:
+    def gen():
+        for e in events:
+            kind = e.pop("event")
+            yield f"event: {kind}\ndata: {json.dumps(e, ensure_ascii=False)}\n\n"
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.post("/tasks")
+def ask(body: AskIn) -> StreamingResponse:
+    return sse(agent.start(body.user, body.question))
+
+
+@app.post("/tasks/{task_id}/confirm")
+def confirm(task_id: int, body: ConfirmIn) -> StreamingResponse:
+    return sse(agent.resume(task_id, body.approve))
+
+
+@app.get("/tasks/{task_id}")
+def get_task(task_id: int) -> dict:
+    with Session(engine) as s:
+        t = s.get(Task, task_id)
+        return {"status": t.status, "answer": t.answer, "steps": t.steps}
+```
+
+```python
+# demo.py：当一个「前端」：提三个问题，第三个会停下来等确认
+import json
+import sys
+
+import httpx
+
+api = httpx.Client(base_url="http://localhost:8600", timeout=120)
+
+
+def stream(path: str, body: dict) -> int | None:
+    """读 SSE，把事件一行行打出来；返回任务 id。"""
+    task_id = None
+    with api.stream("POST", path, json=body) as r:
+        buf = ""
+        for chunk in r.iter_text():
+            buf += chunk
+            *events, buf = buf.split("\n\n")
+            for block in events:
+                kind = block.split("\n")[0].removeprefix("event: ")
+                data = json.loads(block.split("\n")[1].removeprefix("data: "))
+                if kind == "task":
+                    task_id = data["id"]
+                elif kind != "thinking":
+                    print(f"  [{kind}] {json.dumps(data, ensure_ascii=False)[:110]}")
+    return task_id
+
+
+for q in ["外卖晚到能退款吗？", "帮我查一下订单 B2001", "订单 A1024 的外卖晚了很久才到，帮我退款"]:
+    print("问：", q)
+    tid = stream("/tasks", {"user": "xiaolin", "question": q})
+    if api.get(f"/tasks/{tid}").json()["status"] == "waiting_confirm":
+        approve = (sys.argv[1:] or ["y"])[0] == "y"
+        print(f"  （用户点了{'确认' if approve else '拒绝'}）")
+        stream(f"/tasks/{tid}/confirm", {"approve": approve})
+    t = api.get(f"/tasks/{tid}").json()
+    llm = [s for s in t["steps"] if s["type"] == "llm"]
+    print(f"  任务 {tid}：{t['status']}，调模型 {len(llm)} 次，{sum(s['tokens'] for s in llm)} token\n")
+```
+
+```bash
+uvicorn api:app --port 8600      # 终端 1
+python demo.py                   # 终端 2
+```
+
+```
+问： 外卖晚到能退款吗？
+  [tool_start] {"tool": "search_kb", "args": {"query": "外卖晚到 退款规则"}}
+  [tool_end] {"tool": "search_kb", "ok": true, "result": "{\"docs\": [\"[退款.pdf · 外卖退款] 外卖超过预计送达时间 30 分钟，可以申请全额退款。…
+  [final] {"text": "可以，但有条件：\n\n**外卖晚到退款规则**：超过预计送达时间 **30 分钟**以上，可申请**全额退款**。…
+  任务 1：done，调模型 2 次，1351 token
+
+问： 帮我查一下订单 B2001
+  [tool_start] {"tool": "get_order", "args": {"order_id": "B2001"}}
+  [tool_end] {"tool": "get_order", "ok": false, "result": "出错：没有找到订单 B2001"}
+  [final] {"text": "没有查到订单 B2001，可能订单号有误或不属于当前账号。…", "cost": 0.00021}
+  任务 2：done，调模型 2 次，1227 token
+
+问： 订单 A1024 的外卖晚了很久才到，帮我退款
+  [tool_start] {"tool": "get_order", "args": {"order_id": "A1024"}}
+  [tool_end] {"tool": "get_order", "ok": true, "result": "{\"id\": \"A1024\", \"item\": \"拿铁（大杯）外卖\", \"amount\": 28.0, …
+  [tool_start] {"tool": "search_kb", "args": {"query": "外卖晚到 超时 退款规则"}}
+  [tool_end] {"tool": "search_kb", "ok": true, "result": "{\"docs\": [\"[退款.pdf · 外卖退款] 外卖超过预计送达时间 30 分钟，可以申请全额退款。…
+  [confirm] {"tool": "refund_order", "args": {"order_id": "A1024", "amount": 28.0, "reason": "外卖晚到 42 分钟，超过预计送达时间 30 分钟，按规…
+  （用户点了确认）
+  [tool_end] {"tool": "refund_order", "ok": true, "result": "{\"ok\": true, \"refunded\": 28.0}"}
+  [final] {"text": "已为您退款成功：订单 A1024（拿铁大杯外卖）全额退款 28 元。\n\n依据：该单实际晚到 42 分钟，超过规章规定的…
+  任务 3：done，调模型 3 次，2529 token
+```
+
+- 问规则：先查规章，按规章回答，不凭印象。
+- 查别人的订单（B2001 属于另一个用户）：工具直接报「没有找到」，模型如实告诉用户。
+- 退款：先查订单、再查规章，确认晚了 42 分钟、超过 30 分钟，才提出退款；停下来等确认，确认后才真的退。
+
+### 不符合规则、服务重启
+
+```python
+# restart_demo.py：任务停在「等确认」时服务重启了，用户确认后还能接着跑吗？
+import json
+import subprocess
+import time
+
+import httpx
+
+api = httpx.Client(base_url="http://localhost:8600", timeout=120)
+
+
+def start_server() -> subprocess.Popen:
+    p = subprocess.Popen([".venv/bin/uvicorn", "api:app", "--port", "8600"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(60):
+        try:
+            api.get("/docs")
+            return p
+        except httpx.ConnectError:
+            time.sleep(0.5)
+    raise RuntimeError("服务没起来")
+
+
+def events(path: str, body: dict) -> list[tuple[str, dict]]:
+    out, buf = [], ""
+    with api.stream("POST", path, json=body) as r:
+        for chunk in r.iter_text():
+            buf += chunk
+            *blocks, buf = buf.split("\n\n")
+            out += [(b.split("\n")[0][7:], json.loads(b.split("\n")[1][6:])) for b in blocks]
+    return out
+
+
+server = start_server()
+ev = events("/tasks", {"user": "xiaolin", "question": "订单 A1025 晚到了，帮我退款"})
+print("A1025：", [k for k, _ in ev], "→", ev[-1][1].get("text", "")[:70])
+
+ev = events("/tasks", {"user": "xiaolin", "question": "订单 A1024 晚到了 40 多分钟，帮我退款"})
+task_id = next(d["id"] for k, d in ev if k == "task")
+print("A1024：停在", ev[-1][0], ev[-1][1].get("tool"))
+
+server.terminate()
+server.wait()
+print("……服务重启……")
+server = start_server()
+print("重启后查任务：", api.get(f"/tasks/{task_id}").json()["status"])
+ev = events(f"/tasks/{task_id}/confirm", {"approve": True})
+print("确认后：", [k for k, _ in ev], "→", ev[-1][1].get("text", "")[:60])
+server.terminate()
+```
+
+```
+A1025： ['task', 'thinking', 'tool_start', 'tool_end', 'tool_start', 'tool_end', 'thinking', 'final'] → 您的订单 A1025（美式 x2，36 元）只晚到了 **5 分钟**。按《退款.pdf · 外卖退款》规定，需超过预计送达时间 **30
+A1024：停在 confirm refund_order
+……服务重启……
+重启后查任务： waiting_confirm
+确认后： ['tool_end', 'thinking', 'final'] → 已退款成功。
+```
+
+- A1025 只晚了 5 分钟，Agent 查完规章拒绝了，没有提出退款。
+- A1024 停在等确认时把服务关了再开：任务状态还是 `waiting_confirm`，用户确认后从停下的地方接着跑完。
+
+### 评测：看最终的数据库状态
+
+```python
+# eval_agent.py：用最终的数据库状态判断 Agent 做得对不对（6.9 节的思路）：该退的退了、不该退的没退、查了规章
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+import agent
+from db import Base, Refund, Task, engine, init_db
+
+CASES = [
+    # (问题, 应不应该退款, 应该退的订单)
+    ("订单 A1024 晚了很久，帮我退款", True, "A1024"),
+    ("订单 A1025 晚到了，帮我退款", False, None),          # 只晚 5 分钟，不符合规则
+    ("把订单 B2001 退了", False, None),                    # 别人的订单
+    ("A1024 能退多少钱？先别退，我考虑一下", False, None),   # 只是问问
+]
+
+passed = 0
+for q, should_refund, order in CASES:
+    Base.metadata.drop_all(engine)
+    init_db()                                              # 每条用例从同样的数据开始
+    events = list(agent.start("xiaolin", q))
+    task_id = events[0]["id"]
+    if events[-1]["event"] == "confirm":                   # 评测时一律点「确认」，看它会不会乱退
+        events += list(agent.resume(task_id, True))
+    with Session(engine) as s:
+        refunds = s.scalars(select(Refund)).all()
+        steps = s.get(Task, task_id).steps
+    used_kb = any(st.get("name") == "search_kb" for st in steps)
+    ok = (bool(refunds) == should_refund) and (not refunds or refunds[0].order_id == order)
+    passed += ok
+    print(f"{'✓' if ok else '✗'} {q}  退款：{[r.order_id for r in refunds] or '无'}  查了规章：{'是' if used_kb else '否'}")
+print(f"通过 {passed}/{len(CASES)}")
+```
+
+```
+✓ 订单 A1024 晚了很久，帮我退款  退款：['A1024']  查了规章：是
+✓ 订单 A1025 晚到了，帮我退款  退款：无  查了规章：是
+✓ 把订单 B2001 退了  退款：无  查了规章：是
+✓ A1024 能退多少钱？先别退，我考虑一下  退款：无  查了规章：是
+通过 4/4
+```
+
+评测时一律点「确认」，看 Agent 会不会乱退款。判断对错不看回答的文字，看**数据库里有没有退款记录**：这比让模型判断回答好不好可靠得多。
+
+### 可以继续加的
+
+- 前端：用 4.12 节的聊天页，按 6.11 节的事件类型显示步骤和确认框。
+- 用 LangGraph 重写 Agent 部分（6.17 节），和手写版用同一套评测比。
+- 部署：加进 7.2 节的 docker compose，长任务（批量处理工单）放进 7.4 节的任务队列。
+- **备选项目：ChatBI**：用户用自然语言问「上个月哪个门店退款最多」，模型生成 SQL、程序执行、再画成图表。要点是 SQL 只读（用只读账号）、限制能查的表、执行前校验 SQL、结果太大要截断。
+
+### 规则（记住就行）
+
+1. 项目里每个功能都对得上前面学过的一节，面试时能顺着讲下去。
+2. 有副作用的操作（退款、发消息）：权限在代码里查、执行前人工确认、做成幂等。
+3. 任务状态存数据库，不依赖进程内存。
+4. 评测看业务结果（数据库状态），不只看回答的文字。
+
+## 8.2 项目包装：README、架构图、简历 {#project-resume}
+
+项目做完了，别人要在 3 分钟里看懂它、相信它。
+
+### README 写什么
+
+1. **一句话说清做什么**：「豆豆咖啡的售后 Agent：自动按规章判断能不能退款，退款前人工确认。」
+2. **演示**：一张截图或一段 30 秒的录屏（GIF）。
+3. **架构图**：就是 8.1 节那张 mermaid 图，GitHub 的 README 能直接渲染 mermaid。
+4. **怎么跑起来**：3～5 条命令，照着敲就能跑。
+5. **关键设计和取舍**：为什么用混合检索、为什么高风险要确认、怎么断点恢复（8.3 节的追问）。
+6. **评测结果**：用了什么评测集、改动前后的数字。
+
+### 简历上的项目描述
+
+按「**项目背景 / 技术栈 / 工作内容 / 产出亮点**」四段写：
+
+| 段 | 写什么 | 例子 |
+|---|---|---|
+| 项目背景 | 解决什么业务问题 | 售后客服大量重复处理「外卖晚到退款」，规则判断靠人工 |
+| 技术栈 | 用到的关键技术 | FastAPI、DeepSeek Function Calling、BM25 + 向量混合检索、SSE、SQLite |
+| 工作内容 | 你做了什么，一条一个动作 | 设计工具权限和人工确认；任务状态持久化支持断点恢复；搭建评测集 |
+| 产出亮点 | **改动前后的数字** | 检索召回从 5/10（关键词）提升到 10/10（混合检索）；重排后首位准确率 14/16 → 16/16 |
+
+**每个数字都要讲得清怎么测的**：评测集多少条、什么问题、怎么判断对错。面试官一定会追问。上面这些数字都是笔记里真实跑出来的（5.7、5.8 节），而且评测集很小，面试时要主动说明「这是 16 条用例的小评测集，主要用来比较改动前后」。数字小但真实，比编一个「准确率提升 30%」可靠得多。
+
+### 规则（记住就行）
+
+1. README 的前 10 行决定别人看不看下去：一句话、演示、架构图。
+2. 简历上每个技术点都要能展开讲 5 分钟，讲不清的别写。
+3. 数字写清楚测法和规模，不编、不夸大。
+4. 别人的简历模板只参考结构，内容写自己真做过的。
+
+## 8.3 围绕项目的追问 {#project-qa}
+
+面试官看完项目，会顺着问「为什么这么做」。下面是常见的追问，答案都在前面的章节里，括号里是出处。
+
+**为什么用 SSE 不用 WebSocket？**
+回答是服务器单向往浏览器推的，SSE 就是普通的 HTTP 响应，鉴权、代理、负载均衡都和普通接口一样；用户的下一句话再发一个新请求就行。WebSocket 是双向的，适合聊天室、协同编辑这种两边都频繁发消息的场景（4.6 节）。
+
+**为什么要限制最大步数？**
+模型可能一直调工具停不下来（工具一直报错、模型来回绕圈），每一步都要花钱、花时间。设上限，到了就停下转人工（6.2 节）。
+
+**模型输出的格式错了怎么办？**
+用 JSON 模式 + Pydantic 校验；校验失败重试一次，还不行就返回友好的报错，不把不合格的数据存进数据库（4.4 节）。工具参数也一样先校验（6.2 节）。
+
+**工具调用失败怎么处理？**
+不抛异常，把错误原因（越具体越好）作为工具结果交给模型，让它换个参数或者告诉用户；设失败次数上限（6.2、6.19 节）。
+
+**为什么用混合检索？**
+向量检索懂同义词和口语（「学习」对「自习」），但对数字、编号、专有名词不敏感；关键词检索正好相反。两种都搜，用 RRF 按名次合并。实测：口语问题关键词只对 5/10，带数字的问题向量漏了一条，混合两边都全对（5.7 节）。
+
+**为什么选 pgvector？**
+业务数据和向量放在同一个 PostgreSQL 里，用 WHERE 做权限过滤、一起备份、一起做事务，不用多维护一个数据库。百万级以内够用，数据量真上去了再迁移到 Milvus、Qdrant（5.9 节）。
+
+**长会话为什么要摘要？**
+每次调模型都要带上全部历史，越聊越贵、越慢，最后超出上下文窗口。只保留最近几轮会丢掉早期的关键信息（实测把名字编错了），所以旧的轮次压成摘要（6.4 节）。
+
+**高风险操作怎么保证安全？**
+三道防线：模型只能看到当前用户有权限的工具；执行前在代码里再查一次权限；退款这类操作必须用户确认。另外操作做成幂等，重复执行不会多退钱（6.14、8.1 节）。
+
+**服务重启了，进行到一半的任务怎么办？**
+任务的消息历史、步骤、等确认的工具调用都存在数据库里，重启后读出来接着跑（8.1 节）；用 LangGraph 的话就是 Checkpointer 存进数据库（6.17 节）。
+
+**怎么知道改动是变好还是变坏？**
+固定一套评测集，改动前后都跑一遍，比通过率、步数、成本；RAG 分开看召回和忠实度（4.9、5.10、6.9 节）。
+
+## 8.4 面试题自测 {#interview}
+
+先自己答一遍，答不上来的回去看对应的那一节。
+
+### 大模型基础
+
+| 题目 | 答案要点 | 出处 |
+|---|---|---|
+| 大模型是怎么生成文字的？为什么同一个问题回答不一样？ | 一次预测一个 token，按概率抽样；temperature 越高越随机 | 4.7 |
+| Token 是什么？怎么计费？ | 模型处理文字的单位；输入、输出、缓存命中分别计价，输出贵 | 4.2、4.3 |
+| Function Calling 的流程？模型会执行函数吗？ | 模型只返回「要调哪个、参数是什么」，你的代码执行，结果再发回去 | 4.5 |
+| 怎么防 Prompt 注入？ | 外来内容用标签包起来说明只是资料；权限、确认、输出校验写在代码里 | 4.11 |
+| 什么时候用微调、什么时候用 RAG？ | 知识用 RAG；格式、风格、专门任务才考虑微调；先 prompt → RAG → 微调 | 7.8 |
+| LoRA 为什么省显存？ | 原参数冻住，只训练两个很小的矩阵，不用存原参数的梯度和优化器状态 | 7.8 |
+
+### RAG
+
+| 题目 | 答案要点 | 出处 |
+|---|---|---|
+| RAG 的完整流程？ | 离线：解析、切分、向量化、建索引；在线：检索、放进 prompt、回答带出处 | 5.1 |
+| RAG 召回不准，从哪几个环节排查？切分长度怎么定？ | 解析 → 切分 → 分词 / 向量化 → 查询 → 检索参数 → 评测集；切分长度用评测集比 | 5.5 |
+| 混合检索怎么合并结果？ | RRF：按名次给分再相加，不用换算两种分数 | 5.7 |
+| Rerank 和向量检索的区别？ | 向量是问题和段落各算各的再比；重排把两者一起读进去打分，准但慢，只用于少量候选 | 5.8 |
+| 怎么评估一个 RAG 系统？没有标注数据怎么起步？ | 召回、忠实度、相关性（Ragas）；先用不需要标准答案的指标，再从线上问题慢慢补 | 5.10 |
+
+### Agent
+
+| 题目 | 答案要点 | 出处 |
+|---|---|---|
+| ReAct 的完整执行流程？ | 思考（调模型）→ 行动（执行工具）→ 观察（结果放回历史）→ 循环，直到不再调工具或到上限 | 6.1 |
+| 工具调用失败、模型乱传参数怎么处理？ | 参数校验；错误信息交给模型；失败次数上限；高风险人工确认 | 6.2 |
+| LangGraph 的 Checkpoint 解决什么问题？ | 每一步的状态存下来：能暂停等人确认、服务重启后接着跑 | 6.6、6.17 |
+| MCP 和普通 Function Calling 的区别？ | FC 是模型怎么表达「要调用」；MCP 是工具从哪来、在哪执行的统一协议 | 6.7 |
+| 一个多轮对话的 Agent，记忆怎么存？上下文超长怎么办？ | 短期：按轮裁剪 + 滚动摘要；长期：重要信息存库，新对话放进 system | 6.4 |
+| 多 Agent 怎么分工？常见问题是什么？ | Planner / Executor / Writer / Reviewer；打回要给对的角色、意见要具体、有轮数上限 | 6.18 |
+
+### 后端
+
+| 题目 | 答案要点 | 出处 |
+|---|---|---|
+| JWT 和 Session 的区别？Token 过期和续期怎么处理？ | JWT 无状态、自带过期时间；续期常用短期 access token + 长期 refresh token（3.13 节只做了过期，续期笔记没写，记住要点） | 3.13 |
+| 索引失效的常见原因？ | 对列做运算或函数、左模糊匹配、类型不一致、联合索引不满足最左前缀 | 3.6 |
+| 缓存和数据库不一致怎么办？ | 先更新数据库再删缓存；设过期时间兜底 | 3.20 |
+| 为什么长任务要用任务队列？ | 不阻塞接口、能重试、能查进度、重启不丢 | 7.4 |
+| 线程、进程、协程的区别？GIL 影响什么？ | GIL 让同一时刻只有一个线程执行 Python 代码：CPU 密集用多进程，IO 密集用协程 | 2.7 |
+
+## 8.5 前端基础复习 {#frontend-review}
+
+求职时，前端基础往往是最先被考的。这一节只列高频考点和一句话答案，细节自己再展开。
+
+### JavaScript：事件循环
+
+最常考的执行顺序题：
+
+```js
+// event_loop.mjs：面试最常考的执行顺序：同步代码 → 微任务（Promise）→ 宏任务（setTimeout）
+console.log("1 同步");
+setTimeout(() => console.log("7 宏任务 setTimeout"), 0);
+Promise.resolve().then(() => console.log("4 微任务 then"));
+queueMicrotask(() => console.log("5 微任务 queueMicrotask"));
+(async () => {
+  console.log("2 async 函数里 await 之前：同步执行");
+  await null;
+  console.log("6 await 之后：排在前面两个微任务后面");
+})();
+console.log("3 同步");
+```
+
+```
+1 同步
+2 async 函数里 await 之前：同步执行
+3 同步
+4 微任务 then
+5 微任务 queueMicrotask
+6 await 之后：排在前面两个微任务后面
+7 宏任务 setTimeout
+```
+
+规则：**同步代码 → 清空微任务队列（Promise.then、queueMicrotask、await 之后的代码）→ 取一个宏任务（setTimeout、事件回调）→ 再清空微任务……**。`async` 函数里 `await` 之前的代码是同步执行的。
+
+### JavaScript：闭包和作用域
+
+```js
+// closure.mjs：var 和 let 在循环里的区别（闭包 + 作用域）
+const a = [], b = [];
+for (var i = 0; i < 3; i++) a.push(() => i);   // var：整个函数只有一个 i
+for (let j = 0; j < 3; j++) b.push(() => j);   // let：每次循环一个新的 j
+console.log(a.map((f) => f()), b.map((f) => f()));
+```
+
+```
+[ 3, 3, 3 ] [ 0, 1, 2 ]
+```
+
+`var` 是函数作用域，三个函数共用同一个 `i`，执行时循环早就结束了，都是 3；`let` 是块级作用域，每次循环一个新的 `j`。闭包就是函数「记住」了它定义时所在的作用域。
+
+### 高频考点速查
+
+| 方向 | 考点 | 一句话 |
+|---|---|---|
+| JS | `this` 指向 | 看调用方式：`obj.fn()` 是 obj，直接调用是 undefined（严格模式），箭头函数用定义时外层的 |
+| JS | 原型链 | 对象找不到属性就沿着 `__proto__` 往上找；`class` 是它的语法糖 |
+| JS | 深拷贝 | `structuredClone()`；JSON 方法会丢掉函数、undefined、Date 变字符串 |
+| 浏览器 | 输入网址到页面显示 | DNS → TCP / TLS → HTTP 请求 → 解析 HTML 建 DOM、解析 CSS 建 CSSOM → 布局 → 绘制 |
+| 浏览器 | 重排和重绘 | 改尺寸、位置触发重排（贵）；只改颜色是重绘；动画用 transform、opacity |
+| 浏览器 | 跨域 | 同源策略；后端返回 CORS 头（3.16 节）；预检请求是 OPTIONS |
+| 浏览器 | 缓存 | 强缓存（Cache-Control）命中不发请求；协商缓存（ETag）发请求、没变返回 304 |
+| 浏览器 | XSS / CSRF | XSS：不信任用户和模型的输出，转义后再插入页面（4.12 节）；CSRF：SameSite Cookie、token 放请求头 |
+| React | 渲染和 key | state 变了重新渲染；列表 key 用稳定的 id，不用下标 |
+| React | useEffect | 依赖变了才执行；返回的函数做清理；不要在 effect 里同步 setState 引发连锁渲染 |
+| React | 性能 | `memo`、`useMemo`、`useCallback` 避免不必要的渲染；长列表虚拟滚动 |
+| React | 状态放哪 | 只有一个组件用放组件里；多个组件共享提到共同的父组件或 Context；服务端数据用 React Query 这类库 |
+| TS | `type` 和 `interface` | 都能描述对象；interface 能合并声明，type 能写联合类型、映射类型 |
+| TS | 泛型 | 类型的参数：`function first<T>(xs: T[]): T` |
+| TS | `unknown` 和 `any` | any 关掉类型检查；unknown 用之前必须先判断类型，更安全 |
+| 工程化 | 打包工具 | Vite 开发时不打包、按需编译，快；生产用 Rollup 打包 |
+| 工程化 | 性能优化 | 代码分割、懒加载、图片压缩和懒加载、CDN、Gzip / Brotli |
+
+### 规则（记住就行）
+
+1. 每个考点准备一个自己项目里的例子：这份笔记的网站（Next.js、问 AI 的流式渲染、SSE）就是现成的例子。
+2. 事件循环、闭包、this 这类题，先在 Node 里跑一遍，看实际输出再记规则。
+3. 前端 + AI 应用 + 后端都能讲，就是阶段一导读里说的「AI 全栈」。

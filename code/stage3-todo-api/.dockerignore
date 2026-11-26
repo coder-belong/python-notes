@@ -1,0 +1,7 @@
+# .dockerignore：构建镜像时不发给 Docker 的文件（7.1 节）
+.venv
+.env
+__pycache__
+.pytest_cache
+uploads
+tests

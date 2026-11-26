@@ -27,6 +27,7 @@ import MoreMenu from "./MoreMenu";
 import SectionLayout from "./SectionToc";
 import SectionRefCard from "./SectionRefCard";
 import SideResizer from "./SideResizer";
+import { renderMermaid } from "./MermaidDiagrams";
 import { mountStreamDemos } from "./StreamDemo";
 import ThemeToggle from "./ThemeToggle";
 import StudyPanel, { StudyEntry } from "./StudyPanel";
@@ -340,6 +341,9 @@ export default function NotesApp({ notes }: { notes: Notes }) {
 
   // 正文里的演示动图（<div class="stream-demo"> 占位），换节时重新挂
   useEffect(() => mountStreamDemos(), [route]);
+
+  // 正文里的流程图（```mermaid），换节时重新画
+  useEffect(() => renderMermaid(), [route]);
 
   const togglePart = (part: string) =>
     setOpenParts((s) => {

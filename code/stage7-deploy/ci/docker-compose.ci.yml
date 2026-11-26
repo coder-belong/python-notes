@@ -1,0 +1,28 @@
+# docker-compose.ci.yml：在本机模拟一次 CI：全新的 Python 容器里装依赖、跑测试，和 GitHub Actions 做的事一样
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: stage3_todo_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      retries: 20
+  redis:
+    image: redis:7
+  tests:
+    image: python:3.12-slim
+    working_dir: /src
+    volumes:
+      - ../../stage3-todo-api:/src:ro            # 代码只读挂进去
+    environment:
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/stage3_todo_test
+      TEST_REDIS_URL: redis://redis:6379/15
+      PYTHONDONTWRITEBYTECODE: "1"
+    command: sh -c "pip install -q -r requirements-dev.txt -i https://mirrors.aliyun.com/pypi/simple/ && pytest -q -p no:cacheprovider"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started

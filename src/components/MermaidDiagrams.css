@@ -1,0 +1,31 @@
+/* 笔记里的流程图 */
+.sec-html .mermaid-box {
+  margin: 18px 0 22px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow-x: auto;
+  text-align: center;
+}
+
+.sec-html .mermaid-box svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 还没画出来（或画失败）时显示文字描述 */
+.sec-html pre.mermaid-src {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+/* 笔记里的图片 */
+.sec-html img.note-img {
+  display: block;
+  max-width: min(100%, 360px);
+  margin: 12px auto 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}

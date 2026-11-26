@@ -3,6 +3,7 @@
 # 另外加了 login 帮手和 auth fixture：3.13 之后任务接口都要登录，不带 token 会 401。
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 
 import pytest                                       # 测试框架
@@ -17,10 +18,11 @@ from app.main import app                            # 要测的 app
 
 
 # 测试专用的库，和开发用的 stage3_todo 库分开：测试会把它清空
-TEST_DATABASE_URL = "postgresql+psycopg://localhost:5432/stage3_todo_test"
+# 7.6：CI 里的数据库地址不一样（带用户名密码），所以先看环境变量，没有再用本机的
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "postgresql+psycopg://localhost:5432/stage3_todo_test")
 engine = create_engine(TEST_DATABASE_URL)                                       # 连测试库
 TestSession = sessionmaker(engine, autoflush=False, expire_on_commit=False)    # 测试库的会话工厂，参数和 db.py 里一样
-test_redis = Redis.from_url("redis://localhost:6379/15", decode_responses=True)   # 3.20：测试用 15 号库，和开发用的 0 号分开
+test_redis = Redis.from_url(os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15"), decode_responses=True)   # 3.20：测试用 15 号库，和开发用的 0 号分开
 
 
 @pytest.fixture                                     # 标记成 fixture：测试函数参数里写 client，pytest 就先跑它
