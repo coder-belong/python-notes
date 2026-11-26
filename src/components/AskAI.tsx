@@ -23,15 +23,18 @@ hljs.registerLanguage("sql", sql);
 const MAX_QUOTE = 3000;
 /** 这一节的正文最多发这么多字（后端也有同样的上限）。 */
 const MAX_SECTION = 60_000;
-/** 能不能用问 AI：登录并且累计学习满 30 分钟（管理员不限），后端 /auth/me 算好返回。 */
+/** 能不能用问 AI：登录并且累计学习满 10 分钟（管理员不限），后端 /auth/me 算好返回。 */
 type Access = { unlocked: boolean; seconds: number; need: number };
 /** 已经解锁的 token 记下来：换节时组件会重建，不用每节都问一次后端。没解锁的不记，下次点入口时重新查。 */
+/** 解锁要学多久：以后端 /auth/me 返回的为准，这里只用在游客提示和兜底。 */
+const UNLOCK_MINUTES = 10;
+
 const unlockedTokens = new Set<string>();
 const UNLOCKED: Access = { unlocked: true, seconds: 0, need: 0 };
 
 function fetchAccess(token: string): Promise<Access> {
   return apiGet<{ ai_unlocked?: boolean; study_seconds?: number; ai_unlock_seconds?: number }>("/auth/me", token).then((me) => {
-    const a = { unlocked: !!me.ai_unlocked, seconds: me.study_seconds ?? 0, need: me.ai_unlock_seconds ?? 1800 };
+    const a = { unlocked: !!me.ai_unlocked, seconds: me.study_seconds ?? 0, need: me.ai_unlock_seconds ?? UNLOCK_MINUTES * 60 };
     if (a.unlocked) unlockedTokens.add(token);
     return a;
   });
@@ -133,7 +136,7 @@ function chatTime(iso: string): string {
 
 /**
  * 问 AI：在正文里选中一段文字，旁边出一个「问 AI」按钮，点了在右侧打开对话面板，回答流式显示，可以追问。
- * 登录并且累计学习满 30 分钟才能用（后端 /ai/chat 也会检查）；没满时右下角入口照样显示，点了提示还差多久。
+ * 登录并且累计学习满 10 分钟才能用（后端 /ai/chat 也会检查）；没满时右下角入口照样显示，点了提示还差多久。
  */
 export default function AskAI({ token, section }: { token: string; section: Section }) {
   const [access, setAccess] = useState<Access | null>(() => (unlockedTokens.has(token) ? UNLOCKED : null));
@@ -534,7 +537,7 @@ export default function AskAI({ token, section }: { token: string; section: Sect
             <small>学习时长每分钟同步一次，刚学的可能要等一会儿才算上。</small>
           </div>
         )}
-        <button type="button" className="ask-ai-fab locked" onClick={tryUnlock} title="问 AI：累计学习满 30 分钟解锁" aria-label="问 AI（未解锁）">
+        <button type="button" className="ask-ai-fab locked" onClick={tryUnlock} title={`问 AI：累计学习满 ${access.need / 60} 分钟解锁`} aria-label="问 AI（未解锁）">
           <Sparkle />
         </button>
       </>
@@ -785,6 +788,44 @@ export default function AskAI({ token, section }: { token: string; section: Sect
           </div>
         </section>
       )}
+    </>
+  );
+}
+
+/**
+ * 游客（没登录）看到的问 AI 入口：和没解锁时一样是淡色按钮，点了说明「登录后学满 N 分钟免费用」，
+ * 带一个登录 / 注册按钮，让游客知道有这个功能、怎么解锁。
+ */
+export function GuestAskAI({ onLogin }: { onLogin: () => void }) {
+  const [tip, setTip] = useState(false);
+  return (
+    <>
+      {tip && (
+        <div className="ask-ai-lock" role="status">
+          <b>问 AI：针对这一节随时提问</b>
+          <span>登录后累计学习满 {UNLOCK_MINUTES} 分钟，免费使用</span>
+          <small>选中正文里的一段再问，回答会针对选中的内容。</small>
+          <button
+            type="button"
+            className="ask-ai-lock-login"
+            onClick={() => {
+              setTip(false);
+              onLogin();
+            }}
+          >
+            登录 / 注册
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        className="ask-ai-fab locked"
+        onClick={() => setTip((v) => !v)}
+        title={`问 AI：登录后累计学习满 ${UNLOCK_MINUTES} 分钟免费使用`}
+        aria-label="问 AI（登录后解锁）"
+      >
+        <Sparkle />
+      </button>
     </>
   );
 }

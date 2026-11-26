@@ -18,7 +18,7 @@ import { useStudy } from "@/lib/use-study";
 
 import AccountPanel, { AccountEntry } from "./AccountPanel";
 import AdminPanel from "./AdminPanel";
-import AskAI from "./AskAI";
+import AskAI, { GuestAskAI } from "./AskAI";
 import ChangelogPanel from "./ChangelogPanel";
 import FocusBar from "./FocusBar";
 import Home from "./Home";
@@ -626,6 +626,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
       )}
       {section && <SectionRefCard sections={sections} done={study.data.done} />}
       {study.account && section && !study.guestBlocked && <AskAI key={section.id} token={study.account.token} section={section} />}
+      {study.loaded && !study.account && section && !study.guestBlocked && <GuestAskAI onLogin={() => setAccountOpen(true)} />}
       {adminOpen && study.account && (
         <AdminPanel token={study.account.token} me={study.account.username} onClose={() => setAdminOpen(false)} />
       )}

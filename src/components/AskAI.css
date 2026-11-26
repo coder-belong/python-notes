@@ -1,4 +1,4 @@
-/* 问 AI：右下角入口 + 右侧对话面板（登录并学满 30 分钟才能用） */
+/* 问 AI：右下角入口 + 右侧对话面板（登录并学满 10 分钟才能用；游客也显示入口，点了提示登录） */
 
 .ask-ai,
 .ask-ai-fab {
@@ -647,6 +647,25 @@
 .ask-ai-lock small {
   color: var(--muted);
   font-size: 12px;
+}
+
+/* 游客提示里的「登录 / 注册」 */
+.ask-ai-lock-login {
+  justify-self: start;
+  margin-top: 6px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.ask-ai-lock-login:hover {
+  filter: brightness(1.08);
 }
 
 /* 头部的「新对话」：文字按钮，一眼看出是清空重来 */
