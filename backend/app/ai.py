@@ -1,14 +1,16 @@
-"""问 AI：在笔记里选中一段文字，结合这一节的内容提问，回答用 SSE 一段一段推给前端。
+"""问 AI：什么都能问（闲聊、笔记外的问题都行）；在笔记里选中一段文字提问时，结合这一节的内容回答，回答用 SSE 一段一段推给前端。
 登录、并且累计学习满 10 分钟才能用（管理员不限），防止注册个账号就拿来当免费的 AI 用。
 
 和笔记第 4.6 节的 chat_api.py 是同一个写法：
-- system 里放「助教规则 + 这一节的正文」，每次请求都一样，能命中 DeepSeek 的缓存（第 4.3 节）
+- system 里放「助教规则 + 这一节的正文」，每次请求都一样，能命中 DeepSeek 的缓存（第 4.3 节）；
+  当前时间每次都不一样，放在 system 最后，前面那一大段照样能命中缓存
 - 多轮对话的历史由前端保存，每次整段发过来（第 4.2 节）
 - 事件：delta 一段文字、done 结束（带 token 用量）、error 出错
 """
 
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request
@@ -56,18 +58,31 @@ client = (
     else None
 )
 
-SYSTEM = """你是这份 Python / AI 应用开发学习笔记的助教，学习者正在读下面这一节。
+SYSTEM = """你是一个什么都能聊的 AI 助手，嵌在一份 Python / AI 应用开发学习笔记里，学习者正在读下面这一节。
 回答规则：
-- 用中文，先直接回答问题，再按需要补充；简短清楚，不要客套
-- 学习者会引用笔记里的一段文字或代码来提问，优先结合这一节的上下文解释
-- 需要举例时给能直接运行的 Python 代码，用 Markdown 代码块，输出写在注释里
-- 不要用生活中的比喻来解释
-- 笔记里没讲、或者你不确定的，直接说明
+- 什么问题都可以回答：闲聊、生活、其他技术、和笔记无关的都行，像普通聊天助手一样正常回答，不要拒答
+- 只有问题本身和这一节有关时（比如引用了笔记里的一段文字或代码），才结合这一节解释；无关的问题完全不要提这一节，也不要加「顺便说一句」去关联笔记
+- 用中文，先直接回答，再按需要补充；简短清楚，不要客套
+- 需要举例时给能直接运行的代码，用 Markdown 代码块，输出写在注释里
+- 解释技术概念时不要用生活中的比喻
+- 确实不知道的直接说明，不要编
+- 当前日期和时间在最后给出，问到时直接用它
 
 当前这一节：《{title}》
 ---
 {text}
----"""
+---
+
+当前时间：{now}（北京时间）"""
+
+WEEKDAYS = "一二三四五六日"
+BEIJING = timezone(timedelta(hours=8))  # 北京时间没有夏令时，固定 +8；不用 ZoneInfo，免得服务器上缺时区数据
+
+
+def now_text() -> str:
+    """给模型看的当前时间，例如「2026-11-27 星期五 14:05」。模型自己不知道今天几号，不告诉它就只能瞎猜或拒答。"""
+    now = datetime.now(BEIJING)
+    return f"{now:%Y-%m-%d} 星期{WEEKDAYS[now.weekday()]} {now:%H:%M}"
 
 
 class ChatMessage(BaseModel):
@@ -128,7 +143,7 @@ async def ai_chat(body: AiChatIn, request: Request, user: AiUser) -> StreamingRe
     if body.messages[-1].role != "user":
         raise fail(422, "最后一条消息必须是问题")
 
-    system = SYSTEM.format(title=body.section_title, text=body.section_text)
+    system = SYSTEM.format(title=body.section_title, text=body.section_text, now=now_text())
     history = [m.model_dump() for m in body.messages]  # 原样存进历史的（不带选中内容）
     to_model = [dict(m) for m in history]
     if body.quote:
