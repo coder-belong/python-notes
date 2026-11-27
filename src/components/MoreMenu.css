@@ -17,3 +17,36 @@ a.menu-item {
   font-style: normal;
   color: var(--muted);
 }
+
+/* 语言：中 / EN / 日 三个分段按钮，和字号那一行一样宽 */
+.lang-seg {
+  display: flex;
+  width: 156px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.lang-seg button {
+  flex: 1;
+  padding: 3px 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lang-seg button:hover {
+  color: var(--text);
+}
+
+.lang-seg button.on {
+  background: var(--panel);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}

@@ -10,6 +10,7 @@ import { Marked } from "marked";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiBase, apiGet } from "@/lib/account";
+import type { Lang } from "@/lib/lang";
 
 import "./AskAI.css";
 
@@ -138,7 +139,7 @@ function chatTime(iso: string): string {
  * 问 AI：在正文里选中一段文字，旁边出一个「问 AI」按钮，点了在右侧打开对话面板，回答流式显示，可以追问。
  * 登录并且累计学习满 10 分钟才能用（后端 /ai/chat 也会检查）；没满时右下角入口照样显示，点了提示还差多久。
  */
-export default function AskAI({ token, section }: { token: string; section: Section }) {
+export default function AskAI({ token, section, lang = "zh" }: { token: string; section: Section; lang?: Lang }) {
   const [access, setAccess] = useState<Access | null>(() => (unlockedTokens.has(token) ? UNLOCKED : null));
   const [lockTip, setLockTip] = useState(false); // 没解锁时点入口：弹出「还差多久」
   const isAdmin = !!access?.unlocked; // 下面沿用这个名字：能用问 AI
@@ -393,6 +394,7 @@ export default function AskAI({ token, section }: { token: string; section: Sect
             section_id: section.id,
             section_title: section.title,
             section_text: text,
+            lang,
             quote: quote || null,
             messages: payload,
           }),
@@ -438,7 +440,7 @@ export default function AskAI({ token, section }: { token: string; section: Sect
         loadChats(); // 刚问完的这条排到历史最前面
       }
     },
-    [busy, chatId, loadChats, msgs, quote, section.id, section.title, text, token],
+    [busy, chatId, lang, loadChats, msgs, quote, section.id, section.title, text, token],
   );
 
   const newChat = () => {

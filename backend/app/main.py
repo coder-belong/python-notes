@@ -11,7 +11,7 @@ from sqlalchemy import case, func, inspect, select, text
 from sqlalchemy.dialects import postgresql, sqlite
 from sqlalchemy.orm import Session
 
-from . import ai, errors
+from . import ai, errors, translate
 from .db import Base, Db, engine
 from .errors import fail, success
 from .models import Guest, GuestDay, SectionDate, SectionStat, StudyDay, SyncBatch, User
@@ -46,6 +46,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="AI 应用开发笔记 API", lifespan=lifespan)
 errors.install(app)
 app.include_router(ai.router)  # 问 AI：/ai/chat
+app.include_router(translate.router)  # AI 翻译：/ai/translate
 
 # 前端和接口不在同一个域名（单文件 HTML 甚至是 file:// 打开的），浏览器要求接口声明允许跨域。
 # 登录凭证放在 Authorization 请求头里而不是 cookie，所以允许所有来源也不会被别的网站冒用

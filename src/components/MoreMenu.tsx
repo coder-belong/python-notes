@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { LANGS, setLang, useLang } from "@/lib/lang";
 import { applyPrefs, DEFAULT_PREFS, FONT_SIZES, loadPrefs, savePrefs, type Prefs } from "@/lib/prefs";
 
 import "./MoreMenu.css";
@@ -18,12 +19,13 @@ type Props = {
 };
 
 /**
- * 侧栏顶部的「⋯」：不常用的设置和入口都收在这里（首页、正文字号、更新日志、收起侧栏），
+ * 侧栏顶部的「⋯」：不常用的设置和入口都收在这里（首页、语言、正文字号、更新日志、收起侧栏），
  * 以后再加设置项也往这里放，侧栏顶部不再加按钮。浅色 / 深色切换常用，单独放在外面。
  */
 export default function MoreMenu({ hasNew, onOpenChangelog, collapsed, onToggleSidebar, placement }: Props) {
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [open, setOpen] = useState(false);
+  const lang = useLang();
   const boxRef = useRef<HTMLDivElement>(null);
 
   // 读保存的字号（<head> 里的脚本已经套上了，这里只是让按钮显示对）
@@ -67,7 +69,7 @@ export default function MoreMenu({ hasNew, onOpenChangelog, collapsed, onToggleS
         type="button"
         className={`icon-btn ${open ? "active" : ""}`}
         onClick={() => setOpen((v) => !v)}
-        aria-label="更多：首页、字号、更新日志"
+        aria-label="更多：首页、语言、字号、更新日志"
         aria-expanded={open}
         title="更多"
       >
@@ -86,6 +88,25 @@ export default function MoreMenu({ hasNew, onOpenChangelog, collapsed, onToggleS
             <span>首页 · 学习路线</span>
           </a>
           <div className="menu-sep" />
+          <div className="menu-row">
+            <span>语言</span>
+            {/* 中文是原文；英文 / 日文由 AI 翻译，翻过的会缓存，下次秒开 */}
+            <div className="lang-seg" role="radiogroup" aria-label="页面语言">
+              {LANGS.map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={lang === l.id}
+                  className={lang === l.id ? "on" : ""}
+                  onClick={() => setLang(l.id)}
+                  title={l.id === "zh" ? "中文原文" : `用 AI 翻译成 ${l.label}`}
+                >
+                  {l.short}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="menu-row">
             <span>正文字号</span>
             <div className="font-step" aria-label="正文字号">

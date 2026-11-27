@@ -80,7 +80,14 @@ SYSTEM = """你是一个聪明、靠谱的 AI 助手，像一个懂行的朋友�
 {text}
 </当前这一节>
 
-当前时间：{now}（北京时间）"""
+当前时间：{now}（北京时间）{lang_note}"""
+
+# 页面切成英文 / 日文时，提醒模型默认用这门语言回答（放在 system 最后，不影响前面的缓存）
+LANG_NOTES = {
+    "zh": "",
+    "en": "\n\n用户把页面切成了英文：默认用英文（English）回答，用户用别的语言提问时跟着用户。",
+    "ja": "\n\n用户把页面切成了日文：默认用日文（日本語）回答，用户用别的语言提问时跟着用户。",
+}
 
 WEEKDAYS = "一二三四五六日"
 BEIJING = timezone(timedelta(hours=8))  # 北京时间没有夏令时，固定 +8；不用 ZoneInfo，免得服务器上缺时区数据
@@ -102,6 +109,7 @@ class AiChatIn(BaseModel):
     section_id: str = Field(default="", max_length=64)
     section_title: str = Field(max_length=200)
     section_text: str = Field(max_length=60_000)  # 这一节的纯文字，最长的一节也在这个范围内
+    lang: Literal["zh", "en", "ja"] = "zh"  # 用户在页面上选的语言：英文 / 日文时默认用这门语言回答
     quote: str | None = Field(default=None, max_length=3000)  # 选中的那段正文：拼进第一个问题，单独存一份方便历史里显示
     messages: Annotated[list[ChatMessage], Field(min_length=1, max_length=40)]  # 最后一条是这次的问题
 
@@ -150,7 +158,7 @@ async def ai_chat(body: AiChatIn, request: Request, user: AiUser) -> StreamingRe
     if body.messages[-1].role != "user":
         raise fail(422, "最后一条消息必须是问题")
 
-    system = SYSTEM.format(title=body.section_title, text=body.section_text, now=now_text())
+    system = SYSTEM.format(title=body.section_title, text=body.section_text, now=now_text(), lang_note=LANG_NOTES[body.lang])
     history = [m.model_dump() for m in body.messages]  # 原样存进历史的（不带选中内容）
     to_model = [dict(m) for m in history]
     if body.quote:

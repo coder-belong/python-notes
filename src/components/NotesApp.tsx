@@ -15,6 +15,8 @@ import {
 } from "@/lib/study-store";
 import { GUEST_LIMIT, GUEST_LIMIT_ON } from "@/lib/guest";
 import { useStudy } from "@/lib/use-study";
+import { LANGS, setLang, useLang, type Lang } from "@/lib/lang";
+import { useNavTranslation, useSectionTranslation, type TrState } from "@/lib/use-translation";
 
 import AccountPanel, { AccountEntry } from "./AccountPanel";
 import AdminPanel from "./AdminPanel";
@@ -35,6 +37,7 @@ import StudyPanel, { StudyEntry } from "./StudyPanel";
 import "./Layout.css";
 import "./Guide.css";
 import "./ModalScroll.css";
+import "./Translate.css";
 
 /** 看过的最新一条更新日志的日期：比它新的就在「⋯」上显示小红点。 */
 const CHANGELOG_SEEN_KEY = "python-notes:changelog-seen";
@@ -117,6 +120,15 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   const section = index >= 0 ? sections[index] : null;
   const prev = index > 0 ? sections[index - 1] : null;
   const next = index >= 0 && index < sections.length - 1 ? sections[index + 1] : null;
+
+  // 页面语言：英文 / 日文时，正文和标题换成 AI 译文（见 use-translation.ts）
+  const lang = useLang();
+  const tr = useSectionTranslation(section, lang, study.account?.token);
+  const navTr = useNavTranslation(sections, lang, study.account?.token);
+  const trName = (s: Section) => navTr.get(s.name) ?? s.name;
+  const trTitle = (s: Section) => (s.num ? `${s.num} ${trName(s)}` : trName(s));
+  const trPart = (p: string) => navTr.get(p) ?? p;
+  const sectionTitle = section ? (tr.title ?? section.title) : "";
 
   // 按「部分」分组，给侧栏和首页用
   const groups = useMemo(() => {
@@ -362,7 +374,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
   return (
     <>
       {/* 标签页标题跟着当前节变；React 会把它放进 <head> */}
-      <title>{section ? `${section.title} · ${notes.title}` : notes.title}</title>
+      <title>{section ? `${sectionTitle} · ${notes.title}` : notes.title}</title>
       <button className="menu-btn" type="button" onClick={() => setNavOpen((v) => !v)}>
         目录
       </button>
@@ -440,8 +452,8 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                         <path d="M6 3.5 10.5 8 6 12.5" />
                       </svg>
                     </span>
-                    <span className="nav-part-name" title={g.part}>
-                      {g.part}
+                    <span className="nav-part-name" title={trPart(g.part)}>
+                      {trPart(g.part)}
                     </span>
                     <span className="nav-part-count">
                       {done}/{items.length}
@@ -456,10 +468,10 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                         .filter(Boolean)
                         .join(" ");
                       return (
-                        <a key={s.id} href={`#${s.id}`} className={cls} title={s.title}>
+                        <a key={s.id} href={`#${s.id}`} className={cls} title={trTitle(s)}>
                           <span className="dot" />
                           {s.num && <span className="sec-num">{s.num}</span>}
-                          <span className="nav-name">{s.name}</span>
+                          <span className="nav-name">{trName(s)}</span>
                         </a>
                       );
                     })}
@@ -505,11 +517,11 @@ export default function NotesApp({ notes }: { notes: Notes }) {
 
           {section && !study.guestBlocked && (
             <article key={section.id}>
-              <SectionLayout toc={section.toc}>
+              <SectionLayout toc={section.toc.map((t) => ({ ...t, text: tr.toc[t.id] ?? t.text }))}>
                 <div className="crumb">
                   <a href="#">首页</a>
                   <span>/</span>
-                  <span>{section.part ?? NO_PART}</span>
+                  <span>{section.part ? trPart(section.part) : NO_PART}</span>
                   <span className="crumb-count">
                     第 {index + 1} / {sections.length} 节
                   </span>
@@ -524,7 +536,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                   <div className="part-intro" dangerouslySetInnerHTML={{ __html: section.partIntroHtml }} />
                 )}
                 <h2 id={section.id} className="page-title">
-                  <span>{section.title}</span>
+                  <span>{sectionTitle}</span>
                   {!section.guide && <span className="sec-meta">
                     <label className="done-toggle">
                       <input
@@ -536,6 +548,14 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                     </label>
                   </span>}
                 </h2>
+                {lang !== "zh" && (
+                  <TranslateBar
+                    lang={lang}
+                    state={tr}
+                    loggedIn={!!study.account}
+                    onLogin={() => setAccountOpen(true)}
+                  />
+                )}
                 <div className="sec-html" dangerouslySetInnerHTML={{ __html: section.html }} />
 
                 <div className="finish">
@@ -556,7 +576,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                   {prev ? (
                     <a href={`#${prev.id}`} className="pager-prev">
                       <span>← 上一节</span>
-                      <b>{prev.title}</b>
+                      <b>{trTitle(prev)}</b>
                     </a>
                   ) : (
                     <a href="#" className="pager-prev">
@@ -567,7 +587,7 @@ export default function NotesApp({ notes }: { notes: Notes }) {
                   {next && (
                     <a href={`#${next.id}`} className="pager-next">
                       <span>下一节 →</span>
-                      <b>{next.title}</b>
+                      <b>{trTitle(next)}</b>
                     </a>
                   )}
                 </nav>
@@ -625,13 +645,58 @@ export default function NotesApp({ notes }: { notes: Notes }) {
         />
       )}
       {section && <SectionRefCard sections={sections} done={study.data.done} />}
-      {study.account && section && !study.guestBlocked && <AskAI key={section.id} token={study.account.token} section={section} />}
+      {study.account && section && !study.guestBlocked && <AskAI key={section.id} token={study.account.token} section={section} lang={lang} />}
       {study.loaded && !study.account && section && !study.guestBlocked && <GuestAskAI onLogin={() => setAccountOpen(true)} />}
       {adminOpen && study.account && (
         <AdminPanel token={study.account.token} me={study.account.username} onClose={() => setAdminOpen(false)} />
       )}
       {changelogOpen && <ChangelogPanel days={notes.changelog} onClose={() => setChangelogOpen(false)} />}
     </>
+  );
+}
+
+/** 正文上方的翻译状态条：翻到哪了、出错了怎么办、一键看原文。 */
+function TranslateBar({
+  lang,
+  state,
+  loggedIn,
+  onLogin,
+}: {
+  lang: Lang;
+  state: TrState;
+  loggedIn: boolean;
+  onLogin: () => void;
+}) {
+  const name = LANGS.find((l) => l.id === lang)?.label;
+  const needLogin = state.error?.status === 401;
+  return (
+    <div className={`tr-bar ${state.status}`} role="status">
+      <span className="tr-icon" aria-hidden="true">
+        文A
+      </span>
+      <span className="tr-text">
+        {state.status === "loading" && (
+          <>
+            AI 正在翻译成 {name}… {state.total > 0 && `${Math.min(state.done, state.total)} / ${state.total} 段`}
+          </>
+        )}
+        {state.status === "done" && <>已由 AI 翻译成 {name}，可能有不准确的地方</>}
+        {state.status === "error" &&
+          (needLogin ? (
+            <>{loggedIn ? "登录已过期" : "这一节还没人翻译过"}，登录后可以用 AI 翻译</>
+          ) : (
+            <>翻译出错：{state.error?.msg}</>
+          ))}
+      </span>
+      {needLogin && (
+        <button type="button" className="tr-btn primary" onClick={onLogin}>
+          登录
+        </button>
+      )}
+      <button type="button" className="tr-btn" onClick={() => setLang("zh")}>
+        看中文原文
+      </button>
+    </div>
   );
 }
 

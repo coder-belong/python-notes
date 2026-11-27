@@ -102,3 +102,18 @@ class AiChat(Base):
     messages: Mapped[list] = mapped_column(JSON, default=list)  # [{role, content, stopped?}]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class Translation(Base):
+    """AI 翻译的缓存：同一批原文 + 同一种语言只翻一次，以后谁看都直接用。
+
+    src_hash 是这一批原文（JSON 数组）的 sha256：笔记改了，原文变了，哈希就变，自然会重新翻。
+    """
+
+    __tablename__ = "translations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lang: Mapped[str] = mapped_column(String(8))  # en / ja
+    src_hash: Mapped[str] = mapped_column(String(64), index=True)
+    items: Mapped[list] = mapped_column(JSON)  # 译文，和原文一一对应
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())

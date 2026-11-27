@@ -1,0 +1,79 @@
+/* 正文上方的 AI 翻译状态条 */
+.tr-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0 0 20px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.tr-bar.error {
+  background: color-mix(in srgb, #e5484d 8%, transparent);
+}
+
+.tr-icon {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tr-bar.loading .tr-icon {
+  animation: tr-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes tr-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.tr-text {
+  flex: 1;
+  min-width: 12em;
+  color: var(--muted);
+}
+
+.tr-btn {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.tr-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tr-btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.tr-btn.primary:hover {
+  color: #fff;
+  filter: brightness(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tr-bar.loading .tr-icon {
+    animation: none;
+  }
+}
